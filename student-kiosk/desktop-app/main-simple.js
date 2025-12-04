@@ -37,33 +37,57 @@ const SERVER_URL = loadServerUrl();
 const LAB_ID = process.env.LAB_ID || "CC1";
 const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || `CC1-${String(Math.floor(Math.random() * 10) + 1).padStart(2, '0')}`;
 
-// Kiosk mode configuration - ENABLED for full blocking
-const KIOSK_MODE = true; // 🔒 ENABLED - full kiosk mode with blocking
-let isKioskLocked = true; // System starts locked
+// Kiosk mode configuration
+// ✅ PRODUCTION: Full kiosk lock enabled from startup
+// Set KIOSK_MODE=false only temporarily while debugging.
+const KIOSK_MODE = false; // 🔧 DEBUG MODE: Disabled for testing
+let isKioskLocked = false; // 🔧 DEBUG MODE: Unlocked for testing
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
-  mainWindow = new BrowserWindow({
-    width: width,
-    height: height,
-    frame: false,                            // 🔒 No window frame for kiosk
-    fullscreen: true,                        // 🔒 Full screen mode
+  // Window configuration depends on kiosk mode
+  const windowOptions = KIOSK_MODE ? {
+    width,
+    height,
+    frame: false,
+    fullscreen: true,
+    kiosk: true,
     alwaysOnTop: true,
-    skipTaskbar: true,                       // 🔒 Hide from taskbar
-    kiosk: true,                            // 🔒 True kiosk mode
-    resizable: false,                        // 🔒 Cannot resize
-    minimizable: false,                      // 🔒 Cannot minimize
-    closable: false,                         // 🔒 Cannot close
+    skipTaskbar: true,
+    resizable: false,
+    minimizable: false,
+    closable: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        enableBlinkFeatures: 'GetDisplayMedia',
+        webSecurity: false,
+        devTools: true // 🔧 DEBUG MODE: Enabled for testing
+      }
+    } : {
+      width,
+      height,
+      frame: true,
+      fullscreen: false,
+      kiosk: false,
+    alwaysOnTop: false,
+      skipTaskbar: false,
+      resizable: true,
+      minimizable: true,
+      closable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       enableBlinkFeatures: 'GetDisplayMedia',
       webSecurity: false,
-      devTools: false                        // 🔒 Disable dev tools
+        devTools: true // 🔧 DEBUG MODE: Enabled for testing
     }
-  });
+    };
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     console.log('🔐 Permission requested:', permission);
@@ -81,16 +105,30 @@ function createWindow() {
 
   mainWindow.loadFile('student-interface.html');
   
-  console.log('🔒 Kiosk application starting in FULL BLOCKING mode...');
+  if (KIOSK_MODE) {
+    console.log('🔒 Kiosk application starting in FULL BLOCKING mode...');
+  } else {
+    console.log('✅ Testing mode - Kiosk disabled');
+  }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    mainWindow.setFullScreen(true);          // Force fullscreen
-    mainWindow.focus();                      // Force focus
+    // Fullscreen is already enforced via window options in kiosk mode
+    mainWindow.focus();
     
-    console.log(`🔒 Application Ready - System: ${SYSTEM_NUMBER}, Lab: ${LAB_ID}`);
-    console.log(`🔒 Server: ${SERVER_URL}`);
-    console.log('🔒 FULL KIOSK MODE - All shortcuts blocked!');
+    // 🔧 DEBUG MODE: Open DevTools automatically for testing
+    if (!KIOSK_MODE) {
+      mainWindow.webContents.openDevTools();
+      console.log('🔧 DevTools opened automatically for debugging');
+    }
+    
+    console.log(`✅ Application Ready - System: ${SYSTEM_NUMBER}, Lab: ${LAB_ID}`);
+    console.log(`✅ Server: ${SERVER_URL}`);
+    if (KIOSK_MODE) {
+      console.log('🔒 FULL KIOSK MODE - All shortcuts blocked!');
+    } else {
+      console.log('✅ TESTING MODE - Shortcuts available, DevTools enabled');
+    }
   });
 
   // Kiosk mode - prevent closing
@@ -231,7 +269,7 @@ function createTimerWindow(studentName, studentId) {
         type: 'warning',
         title: 'Cannot Close Timer',
         message: 'Session Timer Active',
-        detail: 'You can only end the session by clicking the Logout button.\n\nThe timer window will minimize instead.',
+        detail: 'You must log out from the kiosk before closing this window.\n\nUse the Logout button on the timer or kiosk screen to end your session.',
         buttons: ['OK']
       });
       
@@ -245,30 +283,37 @@ function createTimerWindow(studentName, studentId) {
     // If session not active, allow closing
   });
   
-  // Prevent force close attempts
-  timerWindow.setClosable(false);
-  
-  // Block all close shortcuts for timer window
-  timerWindow.on('focus', () => {
-    globalShortcut.register('Alt+F4', () => {
-      console.log('🚫 Alt+F4 blocked on timer window');
-      return false;
-    });
-  });
-  
-  timerWindow.on('blur', () => {
-    try {
-      globalShortcut.unregister('Alt+F4');
-    } catch (e) {
-      // Ignore if already unregistered
-    }
-  });
+      // Prevent force close attempts - timer must not be closable until logout
+      timerWindow.setClosable(false);
+      
+      // Block Alt+F4 and other close shortcuts for timer window
+      timerWindow.on('focus', () => {
+        try {
+          globalShortcut.register('Alt+F4', () => {
+            console.log('🚫 Alt+F4 blocked on timer window - student must use Logout button');
+            return false;
+          });
+        } catch (e) {
+          console.log('⚠️ Alt+F4 already registered or error:', e.message);
+        }
+      });
+      
+      timerWindow.on('blur', () => {
+        try {
+          globalShortcut.unregister('Alt+F4');
+        } catch (e) {
+          // Ignore if already unregistered
+        }
+      });
 
-  // Minimize immediately - no delay
+  // Minimize after showing briefly (auto-minimize timer window after login)
   timerWindow.once('ready-to-show', () => {
     timerWindow.showInactive(); // Show without stealing focus
-    timerWindow.minimize();
-    console.log('⏬ Timer window minimized immediately');
+    // Use a small delay to ensure window is fully rendered before minimizing
+    setTimeout(() => {
+      timerWindow.minimize();
+      console.log('⏬ Timer window auto-minimized after login');
+    }, 500);
   });
 
   console.log('⏱️ Timer window created for:', studentName);
@@ -359,6 +404,15 @@ function setupIPCHandlers() {
       mainWindow.setFullScreen(false);         // Exit fullscreen for normal work
       mainWindow.maximize();                   // Maximize but not fullscreen
 
+      // After successful login, release global shortcuts so the student
+      // can use the system and other applications normally.
+      try {
+        globalShortcut.unregisterAll();
+        console.log('🔓 Kiosk shortcuts unregistered - system free for normal use');
+      } catch (e) {
+        console.error('⚠️ Error unregistering kiosk shortcuts:', e.message || e);
+      }
+
       console.log(`🔓 System unlocked for: ${authData.student.name} (${authData.student.studentId})`);
 
       // Create and show timer window
@@ -432,14 +486,22 @@ function setupIPCHandlers() {
       
       // 🔌 NEW: Automatic shutdown after session ends
       console.log('🔌 Initiating automatic system shutdown after session end...');
+
+      // Re-enable kiosk shortcut blocking so the machine is locked again
+      try {
+        blockKioskShortcuts();
+        console.log('🔒 Kiosk shortcuts re-registered after logout');
+      } catch (e) {
+        console.error('⚠️ Error re-registering kiosk shortcuts:', e.message || e);
+      }
       
-      // Show notification dialog
+      // Show notification dialog - 90 seconds (1 minute 30 seconds) shutdown delay
       setTimeout(() => {
         dialog.showMessageBox(mainWindow, {
           type: 'warning',
           title: 'Automatic Shutdown',
           message: 'Session Ended',
-          detail: 'System will automatically shutdown in 30 seconds.\n\nThank you for using the Lab Kiosk!',
+          detail: 'System will automatically shutdown in 1 minute 30 seconds (90 seconds).\n\nPlease save your work and log out of any other applications.',
           buttons: ['OK']
         });
       }, 500);
@@ -450,14 +512,16 @@ function setupIPCHandlers() {
         let shutdownCommand;
         
         if (platform === 'win32') {
-          shutdownCommand = 'shutdown /s /t 30 /c "Session ended. System will shutdown in 30 seconds."';
+          // 90 seconds = 1 minute 30 seconds shutdown delay
+          shutdownCommand = 'shutdown /s /t 90 /c "Session ended. System will shutdown in 1 minute 30 seconds (90 seconds)."';
         } else if (platform === 'linux') {
-          shutdownCommand = 'sudo shutdown -h +1 "Session ended. System shutting down."';
+          // Linux uses minutes, so 90 seconds = ~2 minutes
+          shutdownCommand = 'sudo shutdown -h +2 "Session ended. System shutting down in 1 minute 30 seconds."';
         } else if (platform === 'darwin') {
-          shutdownCommand = 'sudo shutdown -h +1 "Session ended. System shutting down."';
+          // macOS uses minutes, so 90 seconds = ~2 minutes
+          shutdownCommand = 'sudo shutdown -h +2 "Session ended. System shutting down in 1 minute 30 seconds."';
         }
-        
-        console.log(`🔌 Executing shutdown: ${shutdownCommand}`);
+        console.log(`🔌 Executing shutdown with 90-second delay: ${shutdownCommand}`);
         exec(shutdownCommand, (error, stdout, stderr) => {
           if (error) {
             console.error('❌ Shutdown error:', error.message);
@@ -472,12 +536,12 @@ function setupIPCHandlers() {
               buttons: ['OK']
             });
           } else {
-            console.log('✅ Automatic shutdown initiated');
+            console.log('✅ Automatic shutdown initiated (90-second delay)');
             if (stdout) console.log('Shutdown stdout:', stdout);
             if (stderr) console.log('Shutdown stderr:', stderr);
           }
         });
-      }, 3000); // Wait 3 seconds after logout before shutdown
+      }, 3000); // Wait a few seconds after logout before issuing OS shutdown
 
       return { success: true };
     } catch (error) {
@@ -565,8 +629,8 @@ function setupIPCHandlers() {
       let shutdownCommand;
       
       if (platform === 'win32') {
-        // Windows: shutdown in 10 seconds with message
-        shutdownCommand = 'shutdown /s /t 10 /c "System shutdown initiated by administrator"';
+        // Windows: shutdown in 90 seconds (1 minute 30 seconds) with message
+        shutdownCommand = 'shutdown /s /t 90 /c "System shutdown initiated by administrator"';
       } else if (platform === 'linux') {
         // Linux: shutdown in 1 minute
         shutdownCommand = 'sudo shutdown -h +1 "System shutdown initiated by administrator"';
@@ -575,13 +639,13 @@ function setupIPCHandlers() {
         shutdownCommand = 'sudo shutdown -h +1 "System shutdown initiated by administrator"';
       }
       
-      console.log(`🔌 Executing shutdown command: ${shutdownCommand}`);
+      console.log(`🔌 Executing shutdown command (90-second delay): ${shutdownCommand}`);
       
       exec(shutdownCommand, (error, stdout, stderr) => {
         if (error) {
           console.error('❌ Shutdown command error:', error);
         } else {
-          console.log('✅ Shutdown command executed successfully');
+          console.log('✅ Shutdown command executed successfully (90-second delay)');
           console.log('stdout:', stdout);
           if (stderr) console.log('stderr:', stderr);
         }

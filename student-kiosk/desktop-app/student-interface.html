@@ -3,20 +3,16 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ðŸ”’ College Lab Kiosk</title>
-    
+    <title>College Lab Kiosk - Login</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
-
     <style>
         body {
             background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
             min-height: 100vh;
-            overflow-y: auto;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            padding: 20px 0;
         }
-        .kiosk-container {
+        .login-container {
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -29,472 +25,254 @@
             box-shadow: 0 25px 50px rgba(0,0,0,0.3);
             max-width: 900px;
             width: 100%;
-            margin: 20px auto;
         }
         .card-header {
+            background: linear-gradient(135deg, #dc3545, #fd7e14);
             border-radius: 20px 20px 0 0;
-        }
-        .lock-icon {
-            font-size: 4rem;
+            color: white;
+            padding: 30px;
+            text-align: center;
         }
         .system-info {
-            background: linear-gradient(135deg, rgba(220, 53, 69, 0.1), rgba(253, 126, 20, 0.1));
+            background: rgba(220, 53, 69, 0.1);
             border-left: 5px solid #dc3545;
-            border-radius: 10px;
             padding: 20px;
-            margin-bottom: 25px;
+            margin: 20px;
+            border-radius: 8px;
         }
-        .demo-section {
-            background: linear-gradient(135deg, rgba(40, 167, 69, 0.1), rgba(32, 201, 151, 0.1));
-            border: 2px solid #28a745;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
+        .info-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 10px 0;
         }
-        .connection-status {
-            position: fixed;
-            top: 15px;
-            right: 15px;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 9999;
+        .info-item {
+            font-size: 14px;
         }
-        .status-connected { background: #28a745; color: white; }
-        .status-disconnected { background: #dc3545; color: white; }
-        .demo-btn {
-            transition: all 0.3s ease;
-            background: linear-gradient(135deg, #28a745, #20c997);
-            border: none;
-            color: white;
-            font-weight: bold;
-            margin: 5px;
+        .info-item strong {
+            color: #dc3545;
         }
-        .demo-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
-        }
-        .btn-unlock {
-            background: linear-gradient(135deg, #28a745, #20c997);
-            border: none;
-            font-size: 1.2rem;
-            font-weight: bold;
-            padding: 15px;
-            width: 100%;
-            color: white;
-        }
-        .btn-unlock:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 30px rgba(40, 167, 69, 0.4);
-        }
-        .btn-forgot {
-            background: linear-gradient(135deg, #ffc107, #fd7e14);
-            border: none;
-            color: #000;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        .btn-forgot:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(255, 193, 7, 0.4);
-            color: #000;
-        }
-        .session-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        .session-card {
-            background: rgba(255, 255, 255, 0.98);
-            border-radius: 25px;
-            padding: 40px;
-            max-width: 800px;
-            width: 90%;
-            text-align: center;
-            box-shadow: 0 30px 60px rgba(0,0,0,0.3);
-        }
-        .session-icon {
-            font-size: 6rem;
+        .info-item span {
             color: #28a745;
-        }
-        .duration-display {
-            font-size: 3rem;
             font-weight: bold;
-            color: #28a745;
-            font-family: 'Courier New', monospace;
         }
-        .debug-section {
-            background: rgba(108, 117, 125, 0.1);
-            border: 1px solid #dee2e6;
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 20px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            max-height: 150px;
-            overflow-y: auto;
-        }
-        .forgot-password-section {
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.1), rgba(253, 126, 20, 0.1));
-            border: 2px solid #ffc107;
-            border-radius: 15px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-        
-        /* Loading Screen - Prevents white screen on startup */
-        #loadingScreen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 99999;
-            transition: opacity 0.5s ease-out;
-        }
-        #loadingScreen.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-        .loading-spinner {
-            width: 80px;
-            height: 80px;
-            border: 8px solid rgba(255, 255, 255, 0.2);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .loading-text {
-            color: white;
-            font-size: 1.5rem;
-            font-weight: bold;
-            margin-top: 30px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-        .loading-subtext {
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 1rem;
-            margin-top: 10px;
-        }
-        
-        /* First-time Sign-in Styles */
-        .signin-card {
-            background: rgba(255, 255, 255, 0.98);
-            border-radius: 20px;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
-            max-width: 600px;
-            width: 100%;
-            margin: 20px auto;
-        }
-        .signin-card .card-header {
-            border-radius: 20px 20px 0 0;
-            background: linear-gradient(135deg, #28a745, #20c997);
-            color: white;
-            text-align: center;
+        .form-section {
             padding: 30px;
         }
-        .user-icon {
-            font-size: 4rem;
-            margin-bottom: 15px;
+        .form-group {
+            margin-bottom: 20px;
         }
-        .step-indicator {
-            background: rgba(40, 167, 69, 0.1);
-            border: 2px solid #28a745;
-            border-radius: 15px;
-            padding: 20px;
-            margin: 20px 0;
+        .form-control {
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
         }
-        .btn-create {
+        .form-control:focus {
+            border-color: #28a745;
+            box-shadow: 0 0 5px rgba(40, 167, 69, 0.3);
+        }
+        .btn-login {
             background: linear-gradient(135deg, #28a745, #20c997);
             border: none;
-            border-radius: 15px;
-            padding: 15px 30px;
-            font-size: 1.2rem;
+            color: white;
+            padding: 12px 30px;
+            font-size: 16px;
             font-weight: bold;
-            color: white;
-            transition: all 0.3s ease;
+            border-radius: 8px;
+            width: 100%;
+            transition: all 0.3s;
         }
-        .btn-create:hover {
+        .btn-login:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
-            color: white;
+            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
         }
-        .btn-back {
-            background: #6c757d;
+        .btn-secondary {
+            background: #ffc107;
             border: none;
-            border-radius: 15px;
-            padding: 12px 25px;
+            color: #000;
+            padding: 12px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            width: 100%;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+        .btn-secondary:hover {
+            background: #fd7e14;
             color: white;
         }
-        .btn-back:hover {
-            background: #5a6268;
-            color: white;
+        .alert {
+            display: none;
+            margin: 20px;
+            padding: 15px;
+            border-radius: 8px;
         }
-        .password-requirements {
-            background: #e8f5e8;
-            border: 1px solid #28a745;
+        .alert.show {
+            display: block;
+        }
+        .session-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+        .session-modal.active {
+            display: flex;
+        }
+        .session-card {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 600px;
+        }
+        .session-card h1 {
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+        .debug-log {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
             border-radius: 8px;
             padding: 15px;
-            margin: 15px 0;
-            font-size: 0.9rem;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 20px;
+            color: #666;
         }
     </style>
 </head>
 <body>
-    <!-- Loading Screen - Shows immediately, hides when app is ready -->
-    <div id="loadingScreen">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">ðŸ”’ College Lab Kiosk</div>
-        <div class="loading-subtext">Initializing secure system...</div>
-    </div>
-
-    <div id="connectionStatus" class="connection-status status-disconnected">
-        <i class="fas fa-circle"></i> Disconnected
-    </div>
-
-    <div id="loginScreen" class="kiosk-container">
+    <!-- LOGIN PAGE -->
+    <div id="loginScreen" class="login-container">
         <div class="login-card">
-            <div class="card-header bg-danger text-white text-center py-4">
-                <div class="lock-icon mb-3">
-                    <i class="fas fa-lock"></i>
-                </div>
-                <h2 class="mb-0"><strong>College Lab Registration System</strong></h2>
-                <p class="mb-0 mt-2">Secure Student Kiosk Access</p>
+            <div class="card-header">
+                <h2><i class="fas fa-lock"></i> College Lab Kiosk System</h2>
+                <p>Secure Student Login</p>
             </div>
-            <div class="card-body p-4">
-                <div class="system-info">
-                    <h5 class="text-danger mb-3"><i class="fas fa-info-circle"></i> System Information</h5>
-                    <div class="row">
-                        <div class="col-md-4 mb-2">
-                            <strong>Computer Name:</strong> <span id="computerName">Loading...</span>
-                        </div>
-                        <div class="col-md-4 mb-2">
-                            <strong>Lab ID:</strong> <span class="badge bg-danger">CC1</span>
-                        </div>
-                        <div class="col-md-4 mb-2">
-                            <strong>System Number:</strong> <span id="systemNumberDisplay" class="badge bg-info">Loading...</span>
-                        </div>
-                        <div class="col-md-6 mb-2">
-                            <strong>Current Time:</strong> <span id="currentTime" style="color: #28a745; font-weight: bold;">--:--:--</span>
-                        </div>
-                        <div class="col-md-6 mb-2">
-                            <strong>Kiosk Mode:</strong> <span class="badge bg-warning">ðŸ”’ ACTIVE</span>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="demo-section">
-                    <h5 class="text-success mb-3"><i class="fas fa-info-circle"></i> Getting Started</h5>
-                    <p class="text-muted small mb-3">
-                        <strong>New to the system?</strong> Contact your admin to get sample data setup and receive your one-time password.
-                    </p>
-                    <div class="d-flex justify-content-center flex-wrap">
-                        <button class="btn demo-btn" onclick="showSystemInfo()">
-                            <i class="fas fa-info"></i> System Info
-                        </button>
-                        <button class="btn demo-btn" onclick="testConnection()">
-                            <i class="fas fa-wifi"></i> Test Connection
-                        </button>
-                        <button class="btn demo-btn" onclick="showHelp()">
-                            <i class="fas fa-question-circle"></i> Help
-                        </button>
-                    </div>
-                </div>
+            <div id="errorAlert" class="alert alert-danger d-none" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> <span id="errorMessage"></span>
+            </div>
 
-                <div id="errorAlert" class="alert alert-danger d-none" role="alert">
-                    <i class="fas fa-exclamation-triangle"></i> <span id="errorMessage"></span>
+            <div class="system-info">
+                <strong><i class="fas fa-info-circle"></i> System Information</strong>
+                <div class="info-row">
+                    <div class="info-item"><strong>Computer:</strong> <span id="computerName">Loading...</span></div>
+                    <div class="info-item"><strong>Lab:</strong> <span>CC1</span></div>
+                    <div class="info-item"><strong>System No:</strong> <span id="systemNumber">Loading...</span></div>
                 </div>
+                <div class="info-row">
+                    <div class="info-item"><strong>Current Time:</strong> <span id="currentTime">--:--:--</span></div>
+                    <div class="info-item"><strong>Mode:</strong> <span>🔒 Active</span></div>
+                </div>
+            </div>
 
+            <div class="form-section">
                 <form id="loginForm">
-                    <div class="mb-4">
-                        <label class="form-label fw-bold"><i class="fas fa-user"></i> Student ID</label>
-                        <input type="text" class="form-control form-control-lg" id="studentId" placeholder="Enter your Student ID" required autocomplete="off" spellcheck="false" />
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-user"></i> <strong>Student ID</strong></label>
+                        <input type="text" class="form-control" id="studentId" placeholder="Enter your Student ID" required autocomplete="off" spellcheck="false" />
                     </div>
-                    <div class="mb-4">
-                        <label class="form-label fw-bold"><i class="fas fa-key"></i> Password</label>
-                        <input type="password" class="form-control form-control-lg" id="password" placeholder="Enter your Password" required autocomplete="off" />
+
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-key"></i> <strong>Password</strong></label>
+                        <input type="password" class="form-control" id="password" placeholder="Enter your Password" required autocomplete="off" />
                     </div>
-                    <button type="submit" class="btn btn-unlock btn-lg">
+
+                    <button type="submit" class="btn-login">
                         <i class="fas fa-unlock"></i> Unlock & Start Session
                     </button>
-                    
-<<<<<<< HEAD
-                    <!-- NEW: Forgot Password Button -->
-                    <button type="button" class="btn btn-forgot btn-lg mt-3 w-100" onclick="showForgotPassword()">
+
+                    <button type="button" class="btn-secondary mt-3" onclick="showForgotPassword()">
                         <i class="fas fa-key"></i> Forgot Password?
                     </button>
-                    
-                    <!-- NEW: First-time Sign-in Info -->
-                    <div class="alert alert-info mt-2">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>First-time Sign-in:</strong> 
-                        <a href="http://localhost:7401/student-signin/" target="_blank" class="alert-link">
-                            Complete setup online first
-                        </a>
-=======
-                    <!-- Forgot Password & First-time Sign-in Buttons -->
-                    <div class="row mt-3">
-                        <div class="col-md-6">
-                            <button type="button" class="btn btn-warning btn-lg w-100" onclick="showFirstTimeSignIn()">
-                                <i class="fas fa-user-plus"></i> First-time Sign-in
-                            </button>
-                        </div>
-                        <div class="col-md-6">
-                            <button type="button" class="btn btn-forgot btn-lg w-100" onclick="showForgotPassword()">
-                                <i class="fas fa-key"></i> Forgot Password?
-                            </button>
-                        </div>
->>>>>>> a7e2422 (2 features not working)
-                    </div>
+
+                    <button type="button" class="btn-secondary mt-3" style="background: #17a2b8; color: #fff;" onclick="showFirstTimeSignIn()">
+                        <i class="fas fa-user-plus"></i> First Time Sign In
+                    </button>
                 </form>
 
-                <!-- Help Section -->
-                <div class="forgot-password-section">
-                    <h6 class="text-warning mb-2"><i class="fas fa-lightbulb"></i> Need Help?</h6>
-                    <p class="text-muted small mb-2">
-                        <strong>First-time Sign-in:</strong> If this is your first time, click "First-time Sign-in" button and use your one-time password from admin.
-                    </p>
-                    <p class="text-muted small mb-0">
-                        <strong>Forgot Password:</strong> Click "Forgot Password?" button and follow the email verification process.
-                    </p>
-                </div>
-
-                <div class="debug-section mt-4">
-                    <h6 class="text-muted mb-2"><i class="fas fa-bug"></i> Debug Console</h6>
-                    <div id="debugLog" style="color: #6c757d;">
-                        System initialized. Waiting for login...
-                    </div>
+                <div class="debug-log" id="debugLog">
+                    System initialized. Waiting for login...
                 </div>
             </div>
         </div>
     </div>
 
     <!-- FIRST-TIME SIGN-IN PAGE -->
-    <div id="firstTimeSignInPage" class="kiosk-container" style="display: none;">
-        <div class="signin-card">
-            <div class="card-header">
-                <div class="user-icon">
+    <div id="firstTimeSignInPage" class="login-container" style="display: none;">
+        <div class="login-card">
+            <div class="card-header" style="background: linear-gradient(135deg, #28a745, #20c997);">
+                <div class="lock-icon mb-3">
                     <i class="fas fa-user-plus"></i>
                 </div>
                 <h2 class="mb-0">First-time Sign-in</h2>
                 <p class="mb-0">Set up your password to access the lab system</p>
             </div>
 
-            <div class="card-body p-4">
-                <!-- Step Indicator -->
-                <div class="step-indicator">
-                    <h5 class="text-success mb-2">
-                        <i class="fas fa-info-circle"></i> Getting Started
-                    </h5>
-                    <p class="mb-0">
-                        This is for students who are logging in for the first time. 
-                        You'll need your Student ID and registered email address to set up your password.
-                    </p>
-                </div>
-
+            <div class="form-section">
                 <div id="firstTimeErrorAlert" class="alert alert-danger d-none" role="alert">
                     <i class="fas fa-exclamation-triangle"></i> <span id="firstTimeErrorMessage"></span>
                 </div>
 
-                <!-- First-time Sign-in Form -->
                 <form id="firstTimeForm">
-                    <div class="mb-3">
-                        <label for="firstTimeStudentId" class="form-label">
-                            <i class="fas fa-id-card"></i> Student ID (Roll Number)
-                        </label>
-                        <input type="text" class="form-control" id="firstTimeStudentId" 
-                               placeholder="Enter your Student ID (e.g., TEST2025001)" required autocomplete="off" spellcheck="false">
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-id-card"></i> Student ID (Roll Number)</label>
+                        <input type="text" class="form-control" id="firstTimeStudentId" placeholder="Enter your Student ID" required autocomplete="off" spellcheck="false" />
                     </div>
-
-                    <div class="mb-3">
-                        <label for="firstTimeEmail" class="form-label">
-                            <i class="fas fa-envelope"></i> Email Address
-                        </label>
-                        <input type="email" class="form-control" id="firstTimeEmail" 
-                               placeholder="Enter your registered email address" required>
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-envelope"></i> Email Address</label>
+                        <input type="email" class="form-control" id="firstTimeEmail" placeholder="Enter your registered email" required />
                     </div>
-
-                    <div class="mb-3">
-                        <label for="firstTimeDateOfBirth" class="form-label">
-                            <i class="fas fa-calendar"></i> Date of Birth
-                        </label>
-                        <input type="date" class="form-control" id="firstTimeDateOfBirth" required>
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-calendar"></i> Date of Birth</label>
+                        <input type="date" class="form-control" id="firstTimeDateOfBirth" required />
                     </div>
-
-                    <div class="mb-3">
-                        <label for="firstTimeNewPassword" class="form-label">
-                            <i class="fas fa-lock"></i> Create New Password
-                        </label>
-                        <input type="password" class="form-control" id="firstTimeNewPassword" 
-                               placeholder="Create a secure password" required autocomplete="off">
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-lock"></i> Create New Password</label>
+                        <input type="password" class="form-control" id="firstTimeNewPassword" placeholder="Create a secure password" required autocomplete="off" />
                     </div>
-
-                    <div class="mb-3">
-                        <label for="firstTimeConfirmPassword" class="form-label">
-                            <i class="fas fa-lock"></i> Confirm Password
-                        </label>
-                        <input type="password" class="form-control" id="firstTimeConfirmPassword" 
-                               placeholder="Confirm your password" required autocomplete="off">
+                    <div class="form-group">
+                        <label class="form-label"><i class="fas fa-lock"></i> Confirm Password</label>
+                        <input type="password" class="form-control" id="firstTimeConfirmPassword" placeholder="Confirm your password" required autocomplete="off" />
                     </div>
-
-                    <div class="password-requirements">
-                        <h6 class="text-success mb-2">
-                            <i class="fas fa-shield-alt"></i> Password Requirements:
-                        </h6>
-                        <ul class="mb-0">
-                            <li>At least 6 characters long</li>
-                            <li>Can contain letters, numbers, and symbols</li>
-                            <li>Both passwords must match</li>
-                        </ul>
-                    </div>
-
-                    <div class="d-grid gap-2 mt-4">
-                        <button type="submit" class="btn btn-create btn-lg">
-                            <i class="fas fa-user-check"></i> Create Account & Set Password
-                        </button>
-                        <button type="button" class="btn btn-back btn-lg" onclick="showLoginPage()">
-                            <i class="fas fa-arrow-left"></i> Back to Login
-                        </button>
-                    </div>
+                    <button type="submit" class="btn-login">
+                        <i class="fas fa-user-check"></i> Create Account & Set Password
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="showLoginPage()">
+                        <i class="fas fa-arrow-left"></i> Back to Login
+                    </button>
                 </form>
 
-                <div class="debug-section mt-4">
-                    <h6 class="text-muted mb-2"><i class="fas fa-bug"></i> Debug Console</h6>
-                    <div id="firstTimeDebugLog" style="color: #6c757d;">
-                        First-time sign-in page loaded. Ready for account setup...
-                    </div>
+                <div class="debug-log" id="firstTimeDebugLog">
+                    First-time sign-in page loaded. Ready for account setup...
                 </div>
             </div>
         </div>
     </div>
 
     <!-- FORGOT PASSWORD PAGE -->
-    <div id="forgotPasswordPage" class="kiosk-container" style="display: none;">
+    <div id="forgotPasswordPage" class="login-container" style="display: none;">
         <div class="login-card">
-            <div class="card-header bg-danger text-white text-center py-4">
+            <div class="card-header" style="background: linear-gradient(135deg, #ffc107, #fd7e14);">
                 <div class="lock-icon mb-3">
                     <i class="fas fa-key"></i>
                 </div>
-                <h2 class="mb-0"><strong>ðŸ”‘ Reset Your Password</strong></h2>
+                <h2 class="mb-0">Reset Your Password</h2>
                 <p class="mb-0 mt-2">Verify Email & Set New Password</p>
             </div>
-            <div class="card-body p-4">
+            <div class="form-section">
                 <!-- STEP 1: Student ID -->
                 <div id="forgotStep1" style="display: block;">
                     <div class="alert alert-warning">
@@ -503,14 +281,14 @@
                     <div id="forgotErrorAlert1" class="alert alert-danger d-none" role="alert">
                         <i class="fas fa-exclamation-triangle"></i> <span id="forgotErrorMessage1"></span>
                     </div>
-                    <div class="mb-4">
+                    <div class="form-group">
                         <label class="form-label fw-bold"><i class="fas fa-user"></i> Student ID</label>
-                        <input type="text" class="form-control form-control-lg" id="forgotStudentId" placeholder="Enter your Student ID" autocomplete="off" spellcheck="false" />
+                        <input type="text" class="form-control" id="forgotStudentId" placeholder="Enter your Student ID" autocomplete="off" spellcheck="false" />
                     </div>
-                    <button type="button" class="btn btn-primary btn-lg w-100" onclick="forgotPasswordStep1()">
+                    <button type="button" class="btn-login" onclick="forgotPasswordStep1()">
                         <i class="fas fa-arrow-right"></i> Next
                     </button>
-                    <button type="button" class="btn btn-secondary btn-lg mt-3 w-100" onclick="showLoginPage()">
+                    <button type="button" class="btn-secondary" onclick="showLoginPage()">
                         <i class="fas fa-arrow-left"></i> Back to Login
                     </button>
                 </div>
@@ -527,14 +305,14 @@
                     <div id="forgotErrorAlert2" class="alert alert-danger d-none" role="alert">
                         <i class="fas fa-exclamation-triangle"></i> <span id="forgotErrorMessage2"></span>
                     </div>
-                    <div class="mb-4">
+                    <div class="form-group">
                         <label class="form-label fw-bold"><i class="fas fa-envelope"></i> Email Address</label>
-                        <input type="email" class="form-control form-control-lg" id="forgotEmail" placeholder="your.email@example.com" autocomplete="off" />
+                        <input type="email" class="form-control" id="forgotEmail" placeholder="your.email@example.com" autocomplete="off" />
                     </div>
-                    <button type="button" class="btn btn-primary btn-lg w-100" onclick="forgotPasswordStep2()">
+                    <button type="button" class="btn-login" onclick="forgotPasswordStep2()">
                         <i class="fas fa-paper-plane"></i> Send OTP
                     </button>
-                    <button type="button" class="btn btn-secondary btn-lg mt-3 w-100" onclick="forgotBackToStep1()">
+                    <button type="button" class="btn-secondary" onclick="forgotBackToStep1()">
                         <i class="fas fa-arrow-left"></i> Back
                     </button>
                 </div>
@@ -547,970 +325,167 @@
                     <div id="forgotErrorAlert3" class="alert alert-danger d-none" role="alert">
                         <i class="fas fa-exclamation-triangle"></i> <span id="forgotErrorMessage3"></span>
                     </div>
-                    <div class="mb-4">
+                    <div class="form-group">
                         <label class="form-label fw-bold"><i class="fas fa-shield-alt"></i> 6-Digit OTP</label>
-                        <input type="text" class="form-control form-control-lg" id="forgotOTP" placeholder="000000" maxlength="6" autocomplete="off" />
+                        <input type="text" class="form-control" id="forgotOTP" placeholder="000000" maxlength="6" autocomplete="off" />
                         <small class="text-muted">Check your email for the OTP code</small>
                     </div>
-                    <div class="mb-4">
+                    <div class="form-group">
                         <label class="form-label fw-bold"><i class="fas fa-lock"></i> New Password</label>
-                        <input type="password" class="form-control form-control-lg" id="forgotNewPassword" placeholder="Min 6 characters" autocomplete="off" />
+                        <input type="password" class="form-control" id="forgotNewPassword" placeholder="Min 6 characters" autocomplete="off" />
                     </div>
-                    <button type="button" class="btn btn-success btn-lg w-100" onclick="forgotPasswordStep3()">
+                    <button type="button" class="btn-login" onclick="forgotPasswordStep3()">
                         <i class="fas fa-check"></i> Reset Password
                     </button>
-                    <button type="button" class="btn btn-secondary btn-lg mt-3 w-100" onclick="showLoginPage()">
+                    <button type="button" class="btn-secondary" onclick="showLoginPage()">
                         <i class="fas fa-times"></i> Cancel
-                    </button>
-                </div>
+                </button>
+            </div>
 
-                <div class="debug-section mt-4">
-                    <h6 class="text-muted mb-2"><i class="fas fa-bug"></i> Debug Console</h6>
-                    <div id="forgotDebugLog" style="color: #6c757d;">
-                        Password reset page ready...
-                    </div>
+                <div class="debug-log" id="forgotDebugLog">
+                    Password reset page ready...
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Session Active Modal -->
     <div id="sessionModal" class="session-modal">
         <div class="session-card">
-            <div class="session-icon mb-4">
-                <i class="fas fa-check-circle"></i>
-            </div>
-            <h1 class="mb-3 text-success"><strong>Session Active!</strong></h1>
-            <h3 class="mb-4">Welcome, <span id="sessionStudentName" class="text-primary">Student</span>!</h3>
-            
-            <div class="row mb-4">
-                <div class="col-md-4">
-                    <h6 class="text-muted">Student ID</h6>
-                    <p class="fw-bold" id="sessionStudentId">---</p>
-                </div>
-                <div class="col-md-4">
-                    <h6 class="text-muted">System</h6>
-                    <p class="fw-bold" id="sessionSystem">---</p>
-                </div>
-                <div class="col-md-4">
-                    <h6 class="text-muted">Login Time</h6>
-                    <p class="fw-bold" id="sessionLoginTime">---</p>
-                </div>
-            </div>
-
-            <div class="bg-light p-4 rounded-3 mb-4">
-                <h5 class="text-muted mb-2">Session Duration</h5>
-                <div class="duration-display" id="sessionDuration">00:00:00</div>
-            </div>
-
-            <div class="alert alert-info mb-4">
-                <i class="fas fa-video"></i> Your screen is being monitored by the admin dashboard.
-            </div>
-
-            <button class="btn btn-danger btn-lg px-5" id="logoutBtn">
-                <i class="fas fa-sign-out-alt"></i> End Session & Logout
+            <h1><i class="fas fa-check-circle"></i> Session Active!</h1>
+            <h3>Welcome, <span id="sessionStudentName">Student</span>!</h3>
+            <p><strong>ID:</strong> <span id="sessionStudentId">---</span></p>
+            <p><strong>System:</strong> <span id="sessionSystem">---</span></p>
+            <p><strong>Login Time:</strong> <span id="sessionLoginTime">---</span></p>
+            <button class="btn btn-danger" id="logoutBtn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i> Logout
             </button>
         </div>
     </div>
 
-    <!-- CRITICAL: Load scripts in correct order at the END -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="renderer.js"></script>
     <script src="kiosk-navigation.js"></script>
 
     <script>
-        // Helper Functions
-        function showSystemInfo() {
-            const computerName = document.getElementById('computerName').textContent;
-            const systemNumber = document.getElementById('systemNumberDisplay').textContent;
-            
-            alert(`ðŸ–¥ï¸ System Information:
+        console.log('✅ Student interface loaded');
 
-Computer Name: ${computerName}
-System Number: ${systemNumber}
-Lab ID: CC1
-Current Time: ${new Date().toLocaleString()}
-
-Status: Kiosk Mode Active
-Server: Connected to Lab Management System`);
-            
-            addDebugLog('System information displayed');
-        }
-
-        function testConnection() {
-            addDebugLog('Testing connection to server...');
-            
-            fetch('/api/stats')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert(`âœ… Connection Test Successful!
-
-Server Status: Online
-Total Students: ${data.stats.totalStudents}
-Students with Passwords: ${data.stats.passwordsSet}
-Pending Setup: ${data.stats.pendingPasswords}
-
-Connection: Working properly`);
-                        addDebugLog('âœ… Connection test successful');
-                    } else {
-                        alert('âš ï¸ Server responded but with errors');
-                        addDebugLog('âš ï¸ Server error in connection test');
-                    }
-                })
-                .catch(error => {
-                    alert(`âŒ Connection Test Failed:
-
-Error: ${error.message}
-
-Please check:
-- Server is running
-- Network connection is working
-- Contact admin if problem persists`);
-                    addDebugLog(`âŒ Connection test failed: ${error.message}`);
-                });
-        }
-
-        function showHelp() {
-            alert(`ðŸ†˜ Lab Kiosk Help:
-
-ðŸ“ FIRST-TIME USERS:
-1. Get your one-time password from admin
-2. Click "First-time Sign-in"
-3. Enter Student ID and one-time password
-4. Create your permanent password
-
-ðŸ”‘ EXISTING USERS:
-1. Enter your Student ID and password
-2. Select your system number
-3. Click "Unlock & Start Session"
-
-â“ FORGOT PASSWORD:
-1. Click "Forgot Password?"
-2. Enter Student ID (Roll Number)
-3. Enter your email address
-4. Check email for OTP code
-5. Enter OTP and create new password
-
-ðŸ“ž NEED HELP?
-Contact your lab administrator for assistance.`);
-            
-            addDebugLog('Help information displayed');
-        }
-
-        let sessionStartTime = null;
-        let durationInterval = null;
-        let currentSessionId = null;
-
+        // System initialization
         function updateTime() {
             const now = new Date();
-            document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+            const timeEl = document.getElementById('currentTime');
+            if (timeEl) {
+                timeEl.textContent = now.toLocaleTimeString();
+            }
         }
-        setInterval(updateTime, 1000);
-        updateTime();
 
-        function addDebugLog(message) {
-            const debugLog = document.getElementById('debugLog');
-            const timestamp = new Date().toLocaleTimeString();
-            debugLog.innerHTML += `<br>[${timestamp}] ${message}`;
-            debugLog.scrollTop = debugLog.scrollHeight;
-            console.log(`[DEBUG] ${message}`);
+        function addLog(msg) {
+            try {
+                const log = document.getElementById('debugLog');
+                if (log) {
+                    const time = new Date().toLocaleTimeString();
+                    log.innerHTML += `<div>[${time}] ${msg}</div>`;
+                    log.scrollTop = log.scrollHeight;
+                }
+            } catch (e) {
+                console.error('Log error:', e);
+            }
+            console.log(msg);
         }
 
         async function loadSystemInfo() {
             try {
-                const sysInfo = await window.electronAPI.getSystemInfo();
-                document.getElementById('computerName').textContent = sysInfo.hostname;
-                
-                // Try to detect system number from hostname or environment
-                const systemNumber = detectSystemNumber(sysInfo.hostname);
-                document.getElementById('systemNumberDisplay').textContent = systemNumber;
-                
-                addDebugLog(`System loaded: ${sysInfo.hostname} (${systemNumber})`);
-            } catch (error) {
-                console.error('Error loading system info:', error);
-                document.getElementById('systemNumberDisplay').textContent = 'Unknown';
-                addDebugLog(`Error: ${error.message}`);
-            }
-        }
-
-        function detectSystemNumber(hostname) {
-            // Try to extract system number from hostname
-            const patterns = [
-                /CC1-?(\d+)/i,          // CC1-01, CC101
-                /CC2-?(\d+)/i,          // CC2-01, CC201
-                /PC-?(\d+)/i,           // PC-01, PC01
-                /LAB-?\d+-?(\d+)/i,     // LAB-01-01, LAB1-1
-                /SYSTEM-?(\d+)/i,       // SYSTEM-01
-                /COMP-?(\d+)/i,         // COMP-01
-                /(\d+)$/                // Ends with number
-            ];
-            
-            for (const pattern of patterns) {
-                const match = hostname.match(pattern);
-                if (match) {
-                    const num = parseInt(match[1]);
-                    // Check if it's CC1 or CC2 pattern
-                    if (hostname.match(/CC1/i)) {
-                        return `CC1-${String(num).padStart(2, '0')}`;
-                    } else if (hostname.match(/CC2/i)) {
-                        return `CC2-${String(num).padStart(2, '0')}`;
-                    } else {
-                        return `CC1-${String(num).padStart(2, '0')}`;
-                    }
+                if (!window.electronAPI || !window.electronAPI.getSystemInfo) {
+                    addLog('⚠️ window.electronAPI not available');
+                    document.getElementById('computerName').textContent = 'System';
+                    document.getElementById('systemNumber').textContent = 'CC1-01';
+                    return;
                 }
+
+                const sysInfo = await window.electronAPI.getSystemInfo();
+                addLog(`✅ System info loaded: ${sysInfo.hostname}`);
+                
+                document.getElementById('computerName').textContent = sysInfo.hostname;
+                document.getElementById('systemNumber').textContent = 'CC1-01';
+            } catch (error) {
+                addLog(`❌ Error: ${error.message}`);
+                document.getElementById('computerName').textContent = 'System';
+                document.getElementById('systemNumber').textContent = 'CC1-01';
             }
-            
-            // Fallback: generate based on hostname hash
-            let hash = 0;
-            for (let i = 0; i < hostname.length; i++) {
-                hash = ((hash << 5) - hash + hostname.charCodeAt(i)) & 0xffffffff;
-            }
-            const systemNum = (Math.abs(hash) % 10) + 1;
-            return `CC1-${String(systemNum).padStart(2, '0')}`;
         }
 
-        loadSystemInfo();
+        // Start time updates
+        updateTime();
+        setInterval(updateTime, 1000);
 
+        // Load system info after short delay
+        setTimeout(() => {
+            loadSystemInfo();
+        }, 300);
+
+        // Login handler
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            const studentId = document.getElementById('studentId').value.trim();
+            const password = document.getElementById('password').value;
+            const systemNumber = document.getElementById('systemNumber').textContent;
 
-            const errorAlert = document.getElementById('errorAlert');
-            const errorMessage = document.getElementById('errorMessage');
-            errorAlert.classList.add('d-none');
+            if (!studentId || !password) {
+                showError('Please enter Student ID and Password');
+                return;
+            }
 
-            const credentials = {
-                studentId: document.getElementById('studentId').value.trim(),
-                password: document.getElementById('password').value,
-                systemNumber: document.getElementById('systemNumberDisplay').textContent,
-            };
-
-            addDebugLog(`Attempting login for ${credentials.studentId}...`);
+            addLog(`🔐 Login attempt for: ${studentId}`);
 
             try {
-                const result = await window.electronAPI.studentLogin(credentials);
+                const result = await window.electronAPI.studentLogin({
+                    studentId,
+                    password,
+                    systemNumber
+                });
 
                 if (result.success) {
-                    addDebugLog(`âœ… Login successful! Session: ${result.sessionId}`);
-                    currentSessionId = result.sessionId;
-
+                    addLog(`✅ Login successful!`);
+                    
                     document.getElementById('sessionStudentName').textContent = result.student.name;
                     document.getElementById('sessionStudentId').textContent = result.student.studentId;
-                    document.getElementById('sessionSystem').textContent = credentials.systemNumber;
+                    document.getElementById('sessionSystem').textContent = systemNumber;
                     document.getElementById('sessionLoginTime').textContent = new Date().toLocaleTimeString();
 
-                    document.getElementById('loginScreen').style.display = 'none';
-                    document.getElementById('sessionModal').style.display = 'flex';
-
-                    sessionStartTime = Date.now();
-                    startDurationCounter();
+                    document.querySelector('.login-container').style.display = 'none';
+                    document.getElementById('sessionModal').classList.add('active');
                 } else {
-                    errorMessage.textContent = result.error || 'Login failed';
-                    errorAlert.classList.remove('d-none');
-                    addDebugLog(`âŒ Login failed: ${result.error}`);
+                    showError(result.error || 'Login failed');
+                    addLog(`❌ Login failed: ${result.error}`);
                 }
             } catch (error) {
-                console.error('Login error:', error);
-                errorMessage.textContent = 'An error occurred: ' + error.message;
-                errorAlert.classList.remove('d-none');
-                addDebugLog(`âŒ Login error: ${error.message}`);
+                showError('Login error: ' + error.message);
+                addLog(`❌ Error: ${error.message}`);
             }
         });
 
-        function startDurationCounter() {
-            durationInterval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-                const hours = String(Math.floor(elapsed / 3600)).padStart(2, '0');
-                const minutes = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
-                const seconds = String(elapsed % 60).padStart(2, '0');
-                document.getElementById('sessionDuration').textContent = `${hours}:${minutes}:${seconds}`;
-            }, 1000);
-        }
-
-        document.getElementById('logoutBtn').addEventListener('click', async () => {
-            addDebugLog('Logout initiated...');
-
-            try {
-                const result = await window.electronAPI.studentLogout();
-
-                if (result.success) {
-                    addDebugLog('âœ… Logout successful');
-
-                    if (durationInterval) {
-                        clearInterval(durationInterval);
-                        durationInterval = null;
-                    }
-
-                    document.getElementById('loginForm').reset();
-                    document.getElementById('sessionModal').style.display = 'none';
-                    document.getElementById('loginScreen').style.display = 'flex';
-
-                    sessionStartTime = null;
-                    currentSessionId = null;
-                } else {
-                    alert('Logout failed: ' + (result.error || 'Unknown error'));
-                    addDebugLog(`âŒ Logout failed: ${result.error}`);
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                alert('Logout error: ' + error.message);
-                addDebugLog(`âŒ Logout error: ${error.message}`);
-            }
-        });
-
-        function updateConnectionStatus(connected) {
-            const statusEl = document.getElementById('connectionStatus');
-            if (connected) {
-                statusEl.className = 'connection-status status-connected';
-                statusEl.innerHTML = '<i class="fas fa-circle"></i> Connected';
-                addDebugLog('âœ… Socket connected');
+        function showError(msg) {
+            const alert = document.getElementById('errorAlert');
+            const messageSpan = document.getElementById('errorMessage');
+            if (messageSpan) {
+                messageSpan.textContent = msg;
             } else {
-                statusEl.className = 'connection-status status-disconnected';
-                statusEl.innerHTML = '<i class="fas fa-circle"></i> Disconnected';
+            alert.textContent = msg;
             }
+            alert.classList.remove('d-none');
+            alert.classList.add('show');
+            setTimeout(() => alert.classList.add('d-none'), 4000);
         }
 
-        updateConnectionStatus(false);
-
-        // Listen for timer close blocked notification
-        if (window.electronAPI && window.electronAPI.onTimerCloseBlocked) {
-            window.electronAPI.onTimerCloseBlocked(() => {
-                addDebugLog('âš ï¸ Timer close blocked - use Logout button');
-                // Optional: Show a visual notification
-                const alertDiv = document.createElement('div');
-                alertDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(220,53,69,0.95);color:white;padding:20px 40px;border-radius:10px;z-index:99999;font-size:16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);';
-                alertDiv.innerHTML = '<strong>âš ï¸ Timer Cannot Be Closed</strong><br>You can only end the session by clicking the <strong>Logout button</strong>.';
-                document.body.appendChild(alertDiv);
-                setTimeout(() => {
-                    if (alertDiv.parentElement) {
-                        alertDiv.parentElement.removeChild(alertDiv);
-                    }
-                }, 3000);
-            });
-        }
-
-        // Listen for timer logout trigger (when logout clicked from timer window)
-        if (window.electronAPI && window.electronAPI.onTriggerLogout) {
-            window.electronAPI.onTriggerLogout(() => {
-                addDebugLog('ðŸšª Logout triggered from timer window');
-                // Trigger the logout button click
-                document.getElementById('logoutBtn').click();
-            });
-        }
-
-<<<<<<< HEAD
-        // NEW: Navigation Functions (removed - now using web-based system)
-
-        // NEW: Enhanced Forgot Password Functions with OTP verification
-        function showForgotPassword() {
-            addDebugLog('🔑 Forgot password initiated');
-            showForgotPasswordStep1();
-        }
-
-        function showForgotPasswordStep1() {
-            // Create modal dialog for student ID input
-            const modal = document.createElement('div');
-            modal.id = 'studentIdModal';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;pointer-events:auto;';
-            modal.innerHTML = `
-                <div style="background:white;padding:30px;border-radius:15px;max-width:400px;width:90%;position:relative;z-index:10000;pointer-events:auto;">
-                    <h4>🆔 Enter Student ID</h4>
-                    <input type="text" id="fpStudentId" placeholder="Student ID (e.g., IT2021005)" tabindex="1" autocomplete="off" style="width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:5px;position:relative;z-index:10001;pointer-events:auto;user-select:text;-webkit-user-select:text;">
-                    <div style="display:flex;gap:10px;margin-top:20px;">
-                        <button id="fpSIDCancelBtn" style="flex:1;padding:10px;background:#6c757d;color:white;border:none;border-radius:5px;cursor:pointer;position:relative;z-index:10001;pointer-events:auto;">Cancel</button>
-                        <button id="fpSIDNextBtn" style="flex:1;padding:10px;background:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;position:relative;z-index:10001;pointer-events:auto;">Next</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            
-            // Improved focus strategy using requestAnimationFrame
-            const activateInput = () => {
-                const input = document.getElementById('fpStudentId');
-                if (input) {
-                    input.focus();
-                    input.click();
-                    input.select();
-                    // Force input to be editable
-                    input.removeAttribute('readonly');
-                    input.removeAttribute('disabled');
-                }
-            };
-            
-            // Immediate attempt
-            activateInput();
-            
-            // Wait for next browser paint cycle (most reliable)
-            requestAnimationFrame(() => {
-                activateInput();
-                // Double-check after paint
-                requestAnimationFrame(() => {
-                    activateInput();
-                });
-            });
-            
-            // Additional fallback attempts
-            setTimeout(activateInput, 50);
-            setTimeout(activateInput, 150);
-            setTimeout(activateInput, 300);
-            
-            // Add button event listeners
-            setTimeout(() => {
-                const cancelBtn = document.getElementById('fpSIDCancelBtn');
-                const nextBtn = document.getElementById('fpSIDNextBtn');
-                const input = document.getElementById('fpStudentId');
-                
-                if (cancelBtn) {
-                    cancelBtn.addEventListener('click', function() {
-                        console.log('Cancel button clicked');
-                        const modal = document.getElementById('studentIdModal');
-                        if (modal && modal.parentElement) {
-                            modal.parentElement.removeChild(modal);
-                        }
-                    });
-                }
-                
-                if (nextBtn) {
-                    nextBtn.addEventListener('click', function() {
-                        console.log('Next button clicked');
-                        submitStudentId();
-                    });
-                }
-                
-                if (input) {
-                    // Make input immediately responsive to any interaction
-                    input.addEventListener('mousedown', function(e) {
-                        e.stopPropagation();
-                        this.focus();
-                    });
-                    
-                    input.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        this.focus();
-                        this.select();
-                    });
-                    
-                    input.addEventListener('keypress', function(e) {
-                        if (e.key === 'Enter') {
-                            submitStudentId();
-                        }
-                    });
-                    
-                    // Force immediate focus
-                    input.focus();
-                    input.click();
-                }
-            }, 100);
-        }
-        
-        function submitStudentId() {
-            const studentId = document.getElementById('fpStudentId').value.trim();
-            if (!studentId) return;
-            
-            document.body.removeChild(document.body.lastElementChild);
-            addDebugLog(`🔍 Verifying student ID: ${studentId}`);
-            initiateForgotPassword(studentId.toUpperCase());
-        }
-        
-        function showEmailInput(studentId, studentName, maskedEmail) {
-            const modal = document.createElement('div');
-            modal.id = 'emailModal';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;pointer-events:auto;';
-            modal.innerHTML = `
-                <div style="background:white;padding:30px;border-radius:15px;max-width:450px;width:90%;position:relative;z-index:10000;pointer-events:auto;">
-                    <h4>📧 Enter Email Address</h4>
-                    <p><strong>Student:</strong> ${studentName}<br>
-                    <strong>Registered:</strong> ${maskedEmail}</p>
-                    <input type="email" id="fpEmail" placeholder="Enter your complete email address" tabindex="1" autocomplete="off" style="width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:5px;position:relative;z-index:10001;pointer-events:auto;user-select:text;-webkit-user-select:text;">
-                    <div style="display:flex;gap:10px;margin-top:20px;">
-                        <button id="fpEmailCancelBtn" style="flex:1;padding:10px;background:#6c757d;color:white;border:none;border-radius:5px;cursor:pointer;position:relative;z-index:10001;pointer-events:auto;">Cancel</button>
-                        <button id="fpEmailSendBtn" style="flex:1;padding:10px;background:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;position:relative;z-index:10001;pointer-events:auto;">Send OTP</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            
-            // Improved focus strategy using requestAnimationFrame
-            const activateInput = () => {
-                const input = document.getElementById('fpEmail');
-                if (input) {
-                    input.focus();
-                    input.click();
-                    input.select();
-                    input.removeAttribute('readonly');
-                    input.removeAttribute('disabled');
-                }
-            };
-            
-            // Immediate attempt
-            activateInput();
-            
-            // Wait for next browser paint cycle (most reliable)
-            requestAnimationFrame(() => {
-                activateInput();
-                // Double-check after paint
-                requestAnimationFrame(() => {
-                    activateInput();
-                });
-            });
-            
-            // Additional fallback attempts
-            setTimeout(activateInput, 50);
-            setTimeout(activateInput, 150);
-            setTimeout(activateInput, 300);
-            
-            // Add button event listeners
-            setTimeout(() => {
-                const cancelBtn = document.getElementById('fpEmailCancelBtn');
-                const sendBtn = document.getElementById('fpEmailSendBtn');
-                const input = document.getElementById('fpEmail');
-                
-                if (cancelBtn) {
-                    cancelBtn.addEventListener('click', function() {
-                        console.log('Cancel button clicked');
-                        const modal = document.getElementById('emailModal');
-                        if (modal && modal.parentElement) {
-                            modal.parentElement.removeChild(modal);
-                        }
-                    });
-                }
-                
-                if (sendBtn) {
-                    sendBtn.addEventListener('click', function() {
-                        console.log('Send OTP button clicked');
-                        submitEmail(studentId, studentName);
-                    });
-                }
-                
-                if (input) {
-                    // Make input immediately responsive to any interaction
-                    input.addEventListener('mousedown', function(e) {
-                        e.stopPropagation();
-                        this.focus();
-                    });
-                    
-                    input.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        this.focus();
-                        this.select();
-                    });
-                    
-                    input.addEventListener('keypress', function(e) {
-                        if (e.key === 'Enter') {
-                            submitEmail(studentId, studentName);
-                        }
-                    });
-                    
-                    // Force immediate focus
-                    input.focus();
-                    input.click();
-                }
-            }, 100);
-        }
-        
-        function submitEmail(studentId, studentName) {
-            const email = document.getElementById('fpEmail').value.trim();
-            if (!email) return;
-            
-            // Validate email format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                alert("❌ Invalid email format!\n\nPlease enter a valid email address.");
-                return;
+        function logout() {
+            if (window.electronAPI && window.electronAPI.studentLogout) {
+                window.electronAPI.studentLogout();
             }
-            
-            document.body.removeChild(document.body.lastElementChild);
-            sendOTPToEmail(studentId, email, studentName);
+            location.reload();
         }
 
-        async function initiateForgotPassword(studentId) {
-            try {
-                const response = await fetch('http://localhost:7401/api/forgot-password-initiate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ studentId })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    addDebugLog(`✅ Student verified: ${data.studentName}`);
-                    showEmailInput(studentId, data.studentName, data.maskedEmail);
-                    
-                } else {
-                    alert(`❌ Student Verification Failed:
-
-${data.error}
-
-Please check:
-- Student ID (Roll Number) is correct
-- You have already set a password previously
-- Contact admin if you need help`);
-                    addDebugLog(`❌ Student verification error: ${data.error}`);
-                }
-                
-            } catch (error) {
-                alert(`❌ Network error occurred:\n\n${error.message}\n\nPlease ensure server is running and try again.`);
-                addDebugLog(`❌ Network error: ${error.message}`);
-            }
-        }
-
-        async function sendOTPToEmail(studentId, email, studentName) {
-            try {
-                addDebugLog(`📧 Sending OTP to email: ${email}`);
-                
-                const response = await fetch('http://localhost:7401/api/forgot-password-send-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ studentId, email })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    addDebugLog(`✅ OTP sent to ${email}`);
-                    
-                    alert(`📧 OTP Sent Successfully!
-
-Dear ${studentName},
-
-A 6-digit OTP (One-Time Password) has been sent to:
-${email}
-
-Please check your email and enter the OTP in the next screen.
-
-Note: OTP will expire in 10 minutes.`);
-                    
-                    // Now ask for OTP and new password
-                    verifyOTPAndResetPassword(studentId, email, studentName);
-                    
-                } else {
-                    alert(`❌ Failed to Send OTP:
-
-${data.error}
-
-Please check:
-- Email address is correct
-- Email matches your registered email
-- Try again with correct information`);
-                    addDebugLog(`❌ OTP send error: ${data.error}`);
-                }
-                
-            } catch (error) {
-                alert(`❌ Network error occurred:\n\n${error.message}\n\nPlease ensure server is running and try again.`);
-                addDebugLog(`❌ Network error: ${error.message}`);
-            }
-        }
-
-        async function verifyOTPAndResetPassword(studentId, email, studentName) {
-            showOTPInput(studentId, email, studentName);
-        }
-        
-        function showOTPInput(studentId, email, studentName) {
-            const modal = document.createElement('div');
-            modal.id = 'otpModal';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:9999;pointer-events:auto;';
-            modal.innerHTML = `
-                <div style="background:white;padding:30px;border-radius:15px;max-width:500px;width:90%;box-shadow:0 10px 30px rgba(0,0,0,0.3);position:relative;z-index:10000;pointer-events:auto;">
-                    <h4 style="color:#28a745;margin-bottom:20px;">🔐 Enter OTP & New Password</h4>
-                    <div style="background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:20px;">
-                        <p style="margin:0;"><strong>Student:</strong> ${studentName}<br>
-                        <strong>Email:</strong> ${email}</p>
-                    </div>
-                    
-                    <div style="margin-bottom:15px;">
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;color:#333;">6-Digit OTP Code:</label>
-                        <input type="text" id="fpOTP" placeholder="000000" maxlength="6" tabindex="1"
-                               style="width:100%;padding:15px;font-size:18px;text-align:center;letter-spacing:3px;border:2px solid #28a745;border-radius:8px;background:#fff;position:relative;z-index:10001;pointer-events:auto;user-select:text;-webkit-user-select:text;"
-                               autocomplete="off" spellcheck="false">
-                        <small style="color:#666;display:block;margin-top:5px;">📧 Check your email for the OTP code</small>
-                    </div>
-                    
-                    <div style="margin-bottom:20px;">
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;color:#333;">New Password:</label>
-                        <input type="password" id="fpNewPassword" placeholder="Enter new password (min 6 chars)" tabindex="2"
-                               style="width:100%;padding:15px;font-size:16px;border:2px solid #ddd;border-radius:8px;position:relative;z-index:10001;pointer-events:auto;user-select:text;-webkit-user-select:text;">
-                    </div>
-                    
-                    <div style="display:flex;gap:10px;margin-top:20px;">
-                        <button id="fpCancelBtn" 
-                                style="flex:1;padding:15px;background:#6c757d;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;position:relative;z-index:10001;pointer-events:auto;">Cancel</button>
-                        <button id="fpResetBtn" 
-                                style="flex:1;padding:15px;background:#28a745;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;position:relative;z-index:10001;pointer-events:auto;">Reset Password</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            
-            // Improved focus strategy using requestAnimationFrame
-            const activateOTPInput = () => {
-                const otpInput = document.getElementById('fpOTP');
-                const passwordInput = document.getElementById('fpNewPassword');
-                
-                if (otpInput) {
-                    // Force focus and make it responsive
-                    otpInput.focus();
-                    otpInput.click();
-                    otpInput.select();
-                    otpInput.removeAttribute('readonly');
-                    otpInput.removeAttribute('disabled');
-                    
-                    // Add better event handlers (only once)
-                    if (!otpInput.hasAttribute('data-handlers-added')) {
-                        otpInput.setAttribute('data-handlers-added', 'true');
-                        
-                        otpInput.addEventListener('input', function(e) {
-                            // Only allow numbers
-                            this.value = this.value.replace(/[^0-9]/g, '');
-                            
-                            // Auto-advance to password field when 6 digits entered
-                            if (this.value.length === 6 && passwordInput) {
-                                setTimeout(() => passwordInput.focus(), 100);
-                            }
-                        });
-                        
-                        // Handle paste events
-                        otpInput.addEventListener('paste', function(e) {
-                            setTimeout(() => {
-                                this.value = this.value.replace(/[^0-9]/g, '').substring(0, 6);
-                                if (this.value.length === 6 && passwordInput) {
-                                    setTimeout(() => passwordInput.focus(), 100);
-                                }
-                            }, 10);
-                        });
-                        
-                        // Handle mousedown and click to ensure focus
-                        otpInput.addEventListener('mousedown', function(e) {
-                            e.stopPropagation();
-                            this.focus();
-                        });
-                        
-                        otpInput.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                            this.focus();
-                            this.select();
-                        });
-                    }
-                }
-                
-                // Make password field more responsive
-                if (passwordInput && !passwordInput.hasAttribute('data-handlers-added')) {
-                    passwordInput.setAttribute('data-handlers-added', 'true');
-                    
-                    // Handle mousedown and click to ensure focus
-                    passwordInput.addEventListener('mousedown', function(e) {
-                        e.stopPropagation();
-                        this.focus();
-                    });
-                    
-                    passwordInput.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        this.focus();
-                    });
-                    
-                    passwordInput.addEventListener('keypress', function(e) {
-                        if (e.key === 'Enter') {
-                            submitOTPAndPassword('${studentId}', '${email}', '${studentName}');
-                        }
-                    });
-                    
-                    passwordInput.removeAttribute('readonly');
-                    passwordInput.removeAttribute('disabled');
-                }
-            };
-            
-            // Immediate attempt
-            activateOTPInput();
-            
-            // Wait for next browser paint cycle (most reliable)
-            requestAnimationFrame(() => {
-                activateOTPInput();
-                // Double-check after paint
-                requestAnimationFrame(() => {
-                    activateOTPInput();
-                });
-            });
-            
-            // Additional fallback attempts
-            setTimeout(activateOTPInput, 50);
-            setTimeout(activateOTPInput, 150);
-            setTimeout(activateOTPInput, 300);
-            
-            // Add button event listeners
-            setTimeout(() => {
-                const cancelBtn = document.getElementById('fpCancelBtn');
-                const resetBtn = document.getElementById('fpResetBtn');
-                
-                if (cancelBtn) {
-                    cancelBtn.addEventListener('click', function() {
-                        console.log('Cancel button clicked');
-                        const modal = document.getElementById('otpModal');
-                        if (modal && modal.parentElement) {
-                            modal.parentElement.removeChild(modal);
-                        }
-                    });
-                }
-                
-                if (resetBtn) {
-                    resetBtn.addEventListener('click', function() {
-                        console.log('Reset button clicked');
-                        submitOTPAndPassword(studentId, email, studentName);
-                    });
-                }
-                
-                // Also allow Enter key on password field
-                const passwordInput = document.getElementById('fpNewPassword');
-                if (passwordInput) {
-                    passwordInput.addEventListener('keypress', function(e) {
-                        if (e.key === 'Enter') {
-                            submitOTPAndPassword(studentId, email, studentName);
-                        }
-                    });
-                }
-            }, 100);
-        }
-        
-        function submitOTPAndPassword(studentId, email, studentName) {
-            const otp = document.getElementById('fpOTP').value.trim();
-            const newPassword = document.getElementById('fpNewPassword').value;
-            
-            if (!otp) {
-                alert("Please enter the OTP");
-                return;
-            }
-            
-            if (!/^\d{6}$/.test(otp)) {
-                alert("❌ Invalid OTP format!\n\nOTP must be exactly 6 digits.\nExample: 123456");
-                return;
-            }
-            
-            if (!newPassword) {
-                alert("Please enter a new password");
-                return;
-            }
-            
-            if (newPassword.length < 6) {
-                alert("❌ Password too short!\n\nPassword must be at least 6 characters long.");
-                return;
-            }
-            
-            document.body.removeChild(document.body.lastElementChild);
-            finalizePasswordReset(studentId, email, otp, newPassword, studentName);
-        }
-        
-        async function finalizePasswordReset(studentId, email, otp, newPassword, studentName) {
-            
-            // Verify OTP and reset password
-            try {
-                addDebugLog(`🔄 Verifying OTP and resetting password for: ${studentId}`);
-                
-                const response = await fetch('http://localhost:7401/api/forgot-password-verify-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        studentId, 
-                        email, 
-                        otp, 
-                        newPassword 
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    addDebugLog(`✅ Password reset successful for ${studentId}`);
-                    
-                    alert(`✅ Password Reset Successful!
-
-Dear ${data.student.name},
-
-Your password has been successfully reset!
-
-You can now login with:
-- Student ID: ${data.student.studentId}
-- New Password: [The password you just set]
-
-Click OK to return to login.`);
-                    
-                    // Auto-fill the student ID in login form
-                    document.getElementById('studentId').value = studentId;
-                    
-                    // Aggressive focus on password field with multiple attempts
-                    const activatePasswordField = () => {
-                        const passwordField = document.getElementById('password');
-                        if (passwordField) {
-                            passwordField.value = ''; // Clear any old value
-                            passwordField.focus();
-                            passwordField.click();
-                            passwordField.select();
-                            passwordField.removeAttribute('readonly');
-                            passwordField.removeAttribute('disabled');
-                        }
-                    };
-                    
-                    // Try multiple times
-                    setTimeout(activatePasswordField, 100);
-                    setTimeout(activatePasswordField, 200);
-                    setTimeout(activatePasswordField, 400);
-                    setTimeout(activatePasswordField, 800);
-                    
-                    addDebugLog(`Student ID auto-filled: ${studentId}`);
-                    
-                } else {
-                    alert(`❌ Password Reset Failed:
-
-${data.error}
-
-Please check:
-- OTP is correct and not expired
-- All information is accurate
-- Try the process again if needed`);
-                    addDebugLog(`❌ Password reset error: ${data.error}`);
-                }
-                
-            } catch (error) {
-                alert(`❌ Network error occurred:\n\n${error.message}\n\nPlease ensure server is running and try again.`);
-                addDebugLog(`❌ Network error: ${error.message}`);
-            }
-        }
-        // Enhanced input field responsiveness
-=======
-        // Navigation functions are now in kiosk-navigation.js
-        
-        // Initialize page
->>>>>>> a7e2422 (2 features not working)
-        document.addEventListener('DOMContentLoaded', function() {
-            // Hide loading screen
-            setTimeout(() => {
-                const loadingScreen = document.getElementById('loadingScreen');
-                if (loadingScreen) {
-                    loadingScreen.classList.add('hidden');
-                    setTimeout(() => {
-                        if (loadingScreen.parentElement) {
-                            loadingScreen.parentElement.removeChild(loadingScreen);
-                        }
-                    }, 600);
-                }
-            }, 500);
-            
-            // Force enable all inputs
-            setTimeout(() => {
-                const allInputs = document.querySelectorAll('input, textarea');
-                allInputs.forEach(input => {
-                    input.removeAttribute('readonly');
-                    input.removeAttribute('disabled');
-                });
-                
-                // Auto-focus student ID field
-                const studentIdInput = document.getElementById('studentId');
-                if (studentIdInput) {
-                    studentIdInput.focus();
-                    console.log('âœ… Student ID field focused');
-                }
-            }, 1000);
-        });
-
-
+        addLog('✅ Application ready for login');
     </script>
 </body>
 </html>

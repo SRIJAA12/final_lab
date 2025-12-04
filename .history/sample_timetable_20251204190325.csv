@@ -1,0 +1,7 @@
+Session Date,Start Time,End Time,Faculty,Subject,Lab ID,Year,Department,Section,Periods,Duration,Max Students,Remarks
+2025-12-04,19:05,19:10,Dr. Rajesh Kumar,Data Structures,CC1,2,Computer Science,A,2,100,60,Regular class
+2025-11-06,11:00,12:40,Prof. Priya Sharma,Database Management,CC1,3,Computer Science,B,2,100,60,Lab session
+2025-11-06,14:00,15:40,Dr. Arjun Patel,Web Development,CC1,2,Information Technology,A,2,100,60,Practical session
+2025-11-07,09:00,10:40,Dr. Vikram Singh,Computer Networks,CC1,3,Computer Science,A,2,100,60,Theory + Lab
+2025-11-07,11:00,12:40,Prof. Ananya Iyer,Software Engineering,CC1,4,Computer Science,B,2,100,60,Project work
+2025-11-07,14:00,16:30,Dr. Karthik Menon,Machine Learning,CC1,4,Computer Science,A,3,150,60,Extended ML Lab
