@@ -22,6 +22,14 @@
             color: white;
             padding: 1.5rem 2rem;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .header-content {
+            flex: 1;
         }
         
         .header h1 {
@@ -32,6 +40,44 @@
         .header .subtitle {
             opacity: 0.9;
             font-size: 1rem;
+        }
+        
+        .lab-selector {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .lab-selector label {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        
+        .lab-selector select {
+            padding: 0.5rem 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #2c3e50;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .lab-selector select:hover {
+            background: white;
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .lab-selector select:focus {
+            outline: none;
+            border-color: white;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
         }
         
         .main-container {
@@ -438,10 +484,20 @@
     </script>
     
     <div class="header">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <h1>🖥️ Lab Management System</h1>
-                <p class="subtitle">Real-time Student Monitoring & Session Management</p>
+        <div class="header-content">
+            <h1>🖥️ Lab Management System</h1>
+            <p class="subtitle">Real-time Student Monitoring & Session Management</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <div class="lab-selector">
+                <label for="labSelector">🏢 Lab:</label>
+                <select id="labSelector" onchange="changeLab(this.value)">
+                    <option value="CC1">CC1</option>
+                    <option value="CC2">CC2</option>
+                    <option value="CC3">CC3</option>
+                    <option value="CC4">CC4</option>
+                    <option value="CC5">CC5</option>
+                </select>
             </div>
             <button onclick="logout()" style="background: rgba(255,255,255,0.2); color: white; border: 2px solid white; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600; transition: all 0.3s ease;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
                 🚪 Logout
@@ -758,11 +814,31 @@
             
             socket.on('connect', () => {
                 console.log('✅ Admin dashboard connected:', socket.id);
-                socket.emit('register-admin');
+                // 🔧 MULTI-LAB: Detect lab from current page URL or prompt admin
+                let adminLabId = localStorage.getItem('adminLabId');
+                if (!adminLabId) {
+                    // Auto-detect from URL or prompt
+                    const urlParams = new URLSearchParams(window.location.search);
+                    adminLabId = urlParams.get('labId') || prompt('Enter Lab ID (e.g., CC1, CC2):', 'CC1') || 'CC1';
+                    localStorage.setItem('adminLabId', adminLabId);
+                }
+                
+                console.log(`🏢 Admin accessing dashboard for Lab: ${adminLabId}`);
+                socket.emit('register-admin', { labId: adminLabId });
                 
                 // Join admins room for notifications
                 socket.emit('join-room', 'admins');
-                console.log('👥 Joined admins room for notifications');
+                socket.emit('join-room', `admins-lab-${adminLabId}`);
+                console.log(`👥 Joined admins room for Lab ${adminLabId}`);
+                
+                // Store labId globally for use in API calls
+                window.currentLabId = adminLabId;
+                
+                // Update lab selector UI
+                const labSelector = document.getElementById('labSelector');
+                if (labSelector) {
+                    labSelector.value = adminLabId;
+                }
                 
                 loadActiveStudents();
                 
@@ -1322,6 +1398,7 @@
                 </div>
                 <div class="student-actions">
                     <button onclick="expandVideo('${sessionId}')" class="btn-expand">🔍 Expand</button>
+                    ${sessionData.isGuest ? '<span class="badge bg-warning" style="margin: 5px;">👤 Guest Mode</span>' : '<button onclick="allowGuestAccess(\'' + sessionId + '\', \'' + sessionData.systemNumber + '\')" class="btn-guest" title="Allow guest access (bypass login)">🔓 Guest Access</button>'}
                     <button onclick="shutdownSystem('${sessionId}', '${sessionData.systemNumber}')" class="btn-shutdown" title="Shutdown this system">🔌 Shutdown</button>
                     <div class="connection-status" id="status-${sessionId}">🔄 Auto-connecting...</div>
                 </div>
@@ -1715,6 +1792,42 @@
         }
 
         // Shutdown specific system
+        // 🔓 GUEST ACCESS: Allow admin to remotely unlock a kiosk without student login
+        function allowGuestAccess(sessionId, systemNumber) {
+            // 🔧 MULTI-LAB: Get current lab ID
+            const currentLabId = window.currentLabId || 'CC1';
+            
+            if (confirm(`🔓 GUEST ACCESS CONFIRMATION\n\nAllow guest access for ${systemNumber}?\n\nThis will:\n- Automatically unlock the kiosk\n- Bypass student login requirement\n- Allow guest user to use the system normally\n- System will show as "Guest Mode" on dashboard\n\nLab: ${currentLabId}\n\nContinue?`)) {
+                console.log(`🔓 Sending guest access command for system: ${systemNumber} in Lab: ${currentLabId}`);
+                socket.emit('grant-guest-access', { systemNumber, labId: currentLabId });
+                
+                // Show feedback
+                const statusElement = document.getElementById(`status-${sessionId}`);
+                if (statusElement) {
+                    statusElement.innerHTML = '🔓 Guest access enabled...';
+                    statusElement.style.color = '#ffc107';
+                }
+                
+                // Show toast notification
+                showNotification(`Guest access enabled for ${systemNumber}`, 'info');
+            }
+        }
+        
+        // Listen for guest access responses
+        socket.on('guest-access-success', (data) => {
+            console.log('✅ Guest access granted:', data);
+            showNotification(`✅ Guest access enabled for ${data.systemNumber}`, 'success');
+            // Refresh student list to show guest session
+            setTimeout(() => {
+                loadActiveStudents();
+            }, 2000);
+        });
+        
+        socket.on('guest-access-error', (data) => {
+            console.error('❌ Guest access error:', data);
+            showNotification(`❌ Guest access failed: ${data.error}`, 'error');
+        });
+
         function shutdownSystem(sessionId, systemNumber) {
             if (confirm(`⚠️ SHUTDOWN CONFIRMATION\n\nAre you sure you want to shutdown ${systemNumber}?\n\nThis will:\n- Immediately notify the student\n- Logout their session\n- Shut down their computer in 10 seconds\n\nContinue?`)) {
                 console.log(`🔌 Sending shutdown command for session: ${sessionId}`);
@@ -1961,6 +2074,7 @@
 
         // Start lab session with metadata
         function startLabSessionWithMetadata(subject, faculty, year, department, section, periods) {
+            // 🔧 MULTI-LAB: Include labId in session data
             const sessionData = {
                 subject,
                 faculty,
@@ -1969,11 +2083,14 @@
                 section,
                 periods,
                 startTime: new Date(),
-                expectedDuration: periods * 50 // minutes
+                expectedDuration: periods * 50, // minutes
+                labId: window.currentLabId || 'CC1' // Include current lab ID
             };
             
+            console.log(`🏢 Starting lab session for Lab: ${sessionData.labId}`);
+            
             // Send to server
-            fetch('/api/start-lab-session', {
+            fetch(`${serverUrl}/api/start-lab-session`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

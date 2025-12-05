@@ -115,6 +115,7 @@ const Session = mongoose.model('Session', sessionSchema);
 
 // Lab Session Schema (for managing entire lab sessions with metadata)
 const labSessionSchema = new mongoose.Schema({
+  labId: { type: String, required: true, default: 'CC1' }, // 🔧 MULTI-LAB: Lab identifier (CC1, CC2, etc.)
   subject: { type: String, required: true },
   faculty: { type: String, required: true },
   year: { type: Number, required: false, default: 1 }, // Made optional for backward compatibility
@@ -136,6 +137,9 @@ const labSessionSchema = new mongoose.Schema({
     status: { type: String, enum: ['active', 'completed'], default: 'active' }
   }]
 });
+
+// Add index for efficient lab-based queries
+labSessionSchema.index({ labId: 1, status: 1 });
 
 const LabSession = mongoose.model('LabSession', labSessionSchema);
 
@@ -2158,7 +2162,7 @@ app.post('/api/reset-password', async (req, res) => {
 // Student Login (Create Session)
 app.post('/api/student-login', async (req, res) => {
   try {
-    const { studentName, studentId, computerName, labId, systemNumber } = req.body;
+    const { studentName, studentId, computerName, labId, systemNumber, isGuest } = req.body;
 
     // End any existing session for this computer
     await Session.updateMany(
@@ -2167,13 +2171,14 @@ app.post('/api/student-login', async (req, res) => {
     );
 
     const newSession = new Session({ 
-      studentName, 
-      studentId, 
+      studentName: isGuest ? 'Guest User' : studentName, 
+      studentId: isGuest ? 'GUEST' : studentId, 
       computerName, 
       labId, 
       systemNumber, 
       loginTime: new Date(), 
-      status: 'active' 
+      status: 'active',
+      isGuest: isGuest || false
     });
     
     await newSession.save();
@@ -2608,30 +2613,61 @@ app.post('/api/clear-all-sessions', async (req, res) => {
 // WebSocket: Socket.io WebRTC signaling
 // Lab Session Management API Endpoints
 
+// Helper function to detect lab from IP address
+function detectLabFromIP(ip) {
+  if (!ip) return 'CC1'; // Default fallback
+  
+  const labIPRanges = {
+    '10.10.46.': 'CC1',
+    '10.10.47.': 'CC2',
+    '10.10.48.': 'CC3',
+    '10.10.49.': 'CC4',
+    '10.10.50.': 'CC5',
+    '192.168.0.': 'CC1',
+    '192.168.1.': 'CC2',
+    '192.168.29.': 'CC1',
+  };
+  
+  for (const [prefix, labId] of Object.entries(labIPRanges)) {
+    if (ip.startsWith(prefix)) {
+      return labId;
+    }
+  }
+  
+  return 'CC1'; // Default
+}
+
 // Start Lab Session
 app.post('/api/start-lab-session', async (req, res) => {
   try {
-    const { subject, faculty, year, department, section, periods, startTime, expectedDuration } = req.body;
+    const { subject, faculty, year, department, section, periods, startTime, expectedDuration, labId } = req.body;
     
-    // 🗑️ NEW: Clear all old student sessions before starting new lab session
-    console.log('🧹 Clearing all old student sessions before starting new lab session...');
+    // 🔧 MULTI-LAB: Detect lab from admin IP or use provided labId
+    const adminIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for']?.split(',')[0];
+    const detectedLabId = labId || detectLabFromIP(adminIP);
     
-    // End all active student sessions and clear their data
-    const activeSessionsCount = await Session.countDocuments({ status: 'active' });
+    console.log(`🏢 Starting lab session for Lab: ${detectedLabId} (Admin IP: ${adminIP})`);
+    
+    // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
+    console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);
+    
+    // End all active student sessions for this lab only
+    const activeSessionsCount = await Session.countDocuments({ status: 'active', labId: detectedLabId });
     if (activeSessionsCount > 0) {
       await Session.updateMany(
-        { status: 'active' }, 
+        { status: 'active', labId: detectedLabId }, 
         { 
           status: 'completed', 
           logoutTime: new Date(),
           endReason: 'New lab session started - auto logout'
         }
       );
-      console.log(`🗑️ Cleared ${activeSessionsCount} old student sessions`);
+      console.log(`🗑️ Cleared ${activeSessionsCount} old student sessions for Lab ${detectedLabId}`);
     }
     
-    // Clean up any incomplete lab sessions that might cause validation issues
+    // Clean up any incomplete lab sessions for this lab
     await LabSession.deleteMany({ 
+      labId: detectedLabId,
       $or: [
         { subject: { $exists: false } },
         { faculty: { $exists: false } },
@@ -2639,16 +2675,17 @@ app.post('/api/start-lab-session', async (req, res) => {
       ]
     });
     
-    // End any existing active lab sessions
+    // End any existing active lab sessions for THIS LAB ONLY
     await LabSession.updateMany(
-      { status: 'active' },
+      { status: 'active', labId: detectedLabId },
       { status: 'completed', endTime: new Date() }
     );
     
-    console.log('✅ Ready to start new lab session (all old data cleared)...');
+    console.log(`✅ Ready to start new lab session for Lab ${detectedLabId}...`);
     
-    // Create new lab session
+    // Create new lab session with labId
     const newLabSession = new LabSession({
+      labId: detectedLabId, // 🔧 MULTI-LAB: Include lab identifier
       subject,
       faculty,
       year,
@@ -2717,9 +2754,11 @@ app.post('/api/end-lab-session', async (req, res) => {
     labSession.endTime = new Date();
     await labSession.save();
     
-    // Clear all individual student sessions with proper duration calculation
-    const activeSessions = await Session.find({ status: 'active' });
+    // 🔧 MULTI-LAB: Clear all individual student sessions for THIS LAB ONLY
+    const activeSessions = await Session.find({ status: 'active', labId: labSession.labId });
     const currentTime = new Date();
+    
+    console.log(`🛑 Ending ${activeSessions.length} active sessions for Lab ${labSession.labId}`);
     
     for (const session of activeSessions) {
       const durationMs = currentTime - session.loginTime;
@@ -3032,7 +3071,8 @@ app.get('/api/export-session-data/:sessionId', async (req, res) => {
 });
 
 // Socket maps for kiosk/admin WebRTC + control
-const kioskSockets = new Map();
+const kioskSockets = new Map(); // sessionId -> socket.id (for logged-in kiosks)
+const kioskSystemSockets = new Map(); // systemNumber -> socket.id (for pre-login kiosks)
 const adminSockets = new Map();
 
 io.on('connection', (socket) => {
@@ -3046,10 +3086,14 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('live-screen', data); 
   });
 
-  socket.on('register-kiosk', ({ sessionId }) => {
-    console.log('📡 Kiosk registered:', sessionId, 'Socket:', socket.id);
+  socket.on('register-kiosk', ({ sessionId, systemNumber, labId }) => {
+    console.log('📡 Kiosk registered:', sessionId, 'Socket:', socket.id, 'System:', systemNumber, 'Lab:', labId || kioskLabId);
     kioskSockets.set(sessionId, socket.id);
+    if (systemNumber) {
+      kioskSystemSockets.set(systemNumber, socket.id);
+    }
     socket.join(`session-${sessionId}`);
+    socket.join(`lab-${labId || kioskLabId}`); // Join lab-specific room
   });
   
   // Handle kiosk screen ready event
@@ -3135,23 +3179,42 @@ io.on('connection', (socket) => {
     socket.join(roomName);
   });
 
-  socket.on('get-active-sessions', async () => {
+  // Store admin's lab ID when they register
+  let adminLabMap = new Map(); // socket.id -> labId
+  
+  socket.on('register-admin', (data) => {
+    // 🔧 MULTI-LAB: Admin can provide labId or it's auto-detected
+    const adminIP = socket.handshake.address || socket.request.connection.remoteAddress;
+    const providedLabId = data?.labId;
+    const detectedLabId = providedLabId || detectLabFromIP(adminIP);
+    
+    adminLabMap.set(socket.id, detectedLabId);
+    console.log(`👨‍💼 Admin registered: ${socket.id} for Lab: ${detectedLabId} (IP: ${adminIP})`);
+    socket.join('admins');
+    socket.join(`admins-lab-${detectedLabId}`); // Lab-specific admin room
+  });
+
+  socket.on('get-active-sessions', async (data) => {
     try {
-      console.log('📋 Admin requesting active sessions');
-      const activeSessions = await Session.find({ status: 'active' }).sort({ loginTime: -1 });
+      // 🔧 MULTI-LAB: Get labId from admin's stored value or request data
+      const adminLabId = adminLabMap.get(socket.id) || data?.labId || 'CC1';
       
-      // Also get active lab session for state restoration
-      const activeLabSession = await LabSession.findOne({ status: 'active' });
+      console.log(`📋 Admin requesting active sessions for Lab: ${adminLabId}`);
+      const activeSessions = await Session.find({ status: 'active', labId: adminLabId }).sort({ loginTime: -1 });
+      
+      // Also get active lab session for THIS LAB ONLY
+      const activeLabSession = await LabSession.findOne({ status: 'active', labId: adminLabId });
       
       socket.emit('active-sessions', {
         sessions: activeSessions,
-        labSession: activeLabSession
+        labSession: activeLabSession,
+        labId: adminLabId // Send labId back to admin
       });
       
-      console.log(`📊 Sent ${activeSessions.length} sessions and lab session: ${activeLabSession ? activeLabSession.subject : 'none'}`);
+      console.log(`📊 Sent ${activeSessions.length} sessions for Lab ${adminLabId} and lab session: ${activeLabSession ? activeLabSession.subject : 'none'}`);
     } catch (error) {
       console.error('❌ Error getting active sessions:', error);
-      socket.emit('active-sessions', { sessions: [], labSession: null });
+      socket.emit('active-sessions', { sessions: [], labSession: null, labId: 'CC1' });
     }
   });
 

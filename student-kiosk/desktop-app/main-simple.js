@@ -34,8 +34,58 @@ function loadServerUrl() {
 }
 
 const SERVER_URL = loadServerUrl();
-const LAB_ID = process.env.LAB_ID || "CC1";
-const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || `CC1-${String(Math.floor(Math.random() * 10) + 1).padStart(2, '0')}`;
+
+// IP-based Lab Detection
+function detectLabFromIP() {
+  try {
+    const networkInterfaces = os.networkInterfaces();
+    let detectedLab = null;
+    
+    // IP range to Lab ID mapping
+    const labIPRanges = {
+      '10.10.46.': 'CC1',   // Example: CC1 lab uses 10.10.46.*
+      '10.10.47.': 'CC2',   // Example: CC2 lab uses 10.10.47.*
+      '10.10.48.': 'CC3',   // Example: CC3 lab uses 10.10.48.*
+      '192.168.0.': 'CC1',  // Fallback for common local network
+      '192.168.1.': 'CC2',  // Fallback for common local network
+      '192.168.29.': 'CC1', // Your current network
+    };
+    
+    // Check all network interfaces
+    for (const interfaceName in networkInterfaces) {
+      const addresses = networkInterfaces[interfaceName];
+      for (const addr of addresses) {
+        if (addr.family === 'IPv4' && !addr.internal) {
+          const ip = addr.address;
+          console.log(`🔍 Checking IP: ${ip}`);
+          
+          // Check against known lab IP ranges
+          for (const [prefix, labId] of Object.entries(labIPRanges)) {
+            if (ip.startsWith(prefix)) {
+              detectedLab = labId;
+              console.log(`✅ Lab detected from IP ${ip}: ${labId}`);
+              return labId;
+            }
+          }
+        }
+      }
+    }
+    
+    // Fallback: use environment variable or default
+    if (!detectedLab) {
+      detectedLab = process.env.LAB_ID || "CC1";
+      console.log(`⚠️ Could not detect lab from IP, using default: ${detectedLab}`);
+    }
+    
+    return detectedLab;
+  } catch (error) {
+    console.error('⚠️ Error detecting lab from IP:', error.message);
+    return process.env.LAB_ID || "CC1";
+  }
+}
+
+const LAB_ID = detectLabFromIP();
+const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || `${LAB_ID}-${String(Math.floor(Math.random() * 10) + 1).padStart(2, '0')}`;
 
 // Kiosk mode configuration
 // ✅ PRODUCTION: Full kiosk lock enabled from startup
@@ -606,6 +656,205 @@ function setupIPCHandlers() {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  });
+
+  // 🔓 GUEST ACCESS: Handle guest access command from admin
+  ipcMain.handle('guest-access', async () => {
+    try {
+      console.log('🔓 Guest access granted - unlocking kiosk without student login');
+      
+      // Create a guest session
+      const guestCredentials = {
+        studentId: 'GUEST',
+        password: 'admin123', // Fixed guest password
+        labId: LAB_ID,
+      };
+
+      // Authenticate as guest (server should accept 'GUEST' + 'admin123')
+      const authRes = await fetch(`${SERVER_URL}/api/authenticate-guest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(guestCredentials),
+      });
+      
+      let authData;
+      if (authRes.ok) {
+        authData = await authRes.json();
+      } else {
+        // If guest auth endpoint doesn't exist, create session directly
+        authData = {
+          success: true,
+          student: {
+            name: 'Guest User',
+            studentId: 'GUEST',
+            email: 'guest@lab.local',
+            department: 'Guest',
+            year: 0,
+            labId: LAB_ID
+          }
+        };
+      }
+
+      if (!authData.success) {
+        console.error('❌ Guest authentication failed:', authData.error);
+        return { success: false, error: authData.error || 'Guest authentication failed' };
+      }
+
+      console.log('✅ Guest access authenticated');
+
+      // Create guest session
+      const sessionRes = await fetch(`${SERVER_URL}/api/student-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentName: 'Guest User',
+          studentId: 'GUEST',
+          computerName: os.hostname(),
+          labId: LAB_ID,
+          systemNumber: SYSTEM_NUMBER,
+          isGuest: true
+        }),
+      });
+      const sessionData = await sessionRes.json();
+
+      if (!sessionData.success) {
+        console.error('❌ Guest session creation failed:', sessionData.error);
+        return { success: false, error: sessionData.error || 'Guest session creation failed' };
+      }
+
+      console.log('✅ Guest session created:', sessionData.sessionId);
+
+      currentSession = { id: sessionData.sessionId, student: authData.student, isGuest: true };
+      sessionActive = true;
+      isKioskLocked = false; // Unlock the system
+
+      // After guest login, allow normal window behavior
+      mainWindow.setClosable(false);
+      mainWindow.setMinimizable(true);
+      mainWindow.setAlwaysOnTop(false);
+      mainWindow.setFullScreen(false);
+      mainWindow.maximize();
+
+      // Release global shortcuts
+      try {
+        globalShortcut.unregisterAll();
+        console.log('🔓 Guest mode: shortcuts unregistered - system free for use');
+      } catch (e) {
+        console.error('⚠️ Error unregistering shortcuts:', e.message || e);
+      }
+
+      console.log(`🔓 System unlocked for Guest User`);
+
+      // Create and show timer window (minimized)
+      createTimerWindow('Guest User', 'GUEST');
+
+      // Notify renderer
+      setTimeout(() => {
+        console.log('🎬 Sending guest session-created event to renderer:', sessionData.sessionId);
+        mainWindow.webContents.send('session-created', {
+          sessionId: sessionData.sessionId,
+          serverUrl: SERVER_URL,
+          studentInfo: {
+            studentId: 'GUEST',
+            studentName: 'Guest User',
+            systemNumber: SYSTEM_NUMBER,
+            isGuest: true
+          }
+        });
+      }, 1000);
+
+      return { 
+        success: true, 
+        student: authData.student, 
+        sessionId: sessionData.sessionId,
+        isGuest: true
+      };
+    } catch (error) {
+      console.error('❌ Guest access error:', error);
+      return { success: false, error: error.message || 'Unknown error' };
+    }
+  });
+
+  // Guest login handler (bypass authentication)
+  ipcMain.handle('guest-login', async (event, data) => {
+    try {
+      console.log('🔓 Guest login requested:', data);
+      
+      const sessionRes = await fetch(`${SERVER_URL}/api/student-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentName: 'Guest User',
+          studentId: 'GUEST',
+          computerName: os.hostname(),
+          labId: data.labId || LAB_ID,
+          systemNumber: data.systemNumber || SYSTEM_NUMBER,
+          isGuest: true
+        }),
+      });
+      const sessionData = await sessionRes.json();
+
+      if (!sessionData.success) {
+        console.error('❌ Guest session creation failed:', sessionData.error);
+        return { success: false, error: sessionData.error || 'Guest session creation failed' };
+      }
+
+      console.log('✅ Guest session created:', sessionData.sessionId);
+
+      currentSession = { id: sessionData.sessionId, student: { name: 'Guest User', studentId: 'GUEST' }, isGuest: true };
+      sessionActive = true;
+      isKioskLocked = false; // Unlock the system
+
+      // After guest login, allow normal window behavior
+      mainWindow.setClosable(false);
+      mainWindow.setMinimizable(true);
+      mainWindow.setAlwaysOnTop(false);
+      mainWindow.setFullScreen(false);
+      mainWindow.maximize();
+
+      // Release all shortcuts
+      try {
+        globalShortcut.unregisterAll();
+        console.log('🔓 Guest mode: shortcuts unregistered - system free for use');
+      } catch (e) {
+        console.error('⚠️ Error unregistering shortcuts:', e.message || e);
+      }
+
+      console.log(`🔓 System unlocked for Guest User`);
+
+      // Create timer window for guest (optional - can be hidden)
+      createTimerWindow('Guest User', 'GUEST');
+
+      // Notify renderer
+      setTimeout(() => {
+        console.log('🎬 Sending guest-session-created event to renderer:', sessionData.sessionId);
+        mainWindow.webContents.send('session-created', {
+          sessionId: sessionData.sessionId,
+          serverUrl: SERVER_URL,
+          studentInfo: {
+            studentId: 'GUEST',
+            studentName: 'Guest User',
+            systemNumber: data.systemNumber || SYSTEM_NUMBER,
+            isGuest: true
+          }
+        });
+      }, 1000);
+
+      return { 
+        success: true, 
+        sessionId: sessionData.sessionId,
+        isGuest: true
+      };
+    } catch (error) {
+      console.error('❌ Guest login error:', error);
+      return { success: false, error: error.message || 'Unknown error' };
+    }
+  });
+
+  // Trigger guest login from renderer
+  ipcMain.on('trigger-guest-login', async () => {
+    console.log('🔓 Trigger guest login from renderer');
+    await ipcMain.handle('guest-login', null, { labId: LAB_ID, systemNumber: SYSTEM_NUMBER });
   });
 
   // System shutdown handler

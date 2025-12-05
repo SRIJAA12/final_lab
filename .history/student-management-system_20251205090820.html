@@ -535,10 +535,10 @@
 
         // Download template
         function downloadTemplate() {
-            const csvContent = `studentId,name,email,dateOfBirth,department,section,year
-CS2025001,John Doe,john.doe@college.edu,2000-01-15,Computer Science and Engineering,A,3
-CS2025002,Jane Smith,jane.smith@college.edu,2000-05-20,Computer Science and Engineering,B,3
-ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Communication Engineering,A,3`;
+            const csvContent = `studentId,name,email,dateOfBirth,department,year
+CS2025001,John Doe,john.doe@college.edu,2000-01-15,Computer Science,3
+CS2025002,Jane Smith,jane.smith@college.edu,2000-05-20,Computer Science,3
+IT2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Information Technology,3`;
             
             const blob = new Blob([csvContent], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
@@ -662,8 +662,7 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                     <td><strong>${student.studentId}</strong></td>
                     <td>${student.name}</td>
                     <td>${student.email}</td>
-                    <td>${student.department || 'N/A'}</td>
-                    <td>${student.section || 'N/A'}</td>
+                    <td>${student.department}</td>
                     <td>${student.year}</td>
                     <td>
                         ${student.isPasswordSet ? 

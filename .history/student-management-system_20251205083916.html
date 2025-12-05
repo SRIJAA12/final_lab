@@ -259,7 +259,6 @@
                                     <th>Name</th>
                                     <th>Email</th>
                                     <th>Department</th>
-                                    <th>Section</th>
                                     <th>Year</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -267,7 +266,7 @@
                             </thead>
                             <tbody id="studentsTableBody">
                                 <tr>
-                                    <td colspan="8" class="text-center">
+                                    <td colspan="7" class="text-center">
                                         <i class="fas fa-spinner fa-spin"></i> Loading students...
                                     </td>
                                 </tr>
@@ -302,22 +301,12 @@
                             <label class="form-label">Department *</label>
                             <select class="form-select" id="newStudentDept" required>
                                 <option value="">Select Department</option>
-                                <option value="Computer Science and Engineering">Computer Science and Engineering</option>
-                                <option value="Electronics and Communication Engineering">Electronics and Communication Engineering</option>
-                                <option value="Civil Engineering">Civil Engineering</option>
-                                <option value="Electrical and Electronics Engineering">Electrical and Electronics Engineering</option>
-                                <option value="VLSI">VLSI</option>
-                                <option value="Mechanical Engineering">Mechanical Engineering</option>
-                                <option value="Instrumentation and Control Engineering">Instrumentation and Control Engineering</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Section *</label>
-                            <select class="form-select" id="newStudentSection" required>
-                                <option value="">Select Section</option>
-                                <option value="A">Section A</option>
-                                <option value="B">Section B</option>
-                                <option value="C">Section C</option>
+                                <option value="Computer Science">Computer Science</option>
+                                <option value="Information Technology">Information Technology</option>
+                                <option value="Electronics">Electronics</option>
+                                <option value="Mechanical">Mechanical</option>
+                                <option value="Civil">Civil</option>
+                                <option value="Electrical">Electrical</option>
                             </select>
                         </div>
                         <div class="col-md-4">
@@ -404,32 +393,6 @@
         async function detectServerUrl() {
             console.log('🔍 Auto-detecting server URL...');
             
-            // First, try current page origin (if accessed via server)
-            try {
-                const currentOrigin = window.location.origin;
-                if (currentOrigin && !currentOrigin.includes('file://')) {
-                    console.log(`🔍 Trying current origin: ${currentOrigin}/server-config.json`);
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 2000);
-                    const response = await fetch(`${currentOrigin}/server-config.json`, {
-                        method: 'GET',
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    
-                    if (response.ok) {
-                        const config = await response.json();
-                        const detectedUrl = `http://${config.serverIp}:${config.serverPort}`;
-                        console.log(`✅ Server detected via current origin: ${detectedUrl}`);
-                        SERVER_URL = detectedUrl;
-                        updateServerStatus(detectedUrl, true);
-                        return detectedUrl;
-                    }
-                }
-            } catch (error) {
-                console.log('⚠️ Current origin detection failed:', error.message);
-            }
-            
             // Try common server locations
             const possibleUrls = [
                 'http://localhost:7401',
@@ -443,13 +406,10 @@
             for (const baseUrl of possibleUrls) {
                 try {
                     console.log(`🔍 Trying: ${baseUrl}/server-config.json`);
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 2000);
                     const response = await fetch(`${baseUrl}/server-config.json`, {
                         method: 'GET',
-                        signal: controller.signal
+                        timeout: 2000
                     });
-                    clearTimeout(timeoutId);
                     
                     if (response.ok) {
                         const config = await response.json();
@@ -471,12 +431,7 @@
                 if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
                     const fallbackUrl = `http://${currentHost}:7401`;
                     console.log(`🔄 Trying current hostname: ${fallbackUrl}`);
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 2000);
-                    const response = await fetch(`${fallbackUrl}/server-config.json`, {
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
+                    const response = await fetch(`${fallbackUrl}/server-config.json`);
                     if (response.ok) {
                         const config = await response.json();
                         const detectedUrl = `http://${config.serverIp}:${config.serverPort}`;
@@ -535,10 +490,10 @@
 
         // Download template
         function downloadTemplate() {
-            const csvContent = `studentId,name,email,dateOfBirth,department,section,year
-CS2025001,John Doe,john.doe@college.edu,2000-01-15,Computer Science and Engineering,A,3
-CS2025002,Jane Smith,jane.smith@college.edu,2000-05-20,Computer Science and Engineering,B,3
-ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Communication Engineering,A,3`;
+            const csvContent = `studentId,name,email,dateOfBirth,department,year
+CS2025001,John Doe,john.doe@college.edu,2000-01-15,Computer Science,3
+CS2025002,Jane Smith,jane.smith@college.edu,2000-05-20,Computer Science,3
+IT2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Information Technology,3`;
             
             const blob = new Blob([csvContent], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
@@ -636,12 +591,12 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                 } else {
                     console.error('❌ Server error:', data.error);
                     const tbody = document.getElementById('studentsTableBody');
-                    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error: ${data.error || 'Failed to load students'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error: ${data.error || 'Failed to load students'}</td></tr>`;
                 }
             } catch (error) {
                 console.error('❌ Network error:', error);
                 const tbody = document.getElementById('studentsTableBody');
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">
                     <i class="fas fa-exclamation-triangle"></i> Network Error: ${error.message}<br>
                     <small>Make sure server is running at ${SERVER_URL}</small>
                 </td></tr>`;
@@ -653,7 +608,7 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
             const tbody = document.getElementById('studentsTableBody');
             
             if (filteredStudents.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center">No students found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No students found</td></tr>';
                 return;
             }
 
@@ -662,8 +617,7 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                     <td><strong>${student.studentId}</strong></td>
                     <td>${student.name}</td>
                     <td>${student.email}</td>
-                    <td>${student.department || 'N/A'}</td>
-                    <td>${student.section || 'N/A'}</td>
+                    <td>${student.department}</td>
                     <td>${student.year}</td>
                     <td>
                         ${student.isPasswordSet ? 
@@ -804,11 +758,8 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
             const newEmail = prompt('Enter new email:', student.email);
             if (!newEmail) return;
 
-            const newDept = prompt('Enter new department:', student.department || '');
+            const newDept = prompt('Enter new department:', student.department);
             if (!newDept) return;
-
-            const newSection = prompt('Enter new section (A, B, or C):', student.section || 'A');
-            if (!newSection) return;
 
             const newYear = prompt('Enter new year (1-4):', student.year);
             if (!newYear) return;
@@ -823,7 +774,6 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                         name: newName,
                         email: newEmail,
                         department: newDept,
-                        section: newSection,
                         year: parseInt(newYear)
                     })
                 });

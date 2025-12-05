@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // System shutdown
   shutdownSystem: () => ipcRenderer.invoke('shutdown-system'),
+  
+  // 🔓 Guest login (bypass normal authentication)
+  guestLogin: (data) => ipcRenderer.invoke('guest-login', data),
+  triggerGuestLogin: () => ipcRenderer.send('trigger-guest-login'),
 });
 
 // Security measures: block right click context menu

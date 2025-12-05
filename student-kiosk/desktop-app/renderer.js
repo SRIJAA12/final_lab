@@ -82,6 +82,9 @@ async function initializeSocket() {
       
       // Listen for shutdown command from admin
       socket.on('execute-shutdown', handleShutdownCommand);
+      
+      // 🔓 GUEST ACCESS: Listen for guest access command from admin
+      socket.on('guest-access-granted', handleGuestAccess);
 
       // Lab session ending (admin or timetable)
       socket.on('lab-session-ending', handleLabSessionEnding);
@@ -142,7 +145,10 @@ window.electronAPI.onSessionCreated(async (data) => {
 
   // Register this kiosk with backend
   console.log('📡 Registering kiosk for session:', sessionId);
-  socket.emit('register-kiosk', { sessionId });
+  // 🔧 MULTI-LAB: Include system number and lab ID for guest access
+  const systemNumber = currentStudentInfo?.systemNumber || 'CC1-01';
+  const labId = systemNumber.split('-')[0] || 'CC1';
+  socket.emit('register-kiosk', { sessionId, systemNumber, labId });
 
   // Start hardware monitoring
   startHardwareMonitoring();
@@ -478,6 +484,59 @@ async function handleShutdownCommand() {
     }
   } catch (error) {
     console.error('❌ Error during shutdown:', error);
+  }
+}
+
+// 🔓 Handle guest access granted by admin
+async function handleGuestAccess(data) {
+  console.log('🔓 GUEST ACCESS GRANTED BY ADMIN');
+  console.log('Guest access data:', data);
+  
+  try {
+    // Hide login screen and unlock system
+    const loginScreen = document.getElementById('loginScreen');
+    if (loginScreen) {
+      loginScreen.style.display = 'none';
+    }
+    
+    // Create guest session via IPC
+    if (window.electronAPI && window.electronAPI.guestLogin) {
+      const result = await window.electronAPI.guestLogin({
+        systemNumber: data.systemNumber || 'GUEST-01',
+        labId: data.labId || 'CC1'
+      });
+      
+      if (result.success) {
+        console.log('✅ Guest session created successfully');
+        // Show guest mode indicator (optional)
+        showGuestModeIndicator();
+      } else {
+        console.error('❌ Guest login failed:', result.error);
+        alert('❌ Failed to enable guest access: ' + (result.error || 'Unknown error'));
+      }
+    } else {
+      // Fallback: directly unlock via main process message
+      console.log('⚠️ guestLogin IPC not available, using fallback');
+      if (window.electronAPI && window.electronAPI.triggerGuestLogin) {
+        window.electronAPI.triggerGuestLogin();
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error handling guest access:', error);
+    alert('❌ Error enabling guest access: ' + error.message);
+  }
+}
+
+// Show guest mode indicator
+function showGuestModeIndicator() {
+  // Create a small indicator in corner
+  let indicator = document.getElementById('guestModeIndicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'guestModeIndicator';
+    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #ffc107; color: #000; padding: 10px 15px; border-radius: 5px; z-index: 10000; font-weight: bold; box-shadow: 0 2px 10px rgba(0,0,0,0.3);';
+    indicator.innerHTML = '👤 Guest Mode Active';
+    document.body.appendChild(indicator);
   }
 }
 
