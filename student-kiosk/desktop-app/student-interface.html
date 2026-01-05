@@ -631,6 +631,14 @@
                 // No visual feedback needed for student
             });
         }
+        
+        // Listen for trigger-logout event from timer window
+        if (window.electronAPI && window.electronAPI.onTriggerLogout) {
+            window.electronAPI.onTriggerLogout(() => {
+                console.log('🚪 Trigger logout received from timer window');
+                logout();
+            });
+        }
 
         // Time update
         function updateTime() {
@@ -937,12 +945,105 @@
             }
         }
 
-        function logout() {
-            if (window.electronAPI && window.electronAPI.studentLogout) {
-                window.electronAPI.studentLogout();
+        // Prevent multiple logout calls
+        let isLoggingOut = false;
+        
+        async function logout() {
+            console.log('🚪 Logout button clicked');
+            
+            // Prevent multiple logout calls
+            if (isLoggingOut) {
+                console.log('⚠️ Logout already in progress, ignoring duplicate call');
+                return;
             }
-            location.reload();
+            isLoggingOut = true;
+            
+            if (window.electronAPI && window.electronAPI.studentLogout) {
+                try {
+                    // Show "Initiating shutdown" message using Electron dialog
+                    if (window.electronAPI.showShutdownDialog) {
+                        await window.electronAPI.showShutdownDialog();
+                    }
+                    
+                    const result = await window.electronAPI.studentLogout();
+                    console.log('✅ Logout result:', result);
+                    if (result.success) {
+                        console.log('✅ Logout successful, reloading page...');
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        console.error('❌ Logout failed:', result.error);
+                        isLoggingOut = false; // Reset flag on failure
+                        alert('Logout failed: ' + result.error);
+                    }
+                } catch (error) {
+                    console.error('❌ Logout error:', error);
+                    isLoggingOut = false; // Reset flag on error
+                    alert('Logout error: ' + error.message);
+                }
+            } else {
+                console.error('❌ electronAPI.studentLogout not available');
+                isLoggingOut = false; // Reset flag
+                alert('Logout functionality not available');
+            }
         }
+
+        // Track login state
+        let isLoggedIn = false;
+        
+        // Listen for login success to disable kiosk blocking
+        window.addEventListener('message', (event) => {
+            if (event.data === 'student-logged-in') {
+                isLoggedIn = true;
+                console.log('🔓 Student logged in - keyboard shortcuts now allowed');
+            }
+        });
+
+        // 🔒 KIOSK MODE: Block ALL keyboard shortcuts including Escape (only before login)
+        document.addEventListener('keydown', function(e) {
+            // After login, allow all keys
+            if (isLoggedIn) {
+                return;
+            }
+            
+            // Block Escape key from exiting fullscreen
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🚫 Blocked Escape key');
+                return false;
+            }
+            
+            // Block F11 (fullscreen toggle)
+            if (e.key === 'F11') {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🚫 Blocked F11 key');
+                return false;
+            }
+            
+            // Block Alt+F4, Alt+Tab, Alt+Escape, etc.
+            if (e.altKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🚫 Blocked Alt+' + e.key);
+                return false;
+            }
+            
+            if (e.ctrlKey && (e.key === 'w' || e.key === 'W' || e.key === 'q' || e.key === 'Q')) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🚫 Blocked Ctrl+' + e.key);
+                return false;
+            }
+            
+            // Block Windows key
+            if (e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🚫 Blocked Windows key');
+                return false;
+            }
+        }, true); // Use capture phase to catch before other handlers
 
         console.log('✅ Application ready');
     </script>

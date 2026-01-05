@@ -56,7 +56,8 @@
       "certificateFile": null,
       "certificatePassword": null,
       "signingHashAlgorithms": ["sha256"],
-      "sign": null
+      "sign": null,
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,

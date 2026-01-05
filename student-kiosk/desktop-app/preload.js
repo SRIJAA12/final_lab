@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // System shutdown
   shutdownSystem: () => ipcRenderer.invoke('shutdown-system'),
+  showShutdownDialog: () => ipcRenderer.invoke('show-shutdown-dialog'),
   
   // 🔓 Guest login (bypass normal authentication)
   guestLogin: (data) => ipcRenderer.invoke('guest-login', data),

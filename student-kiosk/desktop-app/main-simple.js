@@ -135,6 +135,8 @@ function createWindow() {
     resizable: false,
     minimizable: false,
     closable: false,
+    simpleFullscreen: true, // macOS compatibility
+    autoHideMenuBar: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -166,6 +168,9 @@ function createWindow() {
 
   mainWindow = new BrowserWindow(windowOptions);
 
+  // 🔒 CRITICAL: Window will be shown in ready-to-show event
+  // Don't hide it manually - let Electron handle it naturally
+
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     console.log('🔐 Permission requested:', permission);
     if (permission === 'media' || permission === 'display-capture') {
@@ -182,6 +187,77 @@ function createWindow() {
 
   mainWindow.loadFile('student-interface.html');
   
+  // 🔒 BACKUP: Ensure window shows even if ready-to-show doesn't fire
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      console.warn('⚠️ Window not shown after 3 seconds, forcing visibility...');
+      mainWindow.show();
+      mainWindow.focus();
+      if (KIOSK_MODE) {
+        mainWindow.setKiosk(true);
+        mainWindow.setFullScreen(true);
+        mainWindow.setAlwaysOnTop(true);
+      }
+    }
+  }, 3000);
+  
+  // 🔒 BLOCK ESCAPE KEY AT WEBCONTENTS LEVEL (before it can exit fullscreen)
+  if (KIOSK_MODE) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // Only block if kiosk is still locked (before login)
+      if (!isKioskLocked) {
+        return; // Allow all keys after login
+      }
+      
+      // Block Escape key
+      if (input.key === 'Escape' || input.key === 'Esc') {
+        event.preventDefault();
+        console.log('🚫 Blocked Escape key');
+      }
+      
+      // Block F11 (fullscreen toggle)
+      if (input.key === 'F11') {
+        event.preventDefault();
+        console.log('🚫 Blocked F11');
+      }
+      
+      // Block Alt+Tab and other Alt shortcuts
+      if (input.alt) {
+        event.preventDefault();
+        console.log('🚫 Blocked Alt+' + input.key);
+      }
+      
+      // Block Ctrl+W, Ctrl+Q
+      if (input.control && (input.key.toLowerCase() === 'w' || input.key.toLowerCase() === 'q')) {
+        event.preventDefault();
+        console.log('🚫 Blocked Ctrl+' + input.key);
+      }
+      
+      // Block Windows key
+      if (input.meta) {
+        event.preventDefault();
+        console.log('🚫 Blocked Windows key');
+      }
+    });
+    
+    // 🔒 FOCUS RESTORATION - Only restore when window actually loses focus
+    // Use single-shot restoration instead of aggressive loops to prevent blinking
+    mainWindow.on('blur', () => {
+      // Only restore focus if kiosk is still locked and window exists
+      if (isKioskLocked && !mainWindow.isDestroyed()) {
+        console.log('⚠️ Kiosk window lost focus, restoring...');
+        // Use setTimeout to avoid rapid-fire focus changes
+        setTimeout(() => {
+          if (isKioskLocked && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
+            mainWindow.focus();
+            mainWindow.setAlwaysOnTop(true, 'screen-saver');
+            console.log('✅ Focus restored');
+          }
+        }, 50);
+      }
+    });
+  }
+  
   if (KIOSK_MODE) {
     console.log('🔒 Kiosk application starting in FULL BLOCKING mode...');
   } else {
@@ -189,25 +265,75 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    // Fullscreen is already enforced via window options in kiosk mode
-    mainWindow.focus();
-    
-    // DevTools only in testing mode
-    if (!KIOSK_MODE) {
-      mainWindow.webContents.openDevTools();
-      console.log('🔧 DevTools opened (testing mode)');
-    }
-    
-    console.log(`✅ Application Ready - System: ${SYSTEM_NUMBER}, Lab: ${LAB_ID}`);
-    console.log(`✅ Server: ${SERVER_URL}`);
+    // 🔒 PRODUCTION: Show window ONLY when fully loaded (prevents flashing)
     if (KIOSK_MODE) {
-      console.log('🔒 FULL KIOSK MODE ACTIVE - System completely locked down!');
-      console.log('🚫 All keyboard shortcuts blocked until student login');
+      // Show window FIRST before applying other settings
+      mainWindow.show();
+      
+      // Then apply all kiosk settings
+      mainWindow.setKiosk(true);
+      mainWindow.setFullScreen(true);
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.setSkipTaskbar(true);
+      mainWindow.focus();
+      mainWindow.moveTop();
+      
+      // Double-check visibility
+      if (!mainWindow.isVisible()) {
+        console.warn('⚠️ Window not visible after show(), forcing visibility...');
+        mainWindow.showInactive();
+        mainWindow.show();
+      }
+      
+      console.log('✅ Kiosk window shown in full lockdown mode');
+      console.log('🔒 System completely locked - no shortcuts, no taskbar, no escape');
+      console.log(`📊 Window visible: ${mainWindow.isVisible()}, minimized: ${mainWindow.isMinimized()}`);
     } else {
-      console.log('✅ TESTING MODE - Shortcuts available, DevTools enabled');
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.openDevTools();
+      console.log('🔧 Testing mode - DevTools opened');
     }
   });
+
+  // 🔒 PREVENT ESCAPE FROM EXITING FULLSCREEN/KIOSK (only when locked)
+  // 🔒 PREVENT ESCAPE FROM FULLSCREEN/KIOSK (only when locked)
+  mainWindow.on('leave-full-screen', () => {
+    if (KIOSK_MODE && isKioskLocked) {
+      console.log('🚫 Blocked attempt to exit fullscreen - re-enforcing lock');
+      setTimeout(() => {
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.setKiosk(true);
+          mainWindow.setFullScreen(true);
+          mainWindow.setAlwaysOnTop(true, 'screen-saver');
+          mainWindow.setSkipTaskbar(true);
+          mainWindow.focus();
+        }
+      }, 10);
+    }
+  });
+
+  mainWindow.on('leave-html-full-screen', () => {
+    if (KIOSK_MODE && isKioskLocked) {
+      console.log('🚫 Blocked HTML fullscreen exit - re-enforcing lock');
+      setTimeout(() => {
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.setFullScreen(true);
+          mainWindow.setKiosk(true);
+          mainWindow.focus();
+        }
+      }, 10);
+    }
+  });
+  
+  console.log(`✅ Application Ready - System: ${SYSTEM_NUMBER}, Lab: ${LAB_ID}`);
+  console.log(`✅ Server: ${SERVER_URL}`);
+  if (KIOSK_MODE) {
+    console.log('🔒 FULL KIOSK MODE ACTIVE - System completely locked down!');
+    console.log('🚫 All keyboard shortcuts blocked until student login');
+  } else {
+    console.log('✅ TESTING MODE - Shortcuts available, DevTools enabled');
+  }
 
   // Kiosk mode - prevent closing
   mainWindow.on('close', (e) => {
@@ -393,18 +519,117 @@ function createTimerWindow(studentName, studentId) {
   console.log('⏱️ Timer window created for:', studentName);
 }
 
+// Shared logout process used by both timer logout and main logout button
+async function handleLogoutProcess() {
+  if (!sessionActive || !currentSession) {
+    console.warn('⚠️ No active session to logout');
+    return { success: false, error: 'No active session' };
+  }
+
+  try {
+    console.log('🚪 Logging out session:', currentSession.id);
+
+    mainWindow.webContents.send('stop-live-stream');
+
+    await fetch(`${SERVER_URL}/api/student-logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentSession.id }),
+    });
+
+    console.log('✅ Logout successful');
+
+    sessionActive = false;
+    currentSession = null;
+    isKioskLocked = true; // Lock the system again
+
+    // Close timer window properly
+    if (timerWindow && !timerWindow.isDestroyed()) {
+      timerWindow.setClosable(true);  // Allow closing now
+      timerWindow.close();
+      timerWindow = null;
+      console.log('⏱️ Timer window closed after logout');
+    }
+
+    // 🔒 CRITICAL: Restore strict kiosk mode after logout
+    console.log('🔒 Re-locking system in full kiosk mode...');
+    
+    mainWindow.setClosable(false);
+    mainWindow.setMinimizable(false);
+    mainWindow.setSkipTaskbar(true);
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    mainWindow.setKiosk(true);
+    mainWindow.setFullScreen(true);
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.moveTop();
+    
+    console.log('🔒 System fully locked after logout - kiosk mode active');
+    
+    // 🔌 NEW: Automatic shutdown after session ends
+    console.log('🔌 Initiating automatic system shutdown after session end...');
+
+    // Re-enable kiosk shortcut blocking so the machine is locked again
+    try {
+      blockKioskShortcuts();
+      console.log('🔒 Kiosk shortcuts re-registered after logout');
+    } catch (e) {
+      console.error('⚠️ Error re-registering kiosk shortcuts:', e.message || e);
+    }
+    
+    // IMMEDIATE: Schedule system shutdown for 1 minute from now (without showing dialog)
+    setTimeout(async () => {
+      const { exec } = require('child_process');
+      const platform = os.platform();
+      let shutdownCommand;
+      
+      if (platform === 'win32') {
+        // Windows: 60 seconds = 1 minute shutdown delay
+        shutdownCommand = 'shutdown /s /t 60 /c "Session ended. System will shutdown in 1 minute (60 seconds)."';
+      } else if (platform === 'linux') {
+        // Linux: 1 minute
+        shutdownCommand = 'sudo shutdown -h +1 "Session ended. System shutting down in 1 minute."';
+      } else if (platform === 'darwin') {
+        // macOS: 1 minute
+        shutdownCommand = 'sudo shutdown -h +1 "Session ended. System shutting down in 1 minute."';
+      }
+      console.log(`🔌 Executing shutdown command with 60-second (1 minute) delay: ${shutdownCommand}`);
+      exec(shutdownCommand, (error, stdout, stderr) => {
+        if (error) {
+          console.error('❌ Shutdown command failed:', error.message);
+          console.error('❌ Error details:', error);
+          console.error('❌ Command was:', shutdownCommand);
+        } else {
+          console.log('✅✅✅ Automatic shutdown scheduled successfully (1 minute / 60 seconds)');
+          console.log('✅ System will shutdown at:', new Date(Date.now() + 60000).toLocaleTimeString());
+          if (stdout) console.log('Shutdown stdout:', stdout);
+          if (stderr) console.log('Shutdown stderr:', stderr);
+        }
+      });
+    }, 1000); // Wait 1 second after logout before issuing OS shutdown command
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Logout error:', error);
+    return { success: false, error: error.message || 'Unknown error' };
+  }
+}
+
 function setupIPCHandlers() {
   // Handle logout from timer window
   ipcMain.on('timer-logout-clicked', async () => {
     console.log('🚪 Logout clicked from timer window');
     
-    // Trigger logout from main window
+    // Call the same logout logic as the student-logout handler
+    await handleLogoutProcess();
+    
+    // Reload main window UI
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('trigger-logout');
+      setTimeout(() => {
+        mainWindow.reload();
+      }, 500);
     }
-    
-    // Also perform logout here
-    await performLogout();
   });
   
   // Handle screen sources request
@@ -489,12 +714,13 @@ function setupIPCHandlers() {
       sessionActive = true;
       isKioskLocked = false; // Unlock the system
 
-      // After login, allow normal window behavior for work
+      // After login, minimize the kiosk window so student can work normally
       mainWindow.setClosable(false);
-      mainWindow.setMinimizable(true);          // Allow minimize for normal work
-      mainWindow.setAlwaysOnTop(false);        // Allow other apps to come forward
-      mainWindow.setFullScreen(false);         // Exit fullscreen for normal work
-      mainWindow.maximize();                   // Maximize but not fullscreen
+      mainWindow.setMinimizable(true);          // Allow minimize
+      mainWindow.setAlwaysOnTop(false);        // Allow other apps
+      mainWindow.setKiosk(false);              // Exit kiosk mode
+      mainWindow.setFullScreen(false);         // Exit fullscreen
+      mainWindow.minimize();                   // MINIMIZE to taskbar
 
       // After successful login, release global shortcuts so the student
       // can use the system and other applications normally.
@@ -506,6 +732,9 @@ function setupIPCHandlers() {
       }
 
       console.log(`🔓 System unlocked for: ${authData.student.name} (${authData.student.studentId})`);
+
+      // Notify the HTML that student is logged in (disable keyboard blocking)
+      mainWindow.webContents.executeJavaScript('window.postMessage("student-logged-in", "*");');
 
       // Create and show timer window
       createTimerWindow(authData.student.name, authData.student.studentId);
@@ -537,108 +766,23 @@ function setupIPCHandlers() {
 
   // Handle student logout
   ipcMain.handle('student-logout', async () => {
-    if (!sessionActive || !currentSession) {
-      return { success: false, error: 'No active session' };
-    }
+    return await handleLogoutProcess();
+  });
 
+  // Show shutdown dialog (called before logout)
+  ipcMain.handle('show-shutdown-dialog', async () => {
     try {
-      console.log('🚪 Logging out session:', currentSession.id);
-
-      mainWindow.webContents.send('stop-live-stream');
-
-      await fetch(`${SERVER_URL}/api/student-logout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: currentSession.id }),
+      await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Automatic Shutdown',
+        message: 'Session Ended - System Shutting Down',
+        detail: 'System will automatically shutdown in 1 minute (60 seconds).\n\nPlease save your work and log out of any other applications.\n\nThis is an automated shutdown after session logout.',
+        buttons: ['OK']
       });
-
-      console.log('✅ Logout successful');
-
-      sessionActive = false;
-      currentSession = null;
-      isKioskLocked = true; // Lock the system again
-
-      // Close timer window properly
-      if (timerWindow && !timerWindow.isDestroyed()) {
-        timerWindow.setClosable(true);  // Allow closing now
-        timerWindow.close();
-        timerWindow = null;
-        console.log('⏱️ Timer window closed after logout');
-      }
-
-      // Restore strict kiosk mode after logout
-      mainWindow.setClosable(false);
-      mainWindow.setMinimizable(false);
-      mainWindow.setAlwaysOnTop(true, 'screen-saver');
-      mainWindow.setFullScreen(true);
-      
-      mainWindow.focus();
-      
-      console.log('🔒 System locked after logout');
-      
-      // 🔌 NEW: Automatic shutdown after session ends
-      console.log('🔌 Initiating automatic system shutdown after session end...');
-
-      // Re-enable kiosk shortcut blocking so the machine is locked again
-      try {
-        blockKioskShortcuts();
-        console.log('🔒 Kiosk shortcuts re-registered after logout');
-      } catch (e) {
-        console.error('⚠️ Error re-registering kiosk shortcuts:', e.message || e);
-      }
-      
-      // Show notification dialog - 90 seconds (1 minute 30 seconds) shutdown delay
-      setTimeout(() => {
-        dialog.showMessageBox(mainWindow, {
-          type: 'warning',
-          title: 'Automatic Shutdown',
-          message: 'Session Ended',
-          detail: 'System will automatically shutdown in 1 minute 30 seconds (90 seconds).\n\nPlease save your work and log out of any other applications.',
-          buttons: ['OK']
-        });
-      }, 500);
-      
-      setTimeout(async () => {
-        const { exec } = require('child_process');
-        const platform = os.platform();
-        let shutdownCommand;
-        
-        if (platform === 'win32') {
-          // 90 seconds = 1 minute 30 seconds shutdown delay
-          shutdownCommand = 'shutdown /s /t 90 /c "Session ended. System will shutdown in 1 minute 30 seconds (90 seconds)."';
-        } else if (platform === 'linux') {
-          // Linux uses minutes, so 90 seconds = ~2 minutes
-          shutdownCommand = 'sudo shutdown -h +2 "Session ended. System shutting down in 1 minute 30 seconds."';
-        } else if (platform === 'darwin') {
-          // macOS uses minutes, so 90 seconds = ~2 minutes
-          shutdownCommand = 'sudo shutdown -h +2 "Session ended. System shutting down in 1 minute 30 seconds."';
-        }
-        console.log(`🔌 Executing shutdown with 90-second delay: ${shutdownCommand}`);
-        exec(shutdownCommand, (error, stdout, stderr) => {
-          if (error) {
-            console.error('❌ Shutdown error:', error.message);
-            console.error('Error details:', error);
-            
-            // Show error to user
-            dialog.showMessageBox(mainWindow, {
-              type: 'error',
-              title: 'Shutdown Failed',
-              message: 'Automatic Shutdown Error',
-              detail: `Could not initiate automatic shutdown.\nError: ${error.message}\n\nPlease shutdown manually.`,
-              buttons: ['OK']
-            });
-          } else {
-            console.log('✅ Automatic shutdown initiated (90-second delay)');
-            if (stdout) console.log('Shutdown stdout:', stdout);
-            if (stderr) console.log('Shutdown stderr:', stderr);
-          }
-        });
-      }, 3000); // Wait a few seconds after logout before issuing OS shutdown
-
       return { success: true };
     } catch (error) {
-      console.error('❌ Logout error:', error);
-      return { success: false, error: error.message || 'Unknown error' };
+      console.error('❌ Error showing shutdown dialog:', error);
+      return { success: false, error: error.message };
     }
   });
 
@@ -972,13 +1116,21 @@ try {
 app.whenReady().then(() => {
   setupAutoStart();  // ✅ Setup auto-start for production
   setupIPCHandlers();
-  createWindow();
   
-  // 🔒 KIOSK MODE - Block all shortcuts only if kiosk mode is enabled
   if (KIOSK_MODE) {
+    console.log('🔒 KIOSK MODE ENABLED - Full system lockdown');
+    console.log('🔒 Initializing secure environment...');
+    
+    // Block shortcuts BEFORE creating window to ensure immediate lockdown
     blockKioskShortcuts();
+    
+    // Create window immediately - no delay needed
+    createWindow();
+    
+    console.log('🔒 Kiosk initialized - system fully locked');
   } else {
-    console.log('✅ Shortcut blocking disabled (testing mode)');
+    console.log('✅ TESTING MODE - Shortcuts enabled, DevTools available');
+    createWindow();
   }
 });
 

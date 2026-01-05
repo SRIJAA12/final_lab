@@ -1286,6 +1286,8 @@
         function restoreLabSessionState(labSession) {
             const startBtn = document.getElementById('startSessionBtn');
             const endBtn = document.getElementById('endSessionBtn');
+            const noSessionInfo = document.getElementById('no-session-info');
+            const sessionInfo = document.getElementById('session-info');
             
             if (!startBtn || !endBtn) {
                 console.warn('⚠️ Session buttons not found in DOM');
@@ -1309,9 +1311,29 @@
                 endBtn.disabled = false;
                 endBtn.style.opacity = '1';
                 
+                // Show active session card, hide "No Active Session" card
+                if (noSessionInfo) noSessionInfo.style.display = 'none';
+                if (sessionInfo) sessionInfo.style.display = 'block';
+                
+                // Update session info display
+                updateSessionInfo(labSession);
+                
+                // Store current lab session
+                currentLabSession = labSession;
+                sessionActive = true;
+                
+                // Calculate session end time
+                const startTime = new Date(labSession.startTime);
+                const durationMs = labSession.duration * 60 * 1000; // duration in minutes to milliseconds
+                sessionEndTime = new Date(startTime.getTime() + durationMs);
+                
+                // Start session timer
+                startSessionTimer();
+                
                 // Only show notification ONCE after page load
                 if (!hasShownRestoreNotification) {
                     console.log('✅ Session state restored: Start button disabled, End button enabled');
+                    console.log('✅ Session cards updated: Active session shown');
                     
                     showNotification(
                         `🔄 SESSION RESTORED\n\n` +
@@ -1337,8 +1359,17 @@
                 endBtn.disabled = true;
                 endBtn.style.opacity = '0.5';
                 
+                // Show "No Active Session" card, hide active session card
+                if (noSessionInfo) noSessionInfo.style.display = 'block';
+                if (sessionInfo) sessionInfo.style.display = 'none';
+                
+                // Clear session state
+                currentLabSession = null;
+                sessionActive = false;
+                
                 if (!hasShownRestoreNotification) {
                     console.log('✅ Session state restored: Start button enabled, End button disabled');
+                    console.log('✅ Session cards updated: No active session shown');
                     hasShownRestoreNotification = true;
                 }
             }
