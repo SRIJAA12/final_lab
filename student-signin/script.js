@@ -3,7 +3,7 @@
  */
 
 // Configuration
-const ADMIN_SERVER_IP = "10.10.166.171"; // ⬅️ YOUR CURRENT IP ADDRESS
+const ADMIN_SERVER_IP = "10.10.46.103"; // ⬅️ YOUR CURRENT IP ADDRESS
 const SERVER_URL = `http://${ADMIN_SERVER_IP}:7401`;
 
 // DOM Elements
