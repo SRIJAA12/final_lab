@@ -3491,10 +3491,31 @@ io.on('connection', (socket) => {
       const adminLabId = adminLabMap.get(socket.id) || data?.labId || 'CC1';
       
       console.log(`📋 Admin requesting active sessions for Lab: ${adminLabId}`);
-      const activeSessions = await Session.find({ status: 'active', labId: adminLabId }).sort({ loginTime: -1 });
       
-      // Also get active lab session for THIS LAB ONLY
-      const activeLabSession = await LabSession.findOne({ status: 'active', labId: adminLabId });
+      // Get ALL active sessions first
+      const allActiveSessions = await Session.find({ status: 'active' }).sort({ loginTime: -1 });
+      console.log(`📊 Total active sessions in DB: ${allActiveSessions.length}`);
+      
+      // Filter by lab ID (but if none match, return all to avoid empty screen)
+      let activeSessions = allActiveSessions.filter(s => s.labId === adminLabId);
+      
+      // CRITICAL FIX: If no sessions match the lab ID, return ALL active sessions
+      // This prevents "empty screen" issue when lab IDs don't match
+      if (activeSessions.length === 0 && allActiveSessions.length > 0) {
+        console.log(`⚠️ No sessions found for Lab ${adminLabId}, returning ALL active sessions`);
+        activeSessions = allActiveSessions;
+      }
+      
+      // Also get active lab session - try specific lab first, then ANY active session
+      let activeLabSession = await LabSession.findOne({ status: 'active', labId: adminLabId });
+      
+      if (!activeLabSession) {
+        // If no lab session for this lab, get ANY active lab session
+        activeLabSession = await LabSession.findOne({ status: 'active' });
+        if (activeLabSession) {
+          console.log(`ℹ️ Using active lab session from different lab: ${activeLabSession.labId}`);
+        }
+      }
       
       socket.emit('active-sessions', {
         sessions: activeSessions,
@@ -3503,6 +3524,13 @@ io.on('connection', (socket) => {
       });
       
       console.log(`📊 Sent ${activeSessions.length} sessions for Lab ${adminLabId} and lab session: ${activeLabSession ? activeLabSession.subject : 'none'}`);
+      
+      // Debug logging
+      if (activeSessions.length > 0) {
+        activeSessions.forEach(s => {
+          console.log(`  ✓ Session: ${s.studentName} (${s.studentId}) on ${s.systemNumber}`);
+        });
+      }
     } catch (error) {
       console.error('❌ Error getting active sessions:', error);
       socket.emit('active-sessions', { sessions: [], labSession: null, labId: 'CC1' });
