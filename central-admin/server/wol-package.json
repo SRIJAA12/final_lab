@@ -1,0 +1,15 @@
+{
+  "name": "wake-on-lan-service",
+  "version": "1.0.0",
+  "description": "Standalone Wake-on-LAN service for admin system",
+  "main": "wake-on-lan-service.js",
+  "scripts": {
+    "start": "node wake-on-lan-service.js",
+    "setup": "node wol-setup.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "wake_on_lan": "^1.0.0"
+  }
+}

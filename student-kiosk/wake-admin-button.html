@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wake Admin System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .wake-container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        
+        .wake-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .description {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .wake-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            font-weight: bold;
+            width: 100%;
+        }
+        
+        .wake-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .wake-button:active {
+            transform: translateY(0);
+        }
+        
+        .wake-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .config-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 12px;
+            color: #666;
+            text-align: left;
+        }
+        
+        .config-info div {
+            margin: 5px 0;
+        }
+        
+        .config-info strong {
+            color: #333;
+        }
+        
+        .last-wake {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="wake-container">
+        <div class="wake-icon">💻</div>
+        <h1>Wake Admin System</h1>
+        <p class="description">Click the button below to wake up the admin computer</p>
+        
+        <button class="wake-button" id="wakeButton" onclick="wakeAdmin()">
+            <span id="buttonText">Wake Up Admin</span>
+        </button>
+        
+        <div class="status" id="status"></div>
+        
+        <div class="config-info" id="configInfo" style="display:none;">
+            <div><strong>Target:</strong> <span id="adminName">-</span></div>
+            <div><strong>MAC:</strong> <span id="adminMAC">-</span></div>
+            <div><strong>IP:</strong> <span id="adminIP">-</span></div>
+        </div>
+        
+        <div class="last-wake" id="lastWake"></div>
+    </div>
+
+    <script>
+        // Configuration - UPDATE THIS WITH YOUR ADMIN SERVER IP
+        const WOL_SERVER_URL = 'http://192.168.1.100:3002'; // Change to your admin server IP
+        
+        let isWaking = false;
+        
+        // Load configuration on page load
+        window.addEventListener('load', loadConfig);
+        
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${WOL_SERVER_URL}/api/wol/config`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.adminSystem.isConfigured) {
+                        document.getElementById('configInfo').style.display = 'block';
+                        document.getElementById('adminName').textContent = data.adminSystem.name;
+                        document.getElementById('adminMAC').textContent = data.adminSystem.macAddress;
+                        document.getElementById('adminIP').textContent = data.adminSystem.ipAddress;
+                        
+                        if (data.adminSystem.lastWakeTime) {
+                            const lastWake = new Date(data.adminSystem.lastWakeTime);
+                            document.getElementById('lastWake').textContent = 
+                                `Last wake: ${lastWake.toLocaleString()}`;
+                        }
+                    } else {
+                        showStatus('⚠ Admin system not configured yet', 'info');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading config:', error);
+                showStatus('⚠ Cannot connect to WoL service', 'error');
+            }
+        }
+        
+        async function wakeAdmin() {
+            if (isWaking) return;
+            
+            isWaking = true;
+            const button = document.getElementById('wakeButton');
+            const buttonText = document.getElementById('buttonText');
+            
+            button.disabled = true;
+            buttonText.innerHTML = 'Sending Wake Signal <span class="spinner"></span>';
+            
+            try {
+                const response = await fetch(`${WOL_SERVER_URL}/api/wol/wake-admin`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    showStatus('✓ Wake signal sent successfully! Admin system should power on.', 'success');
+                    
+                    // Update last wake time
+                    if (data.timestamp) {
+                        const wakeTime = new Date(data.timestamp);
+                        document.getElementById('lastWake').textContent = 
+                            `Last wake: ${wakeTime.toLocaleString()}`;
+                    }
+                    
+                    // Show countdown
+                    let countdown = 30;
+                    const countdownInterval = setInterval(() => {
+                        countdown--;
+                        buttonText.textContent = `Wake Up Admin (${countdown}s)`;
+                        if (countdown <= 0) {
+                            clearInterval(countdownInterval);
+                            buttonText.textContent = 'Wake Up Admin';
+                            button.disabled = false;
+                            isWaking = false;
+                        }
+                    }, 1000);
+                } else {
+                    throw new Error(data.error || data.message || 'Unknown error');
+                }
+            } catch (error) {
+                console.error('Wake error:', error);
+                showStatus('❌ Error: ' + error.message, 'error');
+                buttonText.textContent = 'Wake Up Admin';
+                button.disabled = false;
+                isWaking = false;
+            }
+        }
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + type;
+            
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>
