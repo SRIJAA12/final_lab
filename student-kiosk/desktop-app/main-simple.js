@@ -394,17 +394,51 @@ function createTimerWindow(studentName, studentId) {
     height: 250,  // Increased height for logout button
     x: width - 370,
     y: 20,
-    frame: true,
+    frame: false,  // 🔒 SECURITY: No frame = No menus
     title: '⏱️ Active Session Timer',
     alwaysOnTop: true,
     skipTaskbar: false,
-    minimizable: true,
+    minimizable: false,  // 🔒 SECURITY: Cannot minimize
     closable: false,  // Cannot be closed
     resizable: false,
     webPreferences: {
       nodeIntegration: true,  // Enable for ipcRenderer in timer
-      contextIsolation: false  // Allow require() in timer window
+      contextIsolation: false,  // Allow require() in timer window
+      devTools: false  // 🔒 SECURITY: Disable dev tools completely
     }
+  });
+  
+  // 🔒 SECURITY: Block right-click and keyboard shortcuts in timer window
+  timerWindow.webContents.on('before-input-event', (event, input) => {
+    // Block Ctrl+R, Ctrl+Shift+R (refresh)
+    if (input.control && (input.key === 'r' || input.key === 'R')) {
+      event.preventDefault();
+      console.log('🚫 Blocked Ctrl+R refresh in timer window');
+      return;
+    }
+    // Block F5 (refresh)
+    if (input.key === 'F5') {
+      event.preventDefault();
+      console.log('🚫 Blocked F5 refresh in timer window');
+      return;
+    }
+    // Block F12 (dev tools)
+    if (input.key === 'F12') {
+      event.preventDefault();
+      console.log('🚫 Blocked F12 in timer window');
+      return;
+    }
+    // Block Ctrl+Shift+I (dev tools)
+    if (input.control && input.shift && input.key === 'I') {
+      event.preventDefault();
+      console.log('🚫 Blocked Ctrl+Shift+I in timer window');
+      return;
+    }
+  });
+  
+  // Disable right-click menu
+  timerWindow.webContents.on('context-menu', (e) => {
+    e.preventDefault();
   });
 
   // HTML content for timer window with Logout button
@@ -417,12 +451,25 @@ function createTimerWindow(studentName, studentId) {
       <style>
         body {
           margin: 0;
-          padding: 15px;
+          padding: 0;
           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
           background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
           color: white;
           text-align: center;
           user-select: none;
+          -webkit-app-region: drag;  /* Allow dragging window */
+        }
+        .title-bar {
+          background: rgba(0,0,0,0.2);
+          padding: 8px;
+          font-size: 14px;
+          font-weight: bold;
+          -webkit-app-region: drag;  /* Draggable title bar */
+          border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .content {
+          padding: 15px;
+          -webkit-app-region: no-drag;  /* Content not draggable */
         }
         h3 {
           margin: 5px 0 10px 0;
@@ -463,13 +510,16 @@ function createTimerWindow(studentName, studentId) {
       </style>
     </head>
     <body>
-      <h3>⏱️ Active Session</h3>
+      <div class="title-bar">⏱️ Active Session Timer</div>
+      <div class="content">
+      <h3>Session Active</h3>
       <div class="timer" id="timer">00:00:00</div>
       <div class="info">
         <strong>${studentName}</strong><br>
         ${studentId}
       </div>
       <button class="logout-btn" onclick="handleLogout()">🚪 Logout</button>
+      </div>
       <script>
         const { ipcRenderer } = require('electron');
         
@@ -607,8 +657,8 @@ async function handleLogoutProcess() {
     
     console.log('🔒 System fully locked after logout - kiosk mode active');
     
-    // 🔌 NEW: Automatic shutdown after session ends
-    console.log('🔌 Initiating automatic system shutdown after session end...');
+    // � LOGOUT BEHAVIOR: Return to kiosk login (no automatic shutdown)
+    console.log('🔄 Returning to kiosk login screen...');
 
     // Re-enable kiosk shortcut blocking so the machine is locked again
     try {
@@ -618,36 +668,7 @@ async function handleLogoutProcess() {
       console.error('⚠️ Error re-registering kiosk shortcuts:', e.message || e);
     }
     
-    // IMMEDIATE: Schedule system shutdown for 1 minute from now (without showing dialog)
-    setTimeout(async () => {
-      const { exec } = require('child_process');
-      const platform = os.platform();
-      let shutdownCommand;
-      
-      if (platform === 'win32') {
-        // Windows: 60 seconds = 1 minute shutdown delay
-        shutdownCommand = 'shutdown /s /t 60 /c "Session ended. System will shutdown in 1 minute (60 seconds)."';
-      } else if (platform === 'linux') {
-        // Linux: 1 minute
-        shutdownCommand = 'sudo shutdown -h +1 "Session ended. System shutting down in 1 minute."';
-      } else if (platform === 'darwin') {
-        // macOS: 1 minute
-        shutdownCommand = 'sudo shutdown -h +1 "Session ended. System shutting down in 1 minute."';
-      }
-      console.log(`🔌 Executing shutdown command with 60-second (1 minute) delay: ${shutdownCommand}`);
-      exec(shutdownCommand, (error, stdout, stderr) => {
-        if (error) {
-          console.error('❌ Shutdown command failed:', error.message);
-          console.error('❌ Error details:', error);
-          console.error('❌ Command was:', shutdownCommand);
-        } else {
-          console.log('✅✅✅ Automatic shutdown scheduled successfully (1 minute / 60 seconds)');
-          console.log('✅ System will shutdown at:', new Date(Date.now() + 60000).toLocaleTimeString());
-          if (stdout) console.log('Shutdown stdout:', stdout);
-          if (stderr) console.log('Shutdown stderr:', stderr);
-        }
-      });
-    }, 1000); // Wait 1 second after logout before issuing OS shutdown command
+    console.log('✅ Ready for next student login');
 
     return { success: true };
   } catch (error) {

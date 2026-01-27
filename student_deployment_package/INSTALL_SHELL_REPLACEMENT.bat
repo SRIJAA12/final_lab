@@ -32,20 +32,20 @@ reg export "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winl
 
 REM Get the path to node and create a direct launcher
 echo [2/3] Creating shell launcher...
-where node > "C:\StudentKiosk\node_path.txt"
-set /p NODE_PATH=<"C:\StudentKiosk\node_path.txt"
-del "C:\StudentKiosk\node_path.txt"
 
-REM Create a batch file that launches the kiosk directly
+REM 🔒 SECURITY FIX: Use VBScript launcher to prevent CMD window visibility
+REM Instead of launching directly, use the silent VBS launcher
 (
-echo @echo off
-echo cd /d C:\StudentKiosk
-echo "%NODE_PATH%" "%CD%\node_modules\electron\cli.js" .
-) > "C:\StudentKiosk\KIOSK_SHELL_LAUNCHER.bat"
+echo Set WshShell = CreateObject^("WScript.Shell"^)
+echo kioskPath = "C:\StudentKiosk"
+echo command = "cmd /c ""cd /d """ ^& kioskPath ^& """ ^^&^^& npm start > nul 2>^^&1"""
+echo WshShell.Run command, 0, False
+echo Set WshShell = Nothing
+) > "C:\StudentKiosk\KIOSK_SHELL_LAUNCHER.vbs"
 
-REM Replace Windows Shell with kiosk
+REM Replace Windows Shell with VBScript launcher (no CMD window)
 echo [3/3] Replacing Windows Shell...
-reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v Shell /t REG_SZ /d "C:\StudentKiosk\KIOSK_SHELL_LAUNCHER.bat" /f
+reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v Shell /t REG_SZ /d "wscript.exe C:\StudentKiosk\KIOSK_SHELL_LAUNCHER.vbs" /f
 
 echo.
 echo ================================================
@@ -54,10 +54,10 @@ echo ================================================
 echo.
 echo CRITICAL INFORMATION:
 echo - Backup saved to: C:\StudentKiosk\SHELL_BACKUP.reg
-echo - Shell launcher: C:\StudentKiosk\KIOSK_SHELL_LAUNCHER.bat
+echo - Shell launcher: C:\StudentKiosk\KIOSK_SHELL_LAUNCHER.vbs
 echo.
 echo On next login:
-echo - Kiosk will launch IMMEDIATELY (no desktop)
+echo - Kiosk will launch IMMEDIATELY (no desktop, no CMD window)
 echo - Windows Explorer will NOT run
 echo - Maximum security mode active
 echo.

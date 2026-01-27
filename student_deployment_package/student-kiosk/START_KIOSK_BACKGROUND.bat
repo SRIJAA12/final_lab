@@ -1,16 +1,13 @@
 @echo off
 REM ==================================================================
-REM Student Kiosk - Background Launcher
+REM Student Kiosk - Background Launcher (NO CMD WINDOW)
 REM ==================================================================
-REM This batch file launches the kiosk in the background without
-REM keeping a CMD window open. It uses START /B to detach the process.
+REM This batch file launches the kiosk in the background using VBScript
+REM to ensure NO CMD window is visible at all.
 REM ==================================================================
 
-cd /d C:\StudentKiosk
+REM Launch using VBScript for completely hidden execution
+start /min "" wscript.exe "C:\StudentKiosk\START_KIOSK_SILENT.vbs"
 
-REM Launch npm start in background mode (no window)
-REM /B = Start application without creating a new window
-start /B npm start
-
-REM Exit immediately - the kiosk is now running independently
+REM Exit immediately
 exit
