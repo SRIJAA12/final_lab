@@ -1452,17 +1452,33 @@ app.post('/api/first-time-signin', async (req, res) => {
     }
     
     // Find student by ID, email, and date of birth
+    console.log(`🔍 First-time signin attempt for: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
+    
     const student = await Student.findOne({ 
       studentId: studentId.toUpperCase(),
       email: email.toLowerCase()
     });
     
     if (!student) {
+      console.log(`❌ Student not found for first-time signin: ${studentId.toUpperCase()}`);
+      
+      // Try to find by studentId only to give better error message
+      const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
+      if (studentById) {
+        console.log(`⚠️ Student ID exists but email mismatch. Expected: ${studentById.email}, Got: ${email.toLowerCase()}`);
+        return res.status(400).json({ 
+          success: false, 
+          error: `Email does not match our records. Registered email: ${studentById.email}` 
+        });
+      }
+      
       return res.status(400).json({ 
         success: false, 
-        error: 'Student not found or email does not match our records' 
+        error: 'Student not found with this ID and email combination' 
       });
     }
+    
+    console.log(`✅ Student found for first-time signin: ${student.name} (${student.studentId})`);
     
     // Verify date of birth
     const providedDate = new Date(dateOfBirth);
@@ -1507,6 +1523,54 @@ app.post('/api/first-time-signin', async (req, res) => {
     
   } catch (error) {
     console.error('❌ First-time sign-in error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🔍 DIAGNOSTIC: Check if student exists
+app.post('/api/check-student-exists', async (req, res) => {
+  try {
+    const { studentId, email } = req.body;
+    
+    console.log(`🔍 Checking student: ${studentId} with email: ${email}`);
+    
+    // Search by student ID only
+    const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
+    
+    if (!studentById) {
+      return res.json({
+        success: false,
+        found: false,
+        message: `Student ID "${studentId.toUpperCase()}" not found in database`,
+        suggestion: 'Please add this student via Admin Dashboard → Student Management'
+      });
+    }
+    
+    // Student found, check email match
+    const emailMatch = studentById.email.toLowerCase() === email.toLowerCase();
+    
+    res.json({
+      success: true,
+      found: true,
+      studentId: studentById.studentId,
+      name: studentById.name,
+      registeredEmail: studentById.email,
+      providedEmail: email,
+      emailMatch: emailMatch,
+      isPasswordSet: studentById.isPasswordSet,
+      department: studentById.department,
+      message: emailMatch 
+        ? `✅ Student found! Email matches.` 
+        : `⚠️ Student found but email DOES NOT match. Registered: ${studentById.email}, Provided: ${email}`,
+      action: !emailMatch 
+        ? `Use the registered email: ${studentById.email}` 
+        : studentById.isPasswordSet 
+          ? 'Use Forgot Password to reset' 
+          : 'Use First-Time Signin to set password'
+    });
+    
+  } catch (error) {
+    console.error('❌ Check student error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1661,14 +1725,32 @@ app.post('/api/forgot-password-verify-otp', async (req, res) => {
     }
     
     // Find student and update password
+    console.log(`🔍 Searching for student: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
+    
     const student = await Student.findOne({ 
       studentId: studentId.toUpperCase(),
       email: email.toLowerCase()
     });
     
     if (!student) {
-      return res.status(404).json({ success: false, error: 'Student not found' });
+      console.log(`❌ Student not found for: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
+      
+      // Try to find by studentId only to give better error message
+      const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
+      if (studentById) {
+        return res.status(404).json({ 
+          success: false, 
+          error: `Student ID found but email does not match. Registered email: ${studentById.email}` 
+        });
+      }
+      
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Student not found with this ID and email combination' 
+      });
     }
+    
+    console.log(`✅ Student found: ${student.name} (${student.studentId})`);
     
     // Hash new password and update
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);

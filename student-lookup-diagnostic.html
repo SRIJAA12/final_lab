@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Lookup Diagnostic Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            display: block;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            display: block;
+        }
+        
+        .result.warning {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            display: block;
+        }
+        
+        .result h3 {
+            margin-bottom: 15px;
+        }
+        
+        .result-item {
+            padding: 10px;
+            background: rgba(255,255,255,0.5);
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        
+        .result-item strong {
+            display: inline-block;
+            width: 150px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Student Lookup Tool</h1>
+        <p class="subtitle">Diagnose Forgot Password / First-Time Signin Issues</p>
+        
+        <form id="checkForm">
+            <div class="form-group">
+                <label for="studentId">Student ID (Roll Number)</label>
+                <input 
+                    type="text" 
+                    id="studentId" 
+                    placeholder="Enter student ID" 
+                    required
+                >
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    placeholder="Enter email address" 
+                    required
+                >
+            </div>
+            
+            <button type="submit">Check Student</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">Checking database...</p>
+        </div>
+        
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('checkForm');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const studentId = document.getElementById('studentId').value.trim();
+            const email = document.getElementById('email').value.trim();
+            
+            // Show loading
+            loading.classList.add('active');
+            result.style.display = 'none';
+            result.className = 'result';
+            
+            try {
+                const response = await fetch('http://localhost:7401/api/check-student-exists', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ studentId, email })
+                });
+                
+                const data = await response.json();
+                
+                // Hide loading
+                loading.classList.remove('active');
+                
+                // Show result
+                if (data.found) {
+                    if (data.emailMatch) {
+                        result.className = 'result success';
+                        result.innerHTML = `
+                            <h3>✅ Student Found!</h3>
+                            <div class="result-item">
+                                <strong>Student ID:</strong> ${data.studentId}
+                            </div>
+                            <div class="result-item">
+                                <strong>Name:</strong> ${data.name}
+                            </div>
+                            <div class="result-item">
+                                <strong>Email:</strong> ${data.registeredEmail}
+                            </div>
+                            <div class="result-item">
+                                <strong>Department:</strong> ${data.department}
+                            </div>
+                            <div class="result-item">
+                                <strong>Password Set:</strong> ${data.isPasswordSet ? 'Yes' : 'No'}
+                            </div>
+                            <div class="result-item">
+                                <strong>Action:</strong> ${data.action}
+                            </div>
+                        `;
+                    } else {
+                        result.className = 'result warning';
+                        result.innerHTML = `
+                            <h3>⚠️ Email Mismatch!</h3>
+                            <div class="result-item">
+                                <strong>Student ID:</strong> ${data.studentId}
+                            </div>
+                            <div class="result-item">
+                                <strong>Name:</strong> ${data.name}
+                            </div>
+                            <div class="result-item">
+                                <strong>Registered Email:</strong> ${data.registeredEmail}
+                            </div>
+                            <div class="result-item">
+                                <strong>Your Email:</strong> ${data.providedEmail}
+                            </div>
+                            <div class="result-item" style="background: #fff; padding: 15px; margin-top: 15px; font-weight: bold;">
+                                🔧 Solution: Use the registered email: <span style="color: #dc3545;">${data.registeredEmail}</span>
+                            </div>
+                        `;
+                    }
+                } else {
+                    result.className = 'result error';
+                    result.innerHTML = `
+                        <h3>❌ Student Not Found</h3>
+                        <p style="margin-bottom: 15px;">${data.message}</p>
+                        <div class="result-item" style="background: #fff; padding: 15px; font-weight: bold;">
+                            ${data.suggestion}
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                loading.classList.remove('active');
+                result.className = 'result error';
+                result.innerHTML = `
+                    <h3>❌ Connection Error</h3>
+                    <p>Could not connect to the server. Please ensure:</p>
+                    <ul style="margin-left: 20px; margin-top: 10px;">
+                        <li>Admin server is running at http://localhost:7401</li>
+                        <li>MongoDB is connected</li>
+                        <li>Network connection is active</li>
+                    </ul>
+                    <p style="margin-top: 15px; color: #dc3545;">${error.message}</p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
