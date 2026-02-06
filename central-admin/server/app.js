@@ -2002,6 +2002,46 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
     console.log(`   ✅ Successful: ${successCount}`);
     console.log(`   ❌ Failed: ${errorCount}`);
 
+    // 🔧 FIX: Immediately check if any uploaded sessions should start NOW
+    // Don't wait for the next cron cycle (which could be up to 1 minute)
+    console.log('🚀 Checking if any sessions should start immediately...');
+    setTimeout(async () => {
+      try {
+        const now = new Date();
+        const currentDate = now.toISOString().split('T')[0];
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        
+        const startOfDay = new Date(currentDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(currentDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        const todayEntries = await TimetableEntry.find({
+          isActive: true,
+          isProcessed: false,
+          sessionDate: { $gte: startOfDay, $lte: endOfDay }
+        });
+        
+        for (const entry of todayEntries) {
+          const [startHour, startMin] = entry.startTime.split(':').map(Number);
+          const [endHour, endMin] = entry.endTime.split(':').map(Number);
+          const startMinutes = startHour * 60 + startMin;
+          const endMinutes = endHour * 60 + endMin;
+          
+          // If current time is between start and end time, start immediately
+          if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+            console.log(`🚀 IMMEDIATE START: ${entry.subject} (scheduled ${entry.startTime}, uploaded late at ${now.toLocaleTimeString()})`);
+            const result = await autoStartLabSession(entry);
+            if (result.success) {
+              console.log(`✅ Session auto-started immediately: ${entry.subject}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('❌ Error in immediate session check:', err);
+      }
+    }, 2000); // Check after 2 seconds to allow DB writes to complete
+
     res.json({
       success: true,
       message: `Timetable uploaded successfully`,
@@ -2910,6 +2950,8 @@ app.post('/api/start-lab-session', async (req, res) => {
     console.log(`🏢 Starting lab session for Lab: ${detectedLabId} (Admin IP: ${adminIP})`);
     
     // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
+    console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);    
+    // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
     console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);
     
     // End all active student sessions for this lab only
@@ -3010,11 +3052,6 @@ app.post('/api/end-lab-session', async (req, res) => {
       });
     }
     
-    // Update lab session status
-    labSession.status = 'completed';
-    labSession.endTime = new Date();
-    await labSession.save();
-    
     // 🔧 MULTI-LAB: Clear all individual student sessions for THIS LAB ONLY
     const activeSessions = await Session.find({ status: 'active', labId: labSession.labId });
     const currentTime = new Date();
@@ -3048,6 +3085,70 @@ app.post('/api/end-lab-session', async (req, res) => {
     }
     
     console.log(`🛑 Updated ${activeSessions.length} active sessions to completed`);
+    
+    // 🔧 FIX: Update labSession.studentRecords with final logout times and durations
+    // Set end time first
+    labSession.endTime = new Date();
+    
+    // Get ALL sessions (active + completed) for this lab during THIS session period ONLY
+    // Use both start and end time to avoid picking up future sessions
+    const allSessionsForThisLab = await Session.find({
+      labId: labSession.labId,
+      loginTime: { 
+        $gte: labSession.startTime,
+        $lte: labSession.endTime  // 🔧 FIX: Add upper limit to avoid future sessions
+      }
+    }).sort({ loginTime: 1 });
+    
+    console.log(`📊 Found ${allSessionsForThisLab.length} total sessions for this lab session`);
+    console.log(`📊 Session period: ${labSession.startTime} to ${labSession.endTime}`);
+    
+    if (allSessionsForThisLab.length > 0) {
+      console.log(`📊 First session: ${allSessionsForThisLab[0].studentName} at ${allSessionsForThisLab[0].loginTime}`);
+      console.log(`📊 Last session: ${allSessionsForThisLab[allSessionsForThisLab.length-1].studentName} at ${allSessionsForThisLab[allSessionsForThisLab.length-1].loginTime}`);
+    }
+    
+    // Update studentRecords with complete data from Session collection
+    labSession.studentRecords = allSessionsForThisLab.map(session => ({
+      studentName: session.studentName,
+      studentId: session.studentId,
+      systemNumber: session.systemNumber,
+      loginTime: session.loginTime,
+      logoutTime: session.logoutTime,
+      duration: session.duration || 0,
+      status: session.status
+    }));
+    
+    console.log(`📊 Updated studentRecords array with ${labSession.studentRecords.length} records`);
+    
+    // Log sample records for debugging
+    if (labSession.studentRecords.length > 0) {
+      console.log(`📊 Sample record:`, {
+        name: labSession.studentRecords[0].studentName,
+        id: labSession.studentRecords[0].studentId,
+        system: labSession.studentRecords[0].systemNumber,
+        duration: labSession.studentRecords[0].duration
+      });
+    }
+    
+    // Update lab session status
+    labSession.status = 'completed';
+    await labSession.save();
+    
+    console.log(`✅ Lab session saved with ${labSession.studentRecords.length} student records`);
+    
+    // 🔧 FIX: Mark timetable entry as processed/completed when session ends
+    try {
+      const timetableEntry = await TimetableEntry.findOne({ labSessionId: labSession._id });
+      if (timetableEntry && !timetableEntry.isProcessed) {
+        timetableEntry.isProcessed = true;
+        await timetableEntry.save();
+        console.log(`✅ Marked timetable entry as completed: ${timetableEntry.subject}`);
+      }
+    } catch (timetableErr) {
+      console.error('⚠️ Error updating timetable entry:', timetableErr.message);
+      // Don't fail the entire operation if timetable update fails
+    }
     
     console.log(`🛑 Lab session ended: ${labSession.subject}`);
     
@@ -4008,6 +4109,63 @@ async function generateLabSessionCSV(labSessionId) {
     console.log('   Periods:', labSession.periods);
     console.log('   Students:', labSession.studentRecords.length);
     
+    // 🔧 FALLBACK: If studentRecords is empty, try to get from Session collection
+    let finalStudentRecords = labSession.studentRecords || [];
+    
+    console.log(`📊 LabSession has ${finalStudentRecords.length} studentRecords`);
+    
+    if (finalStudentRecords.length === 0) {
+      console.log('⚠️ No studentRecords found in labSession, fetching from Session collection...');
+      console.log(`⚠️ LabSession details: ID=${labSession._id}, labId=${labSession.labId}, startTime=${labSession.startTime}, endTime=${labSession.endTime}`);
+      
+      // Get all sessions for this lab during this session period
+      const sessionQuery = {
+        labId: labSession.labId,
+        loginTime: { $gte: labSession.startTime }
+      };
+      
+      if (labSession.endTime) {
+        sessionQuery.loginTime.$lte = labSession.endTime;
+      }
+      
+      console.log(`⚠️ Session query:`, JSON.stringify(sessionQuery));
+      
+      const sessions = await Session.find(sessionQuery).sort({ loginTime: 1 });
+      
+      console.log(`📊 Found ${sessions.length} sessions from Session collection`);
+      
+      if (sessions.length > 0) {
+        console.log(`📊 Sample session from DB:`, {
+          name: sessions[0].studentName,
+          id: sessions[0].studentId,
+          system: sessions[0].systemNumber,
+          loginTime: sessions[0].loginTime,
+          labId: sessions[0].labId
+        });
+      }
+      
+      finalStudentRecords = sessions.map(session => ({
+        studentName: session.studentName,
+        studentId: session.studentId,
+        systemNumber: session.systemNumber,
+        loginTime: session.loginTime,
+        logoutTime: session.logoutTime,
+        duration: session.duration || 0,
+        status: session.status
+      }));
+    } else {
+      console.log(`✅ Using ${finalStudentRecords.length} studentRecords from labSession`);
+      if (finalStudentRecords.length > 0) {
+        console.log(`✅ Sample record:`, {
+          name: finalStudentRecords[0].studentName,
+          id: finalStudentRecords[0].studentId,
+          system: finalStudentRecords[0].systemNumber
+        });
+      }
+    }
+    
+    console.log(`📊 Final student records count for CSV: ${finalStudentRecords.length}`);
+    
     // Format dates
     const startTime = new Date(labSession.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const endTime = labSession.endTime ? new Date(labSession.endTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active';
@@ -4036,7 +4194,7 @@ async function generateLabSessionCSV(labSessionId) {
     csvContent += `"Start Time:","${startTime}"\n`;
     csvContent += `"End Time:","${endTime}"\n`;
     csvContent += `"Status:","${labSession.status}"\n`;
-    csvContent += `"Total Students:","${labSession.studentRecords.length}"\n`;
+    csvContent += `"Total Students:","${finalStudentRecords.length}"\n`;
     csvContent += '"="\n';
     csvContent += '\n';
     
@@ -4044,7 +4202,7 @@ async function generateLabSessionCSV(labSessionId) {
     csvContent += '"STUDENT RECORDS"\n';
     csvContent += '"Student Name","Student ID","System Number","Login Time","Logout Time","Duration (seconds)","Duration (minutes)","Status"\n';
     
-    labSession.studentRecords.forEach(record => {
+    finalStudentRecords.forEach(record => {
       const loginTime = record.loginTime ? new Date(record.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A';
       const logoutTime = record.logoutTime ? new Date(record.logoutTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active';
       const durationSec = record.duration || 0;
@@ -4072,7 +4230,7 @@ async function generateLabSessionCSV(labSessionId) {
       success: true, 
       csvContent, 
       filename,
-      studentCount: labSession.studentRecords.length,
+      studentCount: finalStudentRecords.length,
       subject: labSession.subject,
       faculty: labSession.faculty
     };
@@ -4486,12 +4644,26 @@ cron.schedule('* * * * *', async () => {
     const endOfDay = new Date(currentDate);
     endOfDay.setHours(23, 59, 59, 999);
     
+    console.log(`📅 Checking for entries on: ${currentDate}`);
+    console.log(`📅 Start of day: ${startOfDay.toISOString()}`);
+    console.log(`📅 End of day: ${endOfDay.toISOString()}`);
+    
     const todayEntries = await TimetableEntry.find({
       isActive: true,
       sessionDate: { $gte: startOfDay, $lte: endOfDay }
     }).sort({ startTime: 1 });
     
     console.log(`📋 Found ${todayEntries.length} timetable entries for today`);
+    
+    if (todayEntries.length > 0) {
+      console.log(`📋 Today's entries:`, todayEntries.map(e => ({
+        subject: e.subject,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        isProcessed: e.isProcessed,
+        labId: e.labId
+      })));
+    }
     
     for (const entry of todayEntries) {
       // IMPROVED: Start session if current time is AT or AFTER start time but BEFORE end time
@@ -4501,9 +4673,15 @@ cron.schedule('* * * * *', async () => {
       const endMinutes = endHour * 60 + endMin;
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       
+      console.log(`   📊 ${entry.subject}: start=${startMinutes}min (${entry.startTime}), current=${currentMinutes}min (${currentTime}), end=${endMinutes}min (${entry.endTime}), processed=${entry.isProcessed}`);
+      
       // Check if it's time to start the session (between start and end time, not yet processed)
+      // ✅ FIX: This allows sessions to start even if timetable is uploaded LATE (e.g., scheduled 18:35, uploaded 18:38)
+      // As long as current time is still BEFORE the end time, the session will start
       if (currentMinutes >= startMinutes && currentMinutes < endMinutes && !entry.isProcessed) {
-        console.log(`📅 Timetable trigger: Starting session for ${entry.subject} (uploaded late but still within session time)`);
+        console.log(`📅 ✅ TRIGGER: Starting session for ${entry.subject}`);
+        console.log(`   ⏰ Scheduled: ${entry.startTime}, Current: ${currentTime}, End: ${entry.endTime}`);
+        console.log(`   ✅ Starting session (uploaded late but still within session time)`);
         const result = await autoStartLabSession(entry);
         if (result.success) {
           console.log(`✅ Session auto-started successfully: ${entry.subject}`);
@@ -4880,7 +5058,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   
   // Auto-open admin dashboard in browser (with slight delay to ensure server is ready)
   setTimeout(() => {
-    const adminDashboardUrl = `http://${serverIp}:${PORT}/dashboard/admin-dashboard.html`;
-    openBrowser(adminDashboardUrl);
+    const adminDashboardUrl = `http://${serverIp}:${PORT}/admin-dashboard.html`;
+    openBrowser(adminDashboardUrl); 
   }, 1000);
 });

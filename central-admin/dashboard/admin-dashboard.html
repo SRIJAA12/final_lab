@@ -327,75 +327,7 @@
         .guest-access-btn:active:not(:disabled) {
             transform: translateY(0);
         }
-        
-        /* Multi-Lab Guest Access System Buttons */
-        .guest-access-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 12px;
-            padding: 10px;
-        }
 
-        .guest-btn {
-            padding: 14px 10px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-size: 14px;
-            font-weight: 600;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-        }
-
-        .guest-btn small {
-            font-size: 11px;
-            font-weight: 500;
-            opacity: 0.9;
-        }
-
-        .guest-btn.available {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-            color: white;
-            border-color: #16a34a;
-        }
-
-        .guest-btn.available:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(34, 197, 94, 0.5);
-        }
-
-        .guest-btn.logged-in {
-            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-            color: white;
-            border-color: #2563eb;
-            cursor: not-allowed;
-            opacity: 0.85;
-        }
-
-        .guest-btn.guest {
-            background: linear-gradient(135deg, #c084fc 0%, #a855f7 100%);
-            color: white;
-            border-color: #9333ea;
-            animation: pulse-guest 2s infinite;
-        }
-
-        @keyframes pulse-guest {
-            0%, 100% { box-shadow: 0 2px 6px rgba(168, 85, 247, 0.3); }
-            50% { box-shadow: 0 4px 16px rgba(168, 85, 247, 0.6); }
-        }
-
-        .guest-btn.offline {
-            background: #e5e7eb;
-            color: #9ca3af;
-            border-color: #d1d5db;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
         
         .btn-expand {
             background: #007bff;
@@ -656,47 +588,7 @@
             </div>
         </div>
 
-        <!-- Guest Access / Available Systems Section -->
-        <div class="students-section" style="margin-bottom: 20px;">
-            <h2 style="color: #667eea;">🔓 Guest Access - Quick System Unlock</h2>
-            <p style="color: #6c757d; margin-bottom: 15px;">Enable guest access for non-student users (visitors, faculty, external users). Select a lab, then click any available system to unlock remotely.</p>
-            
-            <!-- Lab Selector -->
-            <div class="lab-selector-container" style="margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px; border: 2px solid #dee2e6;">
-                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                    <label for="labSelect" style="font-weight: bold; color: #495057; font-size: 16px;">
-                        🏢 Select Lab:
-                    </label>
-                    <select id="labSelect" onchange="loadLabSystems(this.value)" 
-                            style="padding: 10px 15px; font-size: 14px; min-width: 280px; border: 2px solid #667eea; border-radius: 8px; background: white; cursor: pointer; font-weight: 600; color: #495057;">
-                        <option value="">-- Loading Labs --</option>
-                    </select>
-                    
-                    <div id="labStats" style="display: inline-block; padding: 8px 15px; background: white; border-radius: 6px; border: 1px solid #dee2e6; font-size: 13px; color: #6c757d; font-weight: 500;">
-                        <span id="labStatsText">Select a lab to view systems</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- System Status Legend -->
-            <div style="margin-bottom: 15px; padding: 10px 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">
-                <strong style="color: #495057; margin-right: 15px;">Status Legend:</strong>
-                <span style="margin-right: 15px;">🟢 Available</span>
-                <span style="margin-right: 15px;">🔵 Logged In</span>
-                <span style="margin-right: 15px;">🟣 Guest Mode</span>
-                <span>⚫ Offline</span>
-            </div>
-            
-            <!-- Dynamic System Buttons Grid -->
-            <div id="guestAccessButtons" class="guest-access-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; padding: 10px;">
-                <p style="color: #999; text-align: center; grid-column: 1 / -1;">Please select a lab to view systems.</p>
-            </div>
-            </div>
-            
-            <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 12px; border-radius: 6px; margin-top: 10px;">
-                <strong>ℹ️ How it works:</strong> Click any 🟢 Available system button to remotely unlock that kiosk for guest use. The system will bypass login and be available for immediate use. Guest password: <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">admin123</code>
-            </div>
-        </div>
+        <!-- Guest Access Section Removed -->
 
         <!-- Students Section -->
         <div class="students-section">
@@ -869,10 +761,24 @@
         
         function saveAdminSessionState() {
             try {
+                // ✅ FIX: Validate sessionEndTime before converting to ISO string
+                let endTimeISO = null;
+                if (sessionEndTime) {
+                    try {
+                        // Check if it's a valid date
+                        const testDate = new Date(sessionEndTime);
+                        if (!isNaN(testDate.getTime())) {
+                            endTimeISO = testDate.toISOString();
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Invalid sessionEndTime, skipping:', e);
+                    }
+                }
+                
                 const sessionState = {
                     sessionActive,
                     currentLabSession,
-                    sessionEndTime: sessionEndTime ? sessionEndTime.toISOString() : null,
+                    sessionEndTime: endTimeISO,
                     sessionExported,
                     connectedStudents: Array.from(connectedStudents.entries()),
                     timestamp: new Date().toISOString()
@@ -1113,17 +1019,32 @@
                         } else {
                             console.log('✅ Monitoring already active for:', sessionId);
                         }
-                    }, 1000); // Increased delay to ensure UI is ready
+                    }, 300); // Reduced delay for faster instant connection
                 }
             });
             
             socket.on('session-ended', (sessionData) => {
                 console.log('📱 Session ended:', sessionData);
+                
+                // Get counts before cleanup for logging
+                const beforeActive = connectedStudents.size;
+                const beforeMonitoring = monitoringConnections.size;
+                
+                // Clean up student from grid and connections
                 removeStudentFromGrid(sessionData.sessionId);
+                
                 // Clear screen ready status for this session
                 screenReadySessions.delete(sessionData.sessionId);
-                console.log('🧹 Cleared screen ready status for:', sessionData.sessionId);
+                
+                // Update stats to reflect changes
                 updateStats();
+                
+                // Log the changes
+                const afterActive = connectedStudents.size;
+                const afterMonitoring = monitoringConnections.size;
+                console.log(`🧹 Session cleanup complete for: ${sessionData.sessionId}`);
+                console.log(`📊 Active students: ${beforeActive} → ${afterActive}`);
+                console.log(`📊 Being monitored: ${beforeMonitoring} → ${afterMonitoring}`);
             });
             
             socket.on('active-sessions', (data) => {
@@ -1143,6 +1064,13 @@
             // Listen for lab session ended event
             socket.on('lab-session-ended', (data) => {
                 console.log('🛑 Lab session ended:', data);
+                
+                // ✅ FIX: Refresh timetable to show updated status (pending → completed)
+                if (typeof loadTimetable === 'function') {
+                    loadTimetable();
+                    console.log('✅ Refreshed timetable after session ended');
+                }
+                
                 // Force refresh to clear all students
                 setTimeout(() => {
                     loadActiveStudents();
@@ -1150,58 +1078,8 @@
             });
 
             // ========================================================================
-            // GUEST ACCESS SOCKET LISTENERS
+            // GUEST ACCESS REMOVED
             // ========================================================================
-            
-            // Guest access enabled confirmation
-            socket.on('guest-access-enabled', (data) => {
-                console.log('🔓 Guest access enabled by admin:', data);
-                showNotification(`🔓 Guest access command sent to ${data.systemNumber}`, 'success');
-            });
-            
-            // System confirmed guest mode is active
-            socket.on('system-guest-mode-active', (data) => {
-                console.log('✅ System now in guest mode:', data);
-                showNotification(`✅ ${data.systemNumber} is now unlocked in Guest Mode`, 'success');
-                
-                // You could update UI to show which systems are in guest mode
-                // For example, add a badge or change button color
-            });
-            
-            // Listen for system registry updates (multi-lab support)
-            socket.on('systems-registry-update', (data) => {
-                if (currentLabId && data.systems) {
-                    // Filter systems for current lab
-                    const labSystems = data.systems.filter(s => s.labId === currentLabId);
-                    
-                    // Update local registry
-                    systemRegistry = labSystems;
-                    
-                    // Re-render buttons
-                    const totalSystems = labSystems.length;
-                    const availableSystems = labSystems.filter(s => s.status === 'available').length;
-                    const loggedInSystems = labSystems.filter(s => s.status === 'logged-in').length;
-                    const guestSystems = labSystems.filter(s => s.status === 'guest').length;
-                    const offlineSystems = labSystems.filter(s => s.status === 'offline').length;
-                    
-                    renderSystemButtons({
-                        systems: labSystems,
-                        totalSystems,
-                        availableSystems,
-                        loggedInSystems,
-                        guestSystems,
-                        offlineSystems
-                    });
-                    
-                    updateLabStats({
-                        totalSystems,
-                        availableSystems,
-                        loggedInSystems,
-                        guestSystems,
-                        offlineSystems
-                    });
-                }
-            });
             
             // Listen for kiosk screen ready event
             socket.on('kiosk-screen-ready', (data) => {
@@ -1593,9 +1471,10 @@
             // Check if grid has content
             const gridHasStudents = grid.children.length > 0 && !grid.querySelector('.no-students');
             
-            // ALWAYS verify monitoring for all sessions, even if grid hasn't changed
+// ✅ FIX: ALWAYS verify monitoring for all sessions, even if grid hasn't changed
+            // This ensures screen mirroring works immediately after page load/refresh
             console.log(`🔍 Checking ${actualStudentSessions.length} sessions for monitoring status...`);
-            actualStudentSessions.forEach(session => {
+            actualStudentSessions.forEach((session, index) => {
                 const sessionId = session._id || session.sessionId || session.id;
                 if (!sessionId) return;
                 
@@ -1610,7 +1489,8 @@
                     console.log('🎥 Starting/Restarting monitoring for:', sessionId, {
                         hasConnection,
                         isConnected,
-                        hasVideo: !!hasVideo
+                        hasVideo: !!hasVideo,
+                        reason: !hasConnection ? 'no connection' : !isConnected ? 'connection not established' : 'no video stream'
                     });
                     
                     // Clean up any failed connection
@@ -1619,8 +1499,9 @@
                         monitoringConnections.delete(sessionId);
                     }
                     
-                    // Start monitoring immediately
-                    setTimeout(() => startMonitoring(sessionId), 500);
+                    // ✅ FIX: Start monitoring immediately without delay for instant screen mirroring
+                    // Stagger connections slightly to avoid overwhelming the server
+                    setTimeout(() => startMonitoring(sessionId), index * 200);
                 } else {
                     console.log('✅ Monitoring already active and working for:', sessionId);
                 }
@@ -1777,23 +1658,39 @@
 
         // Remove student from grid
         function removeStudentFromGrid(sessionId) {
+            console.log('🗑️ Removing student from grid:', sessionId);
+            
             const studentCard = document.getElementById(`student-${sessionId}`);
             if (studentCard) {
                 studentCard.remove();
+                console.log('✅ Student card removed from DOM');
             }
             
+            // Remove from connected students set
+            const wasConnected = connectedStudents.has(sessionId);
             connectedStudents.delete(sessionId);
+            if (wasConnected) {
+                console.log('✅ Removed from connectedStudents set');
+            }
             
             // Clean up monitoring connection
             if (monitoringConnections.has(sessionId)) {
-                monitoringConnections.get(sessionId).close();
+                const pc = monitoringConnections.get(sessionId);
+                try {
+                    pc.close();
+                    console.log('✅ WebRTC peer connection closed');
+                } catch (e) {
+                    console.error('⚠️ Error closing peer connection:', e);
+                }
                 monitoringConnections.delete(sessionId);
+                console.log('✅ Removed from monitoringConnections map');
             }
             
             // Show no students message if grid is empty
             const grid = document.getElementById('studentsGrid');
             if (grid.children.length === 0) {
                 grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
+                console.log('📭 Grid is now empty - showing no students message');
             }
         }
 
@@ -1858,6 +1755,12 @@
                     // Add video event listeners for debugging
                     video.onloadedmetadata = () => {
                         console.log('✅ Video metadata loaded for session:', sessionId);
+                        // Force play the video once metadata is loaded
+                        video.play().then(() => {
+                            console.log('▶️ ✅ Video playback started successfully for session:', sessionId);
+                        }).catch(err => {
+                            console.error('❌ Failed to start video playback:', err);
+                        });
                     };
                     
                     video.onplay = () => {
@@ -1867,6 +1770,11 @@
                     video.onerror = (error) => {
                         console.error('❌ Video error for session:', sessionId, error);
                     };
+                    
+                    // Also try to play immediately in case metadata is already loaded
+                    video.play().catch(err => {
+                        console.log('⏳ Video play deferred until metadata loads:', err.message);
+                    });
                 };
                 
                 // Check if track is received within 15 seconds (increased from 10)
@@ -2242,137 +2150,9 @@
         }
 
         // Load systems for selected lab
-        async function loadLabSystems(labId) {
-            if (!labId) {
-                document.getElementById('guestAccessButtons').innerHTML = 
-                    '<p style="color: #999; text-align: center; grid-column: 1 / -1;">Please select a lab to view systems.</p>';
-                return;
-            }
-            
-            currentLabId = labId;
-            
-            try {
-                const response = await fetch(`/api/systems/${labId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    systemRegistry = data.systems;
-                    renderSystemButtons(data);
-                    updateLabStats(data);
-                }
-            } catch (error) {
-                console.error('Error loading systems:', error);
-                showNotification('Failed to load systems. Check server connection.', 'error');
-            }
-        }        // Render system buttons dynamically
-        function renderSystemButtons(data) {
-            const container = document.getElementById('guestAccessButtons');
-            
-            if (!data.systems || data.systems.length === 0) {
-                container.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
-                        <p style="font-size: 1.1rem; color: #6c757d; margin-bottom: 10px;">
-                            <strong>📡 No students logged in yet for ${data.labName || currentLabId}</strong>
-                        </p>
-                        <p style="color: #adb5bd; font-size: 0.95rem;">
-                            Systems will appear here automatically when students log in from kiosks.
-                        </p>
-                        <p style="color: #adb5bd; font-size: 0.9rem; margin-top: 10px;">
-                            💡 Tip: Only systems with active student sessions are shown here for screen monitoring.
-                        </p>
-                    </div>
-                `;
-                return;
-            }
-            
-            const buttonsHTML = data.systems.map(system => {
-                const statusClass = system.status || 'offline';
-                const icon = getStatusIcon(system.status);
-                const disabled = (system.status !== 'logged-in' && system.status !== 'guest') ? 'disabled' : '';
-                const tooltip = getTooltipText(system);
-                
-                return `
-                    <button 
-                        class="guest-btn ${statusClass}"
-                        onclick="handleSystemClick('${system.systemNumber}', '${system.status}')"
-                        ${disabled}
-                        title="${tooltip}">
-                        <div>${icon} ${system.systemNumber}</div>
-                        ${system.currentStudentName ? '<small>' + system.currentStudentName + '</small>' : ''}
-                    </button>
-                `;
-            }).join('');
-            
-            container.innerHTML = buttonsHTML;
-        }
-
-        // Get status icon
-        function getStatusIcon(status) {
-            const icons = {
-                'available': '🟢',
-                'logged-in': '🔵',
-                'guest': '🟣',
-                'offline': '⚫'
-            };
-            return icons[status] || '❓';
-        }
-
-        // Get tooltip text
-        function getTooltipText(system) {
-            const tooltips = {
-                'available': `Click to enable guest access on ${system.systemNumber}`,
-                'logged-in': `${system.currentStudentName || 'Student'} is currently using this system`,
-                'guest': `Guest access enabled on ${system.systemNumber}`,
-                'offline': `${system.systemNumber} is offline or not responding`
-            };
-            return tooltips[system.status] || system.systemNumber;
-        }
-
-        // Update lab statistics
-        function updateLabStats(data) {
-            const statsText = `Total: ${data.totalSystems} | 🟢 Available: ${data.availableSystems} | 🔵 Logged In: ${data.loggedInSystems} | 🟣 Guest: ${data.guestSystems} | ⚫ Offline: ${data.offlineSystems}`;
-            document.getElementById('labStatsText').textContent = statsText;
-        }
-
-        // Handle system button click
-        function handleSystemClick(systemNumber, status) {
-            if (status === 'available') {
-                enableGuestAccessForSystem(systemNumber);
-            } else if (status === 'guest') {
-                // Could add "lock system" functionality here
-                showNotification(`${systemNumber} is already in guest mode.`, 'info');
-            }
-        }
-
-        // Note: systems-registry-update listener is now in the socket initialization section
-
         // ========================================================================
-        // GUEST ACCESS / BYPASS LOGIN
+        // GUEST ACCESS FUNCTIONS REMOVED
         // ========================================================================
-        
-        function enableGuestAccessForSystem(systemNumber) {
-            console.log('🔓 Enabling guest access for system:', systemNumber);
-            
-            if (!currentLabId) {
-                showNotification('Please select a lab first.', 'error');
-                return;
-            }
-            
-            if (confirm(`🔓 ENABLE GUEST ACCESS\n\nSystem: ${systemNumber}\nLab: ${currentLabId}\n\nThis will:\n- Remotely unlock the kiosk\n- Bypass student login requirement\n- Allow immediate desktop access\n- Use guest credentials (admin123)\n\nThe system will appear as "Guest User" in the dashboard.\n\nContinue?`)) {
-                
-                // Emit guest access command to server
-                socket.emit('admin-enable-guest-access', {
-                    systemNumber: systemNumber,
-                    adminName: 'Admin', // You can make this dynamic if you have admin login
-                    labId: currentLabId
-                });
-                
-                console.log('✅ Guest access command sent for:', systemNumber);
-                
-                // Show notification
-                showNotification(`🔓 Guest access enabled for ${systemNumber}. The kiosk should unlock automatically.`, 'success');
-            }
-        }
 
         // Shutdown all systems in the lab
         function shutdownAllSystems() {
@@ -3852,13 +3632,19 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                             ? '<span style="color: #28a745;">✅ Completed</span>' 
                             : '<span style="color: #ffc107;">⏳ Pending</span>';
                         
+                        // Add "Start Now" button for pending sessions
+                        const startButton = !entry.isProcessed 
+                            ? `<button onclick="manualStartSession('${entry._id}')" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.875rem; margin-left: 10px;">🚀 Start Now</button>`
+                            : '';
+                        
                         html += `
                             <div style="background: white; border-left: 4px solid ${entry.isProcessed ? '#28a745' : '#007bff'}; padding: 0.75rem; border-radius: 4px;">
                                 <div style="font-weight: 600; color: #2c3e50;">
                                     ${entry.subject} - ${entry.faculty}
                                 </div>
-                                <div style="font-size: 0.875rem; color: #6c757d;">
-                                    📅 ${date} | ⏰ ${entry.startTime} - ${entry.endTime} | 🏢 ${entry.labId} | ${statusBadge}
+                                <div style="font-size: 0.875rem; color: #6c757d; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>📅 ${date} | ⏰ ${entry.startTime} - ${entry.endTime} | 🏢 ${entry.labId} | ${statusBadge}</span>
+                                    ${startButton}
                                 </div>
                             </div>
                         `;
@@ -3873,6 +3659,33 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             } catch (error) {
                 console.error('❌ Error loading timetable:', error);
                 listDiv.innerHTML = '<p style="color: #dc3545;">Error loading timetable. Please try again.</p>';
+            }
+        }
+
+        // Manual start session function
+        async function manualStartSession(entryId) {
+            if (!confirm('🚀 Start this session now?\n\nThis will immediately start the lab session.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${serverUrl}/api/manual-start-session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entryId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification(`✅ Session started: ${data.subject}`, 'success');
+                    loadTimetable(); // Refresh the timetable display
+                } else {
+                    showNotification(`❌ Failed to start session: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error starting session:', error);
+                showNotification('❌ Error starting session. Check console for details.', 'error');
             }
         }
 
