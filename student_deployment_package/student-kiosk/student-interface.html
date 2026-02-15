@@ -313,6 +313,11 @@
         let socket = null;
         let pc = null;
         let remoteVideo = null;
+        
+        // 🔥 OFFER QUEUE SYSTEM - Prevent overwhelming kiosk with rapid restarts
+        let isProcessingOffer = false;
+        let offerQueue = [];
+        let currentDisplayStream = null; // Track current screen capture stream
 
         // Initialize Socket.io for guest mode and screen mirroring
         function initializeSocket() {
@@ -388,10 +393,26 @@
                     // Screen mirroring: admin offer for WebRTC
                     socket.on('admin-offer', async (data) => {
                         console.log('📹 Admin offer received for screen mirroring');
+                        
+                        // 🔥 QUEUE SYSTEM: If already processing an offer, queue this one
+                        if (isProcessingOffer) {
+                            console.log('⏳ KIOSK: Already processing an offer, queueing this one...');
+                            offerQueue.push(data);
+                            console.log(`📋 KIOSK: Queue size: ${offerQueue.length}`);
+                            return;
+                        }
+                        
                         try {
                             await handleAdminOffer(data);
                         } catch (error) {
                             console.error('❌ Error handling admin offer:', error);
+                        } finally {
+                            // Process next queued offer if any
+                            if (offerQueue.length > 0) {
+                                console.log(`🔄 KIOSK: Processing next queued offer (${offerQueue.length} remaining)`);
+                                const nextOffer = offerQueue.shift();
+                                setTimeout(() => handleAdminOffer(nextOffer), 1000); // 1s delay between attempts
+                            }
                         }
                     });
 
@@ -533,16 +554,42 @@
         }
 
         async function handleAdminOffer(data) {
+            console.log('\n============================================================');
             console.log('📹 KIOSK: Handling admin offer for screen mirroring');
+            console.log('============================================================');
             const { offer, sessionId, adminSocketId } = data;
             console.log('📹 KIOSK: Offer params:', { hasOffer: !!offer, sessionId, adminSocketId });
+            
+            // Add timestamp to track how long this takes
+            const startTime = Date.now();
+            
+            // Set processing flag
+            isProcessingOffer = true;
             
             try {
                 // Close existing peer connection if any
                 if (pc) {
                     console.log('🔄 KIOSK: Closing existing peer connection before creating new one');
-                    pc.close();
+                    try {
+                        pc.close();
+                    } catch (e) {
+                        console.warn('⚠️ Error closing old peer connection:', e);
+                    }
                     pc = null;
+                }
+                
+                // Stop existing display stream if any
+                if (currentDisplayStream) {
+                    console.log('🛑 KIOSK: Stopping existing display stream before creating new one');
+                    try {
+                        currentDisplayStream.getTracks().forEach(track => {
+                            track.stop();
+                            console.log('🛑 Stopped track:', track.label);
+                        });
+                    } catch (e) {
+                        console.warn('⚠️ Error stopping old display stream:', e);
+                    }
+                    currentDisplayStream = null;
                 }
                 
                 // Create new peer connection
@@ -551,72 +598,199 @@
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun1.l.google.com:19302' },
-                        { urls: 'stun:stun2.l.google.com:19302' }
-                    ]
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        { urls: 'stun:stun3.l.google.com:19302' },
+                        { urls: 'stun:stun4.l.google.com:19302' },
+                        // TURN server for NAT traversal (fallback relay)
+                        {
+                            urls: 'turn:openrelay.metered.ca:80',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        },
+                        {
+                            urls: 'turn:openrelay.metered.ca:443',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        }
+                    ],
+                    iceCandidatePoolSize: 10,
+                    iceTransportPolicy: 'all', // Try all candidates (host, srflx, relay)
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require'
                 });
+
+                // Monitor connection state
+                pc.onconnectionstatechange = () => {
+                    const timestamp = new Date().toLocaleTimeString();
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`🔄 KIOSK: Connection state changed: ${pc.connectionState} (${elapsed}s elapsed, ${timestamp})`);
+                    
+                    if (pc.connectionState === 'connected') {
+                        console.log(`✅ KIOSK: WebRTC connected successfully at ${elapsed}s`);
+                        console.log('   ICE state:', pc.iceConnectionState);
+                        console.log('   Signaling state:', pc.signalingState);
+                    } else if (pc.connectionState === 'connecting') {
+                        console.log(`🔗 KIOSK: WebRTC connecting at ${elapsed}s...`);
+                        console.log('   ICE state:', pc.iceConnectionState);
+                        console.log('   Signaling state:', pc.signalingState);
+                        
+                        // 🔥 DTLS TIMEOUT WARNING: If stuck in "connecting" for 10+ seconds
+                        setTimeout(() => {
+                            if (pc.connectionState === 'connecting') {
+                                console.error(`❌ ❌ KIOSK: Still in "connecting" state after ${10 + parseInt(elapsed)}s`);
+                                console.error('   This indicates DTLS handshake may be failing');
+                                console.error('   Current ICE state:', pc.iceConnectionState);
+                                console.error('   Current signaling state:', pc.signalingState);
+                                console.error('   Check for clock skew, firewall, or certificate issues');
+                            }
+                        }, 10000);
+                    } else if (pc.connectionState === 'disconnected') {
+                        console.warn(`⚠️ KIOSK: WebRTC disconnected at ${elapsed}s - connection may recover automatically`);
+                    } else if (pc.connectionState === 'failed') {
+                        console.error(`❌ KIOSK: WebRTC connection failed at ${elapsed}s`);
+                    } else if (pc.connectionState === 'closed') {
+                        console.log('⏹️ KIOSK: WebRTC connection closed');
+                    }
+                };
+
+                // Monitor ICE connection state
+                pc.oniceconnectionstatechange = () => {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`🧊 KIOSK: ICE connection state changed: ${pc.iceConnectionState} (${elapsed}s elapsed)`);
+                    console.log('   Connection state:', pc.connectionState);
+                    console.log('   Signaling state:', pc.signalingState);
+                    
+                    if (pc.iceConnectionState === 'connected') {
+                        console.log(`✅ KIOSK: ICE connected at ${elapsed}s`);
+                        
+                        // Check if connection state also transitions to connected
+                        setTimeout(() => {
+                            if (pc.connectionState !== 'connected') {
+                                console.warn(`⚠️ KIOSK: ICE connected but connection state still "${pc.connectionState}" after 5s`);
+                                console.warn('   This may indicate DTLS handshake is slow or failing');
+                            } else {
+                                console.log('✅ KIOSK: Both ICE and connection state are now connected');
+                            }
+                        }, 5000);
+                    } else if (pc.iceConnectionState === 'disconnected') {
+                        console.warn(`⚠️ KIOSK: ICE disconnected at ${elapsed}s - may reconnect automatically`);
+                    } else if (pc.iceConnectionState === 'failed') {
+                        console.error(`❌ KIOSK: ICE connection failed at ${elapsed}s`);
+                    } else if (pc.iceConnectionState === 'checking') {
+                        console.log(`🔍 KIOSK: ICE checking connectivity at ${elapsed}s...`);
+                    } else if (pc.iceConnectionState === 'completed') {
+                        console.log(`✅ KIOSK: ICE completed at ${elapsed}s`);
+                    }
+                };
 
                 // Handle ICE candidates
                 pc.onicecandidate = (event) => {
                     if (event.candidate && socket) {
+                        console.log('🧊 KIOSK: Sending ICE candidate:', event.candidate.type);
                         socket.emit('webrtc-ice-candidate', {
                             candidate: event.candidate,
                             sessionId: sessionId
                         });
+                    } else if (!event.candidate) {
+                        console.log('🧊 KIOSK: ICE gathering complete');
                     }
                 };
 
                 // Set remote description
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                console.log('✅ KIOSK: Remote description set');
 
-                // 🎥 CAPTURE DESKTOP SCREEN
+                // 🎥 CAPTURE DESKTOP SCREEN WITH RETRY LOGIC
                 console.log('🎥 KIOSK: Attempting screen capture via getDisplayMedia...');
                 let displayStream = null;
+                let captureAttempts = 0;
+                const maxAttempts = 3;
                 
-                try {
-                    // First try: navigator.mediaDevices.getDisplayMedia (standard method, Electron 22+)
-                    displayStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: {
-                            cursor: 'always'
-                        },
-                        audio: false
-                    });
-                    console.log('✅ KIOSK: getDisplayMedia() succeeded');
-                } catch (error1) {
-                    console.warn('⚠️ KIOSK: getDisplayMedia failed, trying alternative approach:', error1.message);
+                while (!displayStream && captureAttempts < maxAttempts) {
+                    captureAttempts++;
+                    console.log(`🎥 KIOSK: Screen capture attempt ${captureAttempts}/${maxAttempts}`);
                     
-                    // Second try: Use desktopCapturer sources with getUserMedia
                     try {
-                        const sources = await window.electronAPI.getScreenSources();
-                        console.log(`📺 KIOSK: Got ${sources.length} screen sources`);
-
-                        if (sources.length === 0) {
-                            throw new Error('No screen sources available');
+                        // Add small delay between attempts to prevent blocking
+                        if (captureAttempts > 1) {
+                            console.log('⏳ Waiting 2 seconds before retry...');
+                            await new Promise(resolve => setTimeout(resolve, 2000));
                         }
+                        
+                        // First try: navigator.mediaDevices.getDisplayMedia (standard method, Electron 22+)
+                        displayStream = await Promise.race([
+                            navigator.mediaDevices.getDisplayMedia({
+                                video: {
+                                    cursor: 'always',
+                                    width: { ideal: 1920 },
+                                    height: { ideal: 1080 },
+                                    frameRate: { ideal: 30 }
+                                },
+                                audio: false
+                            }),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('Screen capture timeout (20s)')), 20000))
+                        ]);
+                        console.log(`✅ KIOSK: getDisplayMedia() succeeded on attempt ${captureAttempts}`);
+                        break; // Success, exit retry loop
+                    } catch (error1) {
+                        console.warn(`⚠️ KIOSK: getDisplayMedia failed on attempt ${captureAttempts}:`, error1.message);
+                        
+                        // Second try: Use desktopCapturer sources with getUserMedia
+                        try {
+                            const sources = await window.electronAPI.getScreenSources();
+                            console.log(`📺 KIOSK: Got ${sources.length} screen sources`);
 
-                        // Use the primary screen
-                        const screenSource = sources[0];
-                        console.log(`📺 KIOSK: Using screen source: ${screenSource.name} (ID: ${screenSource.id})`);
-
-                        displayStream = await navigator.mediaDevices.getUserMedia({
-                            audio: false,
-                            video: {
-                                mandatory: {
-                                    chromeMediaSource: 'desktop',
-                                    chromeMediaSourceId: screenSource.id
-                                }
+                            if (sources.length === 0) {
+                                throw new Error('No screen sources available');
                             }
-                        });
-                        console.log('✅ KIOSK: getUserMedia with chromeMediaSource succeeded');
-                    } catch (error2) {
-                        console.error('❌ KIOSK: Both methods failed');
-                        console.error('  Method 1 (getDisplayMedia):', error1.message);
-                        console.error('  Method 2 (getUserMedia+chrome):', error2.message);
-                        throw new Error(`Screen capture failed: ${error1.message}`);
+
+                            // Use the primary screen
+                            const screenSource = sources[0];
+                            console.log(`📺 KIOSK: Using screen source: ${screenSource.name} (ID: ${screenSource.id})`);
+
+                            displayStream = await Promise.race([
+                                navigator.mediaDevices.getUserMedia({
+                                    audio: false,
+                                    video: {
+                                        mandatory: {
+                                            chromeMediaSource: 'desktop',
+                                            chromeMediaSourceId: screenSource.id,
+                                            minWidth: 1280,
+                                            maxWidth: 1920,
+                                            minHeight: 720,
+                                            maxHeight: 1080
+                                        }
+                                    }
+                                }),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('getUserMedia timeout (20s)')), 20000))
+                            ]);
+                            console.log(`✅ KIOSK: getUserMedia with chromeMediaSource succeeded on attempt ${captureAttempts}`);
+                            break; // Success, exit retry loop
+                        } catch (error2) {
+                            console.error(`❌ KIOSK: Alternative method also failed on attempt ${captureAttempts}`);
+                            console.error('  Method 1 (getDisplayMedia):', error1.message);
+                            console.error('  Method 2 (getUserMedia+chrome):', error2.message);
+                            
+                            // If this was the last attempt, throw error
+                            if (captureAttempts >= maxAttempts) {
+                                throw new Error(`Screen capture failed after ${maxAttempts} attempts: ${error1.message}`);
+                            }
+                            // Otherwise, continue to next attempt
+                        }
                     }
                 }
+                
+                // Verify we have a valid stream
+                if (!displayStream || !displayStream.getVideoTracks || displayStream.getVideoTracks().length === 0) {
+                    throw new Error('Failed to capture screen - no video tracks available');
+                }
 
-                console.log('✅ KIOSK: Screen captured successfully');
+                const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+                console.log(`✅ KIOSK: Screen captured successfully in ${elapsedTime}s`);
                 console.log('✅ KIOSK: Captured tracks:', displayStream.getTracks().length);
+                
+                // Store current stream for cleanup on next offer
+                currentDisplayStream = displayStream;
 
                 // Add video tracks to peer connection
                 displayStream.getVideoTracks().forEach((track) => {
@@ -630,7 +804,9 @@
                 if (displayStream.getVideoTracks()[0]) {
                     displayStream.getVideoTracks()[0].onended = () => {
                         console.log('⏹️ KIOSK: Screen capture stopped by user');
-                        pc.close();
+                        if (pc) {
+                            pc.close();
+                        }
                     };
                 }
 
@@ -648,17 +824,31 @@
                     sessionId: sessionId
                 });
 
-                console.log('✅✅✅ KIOSK: Answer sent to admin with video stream');
+                const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+                console.log(`✅✅✅ KIOSK: WebRTC setup complete in ${totalTime}s - Answer sent to admin`);
                 console.log('✅ If admin doesn\'t get this, check server forwarding!');
+                console.log('============================================================\n');
             } catch (error) {
-                console.error('❌ KIOSK: Error in WebRTC handshake:', error);
+                console.error('❌❌❌ KIOSK: Error in WebRTC handshake:', error);
                 console.error('❌ KIOSK: Stack:', error.stack);
+                console.error('============================================================\n');
+                
+                // Send detailed error to admin for better diagnostics
                 if (socket) {
                     socket.emit('webrtc-error', {
                         error: error.message,
-                        sessionId: sessionId
+                        sessionId: sessionId,
+                        details: {
+                            pcState: pc ? pc.connectionState : 'no-pc',
+                            iceState: pc ? pc.iceConnectionState : 'no-pc',
+                            hasStream: !!currentDisplayStream,
+                            elapsedTime: ((Date.now() - startTime) / 1000).toFixed(2)
+                        }
                     });
                 }
+            } finally {
+                // Clear processing flag
+                isProcessingOffer = false;
             }
         }
 

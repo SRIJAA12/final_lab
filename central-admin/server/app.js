@@ -2000,47 +2000,81 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
 
     console.log(`📅 Timetable Import Complete:`);
     console.log(`   ✅ Successful: ${successCount}`);
-    console.log(`   ❌ Failed: ${errorCount}`);
-
-    // 🔧 FIX: Immediately check if any uploaded sessions should start NOW
-    // Don't wait for the next cron cycle (which could be up to 1 minute)
-    console.log('🚀 Checking if any sessions should start immediately...');
-    setTimeout(async () => {
-      try {
-        const now = new Date();
-        const currentDate = now.toISOString().split('T')[0];
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    console.log(`   ❌ Failed: ${errorCount}`);    // ✅ CRITICAL FIX: Immediately check if any uploaded sessions should start NOW
+    // Don't wait for the next cron cycle - check synchronously before sending response
+    console.log('\n🚀 Checking if any sessions should start immediately...');
+    
+    try {
+      const now = new Date();
+      const currentDate = now.toISOString().split('T')[0];
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      const currentMinutes = currentHour * 60 + currentMinute;
+      
+      console.log(`⏰ Current time: ${currentHour}:${currentMinute} (${currentMinutes} minutes from midnight)`);
+      
+      const startOfDay = new Date(currentDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(currentDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const todayEntries = await TimetableEntry.find({
+        isActive: true,
+        isProcessed: false,
+        sessionDate: { $gte: startOfDay, $lte: endOfDay }
+      });
+      
+      console.log(`📋 Found ${todayEntries.length} unprocessed entries for today`);
+      
+      let immediateStartCount = 0;
+      
+      for (const entry of todayEntries) {
+        // ✅ FIX: Normalize time format to handle "0:00" and "00:00"
+        const normalizeTime = (timeStr) => {
+          if (!timeStr) return '00:00';
+          const parts = timeStr.split(':');
+          const hours = String(parts[0] || '0').padStart(2, '0');
+          const minutes = String(parts[1] || '0').padStart(2, '0');
+          return `${hours}:${minutes}`;
+        };
         
-        const startOfDay = new Date(currentDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(currentDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        const normalizedStartTime = normalizeTime(entry.startTime);
+        const normalizedEndTime = normalizeTime(entry.endTime);
         
-        const todayEntries = await TimetableEntry.find({
-          isActive: true,
-          isProcessed: false,
-          sessionDate: { $gte: startOfDay, $lte: endOfDay }
-        });
+        const [startHour, startMin] = normalizedStartTime.split(':').map(Number);
+        const [endHour, endMin] = normalizedEndTime.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
         
-        for (const entry of todayEntries) {
-          const [startHour, startMin] = entry.startTime.split(':').map(Number);
-          const [endHour, endMin] = entry.endTime.split(':').map(Number);
-          const startMinutes = startHour * 60 + startMin;
-          const endMinutes = endHour * 60 + endMin;
+        console.log(`\n📅 Checking entry: ${entry.subject}`);
+        console.log(`   Start: ${normalizedStartTime} (${startMinutes} min) | End: ${normalizedEndTime} (${endMinutes} min)`);
+        console.log(`   Current: ${currentHour}:${currentMinute} (${currentMinutes} min)`);
+        console.log(`   Should start? ${currentMinutes >= startMinutes && currentMinutes < endMinutes}`);
+        
+        // ✅ FIX: If current time is between start and end time, start immediately
+        if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+          console.log(`\n🚀 IMMEDIATE START TRIGGERED!`);
+          console.log(`   Subject: ${entry.subject}`);
+          console.log(`   Faculty: ${entry.faculty}`);
+          console.log(`   Scheduled: ${normalizedStartTime} - ${normalizedEndTime}`);
+          console.log(`   Uploaded at: ${now.toLocaleTimeString()}`);
+          console.log(`   Time difference: ${currentMinutes - startMinutes} minutes late`);
           
-          // If current time is between start and end time, start immediately
-          if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
-            console.log(`🚀 IMMEDIATE START: ${entry.subject} (scheduled ${entry.startTime}, uploaded late at ${now.toLocaleTimeString()})`);
-            const result = await autoStartLabSession(entry);
-            if (result.success) {
-              console.log(`✅ Session auto-started immediately: ${entry.subject}`);
-            }
+          const result = await autoStartLabSession(entry);
+          if (result.success) {
+            console.log(`✅ Session auto-started immediately: ${entry.subject}`);
+            immediateStartCount++;
+          } else {
+            console.error(`❌ Failed to start session: ${result.error}`);
           }
         }
-      } catch (err) {
-        console.error('❌ Error in immediate session check:', err);
       }
-    }, 2000); // Check after 2 seconds to allow DB writes to complete
+      
+      console.log(`\n✅ Immediate start check complete: ${immediateStartCount} session(s) started\n`);
+      
+    } catch (err) {
+      console.error('❌ Error in immediate session check:', err);
+    }
 
     res.json({
       success: true,
@@ -2085,10 +2119,12 @@ app.get('/api/timetable', async (req, res) => {
     if (labId) {
       filter.labId = labId.toUpperCase();
     }
-    
-    // Only upcoming sessions
+      // Only upcoming sessions
     if (upcoming === 'true') {
-      filter.sessionDate = { $gte: new Date() };
+      // ✅ FIX: Compare date only, not datetime (to show today's pending sessions)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      filter.sessionDate = { $gte: today };
       filter.isProcessed = false;
     }
     
@@ -2124,6 +2160,58 @@ app.post('/api/timetable/clear-all', async (req, res) => {
     res.json({ success: true, message: `Cleared ${result.deletedCount} entries` });
   } catch (error) {
     console.error('Error clearing timetable:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ NEW: Manual start session from timetable entry
+app.post('/api/manual-start-session', async (req, res) => {
+  try {
+    const { entryId } = req.body;
+    
+    if (!entryId) {
+      return res.status(400).json({ success: false, error: 'Entry ID is required' });
+    }
+    
+    console.log(`🚀 Manual start requested for timetable entry: ${entryId}`);
+    
+    // Find the timetable entry
+    const entry = await TimetableEntry.findById(entryId);
+    
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Timetable entry not found' });
+    }
+    
+    console.log(`📋 Found entry: ${entry.subject} by ${entry.faculty}`);
+    
+    // Check if already processed
+    if (entry.isProcessed) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'This session has already been started' 
+      });
+    }
+    
+    // Start the session
+    const result = await autoStartLabSession(entry);
+    
+    if (result.success) {
+      console.log(`✅ Manual start successful: ${entry.subject}`);
+      res.json({ 
+        success: true, 
+        message: `Session started: ${entry.subject}`,
+        sessionId: result.labSession._id
+      });
+    } else {
+      console.error(`❌ Manual start failed: ${result.error}`);
+      res.status(500).json({ 
+        success: false, 
+        error: result.error || 'Failed to start session' 
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Manual start session error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -4526,6 +4614,8 @@ async function autoStartLabSession(timetableEntry) {
     console.log(`   Faculty: ${timetableEntry.faculty}`);
     console.log(`   Lab ID: ${timetableEntry.labId}`);
     console.log(`   Time: ${timetableEntry.startTime} - ${timetableEntry.endTime}`);
+    console.log(`   Entry ID: ${timetableEntry._id}`);
+    console.log(`   Is Processed: ${timetableEntry.isProcessed}`);
     console.log(`${'='.repeat(60)}\n`);
     
     // Check if there's already an active lab session for this lab
@@ -4536,6 +4626,9 @@ async function autoStartLabSession(timetableEntry) {
     
     if (existingSession) {
       console.log(`⚠️ Active lab session already exists in ${timetableEntry.labId}: ${existingSession.subject}`);
+      console.log(`   Existing Session ID: ${existingSession._id}`);
+      console.log(`   Existing Faculty: ${existingSession.faculty}`);
+      console.log(`   Existing Start Time: ${existingSession.startTime}`);
       
       // Check if it's the same session (avoid duplicate starts)
       if (existingSession.subject === timetableEntry.subject && 
@@ -4544,6 +4637,7 @@ async function autoStartLabSession(timetableEntry) {
         timetableEntry.isProcessed = true;
         timetableEntry.labSessionId = existingSession._id;
         await timetableEntry.save();
+        console.log(`✅ Timetable entry marked as processed`);
         return { success: true, labSession: existingSession, message: 'Session already running' };
       }
       
@@ -4553,6 +4647,7 @@ async function autoStartLabSession(timetableEntry) {
       existingSession.status = 'completed';
       existingSession.endTime = new Date();
       await existingSession.save();
+      console.log(`✅ Previous session ended: ${existingSession._id}`);
       
       // Generate CSV for old session
       const csvResult = await generateLabSessionCSV(existingSession._id);
@@ -4564,6 +4659,7 @@ async function autoStartLabSession(timetableEntry) {
     }
     
     // Create new lab session from timetable
+    console.log(`📝 Creating new lab session...`);
     const newLabSession = new LabSession({
       labId: timetableEntry.labId,
       subject: timetableEntry.subject,
@@ -4580,18 +4676,23 @@ async function autoStartLabSession(timetableEntry) {
     });
     
     await newLabSession.save();
+    console.log(`✅ New lab session created: ${newLabSession._id}`);
     
     // Update timetable entry
     timetableEntry.isProcessed = true;
     timetableEntry.labSessionId = newLabSession._id;
     await timetableEntry.save();
+    console.log(`✅ Timetable entry marked as processed`);
     
-    console.log(`✅ Lab session auto-started: ${newLabSession.subject}`);
+    console.log(`✅ Lab session auto-started successfully!`);
     console.log(`   Session ID: ${newLabSession._id}`);
     console.log(`   Lab ID: ${newLabSession.labId}`);
+    console.log(`   Subject: ${newLabSession.subject}`);
+    console.log(`   Faculty: ${newLabSession.faculty}`);
     
     // Notify admins via socket
     if (io) {
+      console.log(`📢 Notifying admins about new session...`);
       io.to('admins').emit('lab-session-auto-started', {
         sessionId: newLabSession._id,
         labId: newLabSession.labId,
@@ -4601,11 +4702,13 @@ async function autoStartLabSession(timetableEntry) {
         expectedDuration: newLabSession.expectedDuration,
         source: 'timetable'
       });
+      console.log(`✅ Admin notification sent`);
     }
     
     return { success: true, labSession: newLabSession };
   } catch (error) {
     console.error('❌ Error auto-starting lab session:', error);
+    console.error('❌ Error stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
@@ -4696,7 +4799,9 @@ cron.schedule('* * * * *', async () => {
     const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     
-    console.log(`⏰ Timetable check at ${currentTime}`);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`⏰ TIMETABLE CHECK AT ${currentTime} (${currentDate})`);
+    console.log(`${'='.repeat(60)}`);
     
     // Find timetable entries for today
     const startOfDay = new Date(currentDate);
@@ -4705,8 +4810,6 @@ cron.schedule('* * * * *', async () => {
     endOfDay.setHours(23, 59, 59, 999);
     
     console.log(`📅 Checking for entries on: ${currentDate}`);
-    console.log(`📅 Start of day: ${startOfDay.toISOString()}`);
-    console.log(`📅 End of day: ${endOfDay.toISOString()}`);
     
     const todayEntries = await TimetableEntry.find({
       isActive: true,
@@ -4715,33 +4818,53 @@ cron.schedule('* * * * *', async () => {
     
     console.log(`📋 Found ${todayEntries.length} timetable entries for today`);
     
-    if (todayEntries.length > 0) {
-      console.log(`📋 Today's entries:`, todayEntries.map(e => ({
-        subject: e.subject,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        isProcessed: e.isProcessed,
-        labId: e.labId
-      })));
+    if (todayEntries.length === 0) {
+      console.log(`ℹ️ No timetable entries found for today`);
+      console.log(`${'='.repeat(60)}\n`);
+      return;
     }
     
-    for (const entry of todayEntries) {
+    console.log(`\n📋 TODAY'S TIMETABLE ENTRIES:`);
+    todayEntries.forEach((e, i) => {
+      console.log(`   ${i + 1}. ${e.subject} (${e.faculty})`);
+      console.log(`      ⏰ ${e.startTime} - ${e.endTime}`);
+      console.log(`      🏢 Lab: ${e.labId}`);
+      console.log(`      📊 Processed: ${e.isProcessed ? '✅ Yes' : '❌ No'}`);
+    });
+    console.log('');
+      for (const entry of todayEntries) {
+      // ✅ FIX: Handle time formats like "0:00" and "11:34" (normalize to HH:MM)
+      const normalizeTime = (timeStr) => {
+        if (!timeStr) return '00:00';
+        const parts = timeStr.split(':');
+        const hours = String(parts[0] || '0').padStart(2, '0');
+        const minutes = String(parts[1] || '0').padStart(2, '0');
+        return `${hours}:${minutes}`;
+      };
+      
+      const normalizedStartTime = normalizeTime(entry.startTime);
+      const normalizedEndTime = normalizeTime(entry.endTime);
+      
       // IMPROVED: Start session if current time is AT or AFTER start time but BEFORE end time
-      const [startHour, startMin] = entry.startTime.split(':').map(Number);
-      const [endHour, endMin] = entry.endTime.split(':').map(Number);
+      const [startHour, startMin] = normalizedStartTime.split(':').map(Number);
+      const [endHour, endMin] = normalizedEndTime.split(':').map(Number);
       const startMinutes = startHour * 60 + startMin;
       const endMinutes = endHour * 60 + endMin;
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       
-      console.log(`   📊 ${entry.subject}: start=${startMinutes}min (${entry.startTime}), current=${currentMinutes}min (${currentTime}), end=${endMinutes}min (${entry.endTime}), processed=${entry.isProcessed}`);
+      console.log(`🔍 Checking: ${entry.subject}`);
+      console.log(`   Start: ${startMinutes}min (${entry.startTime})`);
+      console.log(`   Current: ${currentMinutes}min (${currentTime})`);
+      console.log(`   End: ${endMinutes}min (${entry.endTime})`);
+      console.log(`   Processed: ${entry.isProcessed}`);
+        const shouldStart = currentMinutes >= startMinutes && currentMinutes < endMinutes && !entry.isProcessed;
+      console.log(`   Should Start: ${shouldStart ? '✅ YES' : '❌ NO'}`);
       
       // Check if it's time to start the session (between start and end time, not yet processed)
-      // ✅ FIX: This allows sessions to start even if timetable is uploaded LATE (e.g., scheduled 18:35, uploaded 18:38)
-      // As long as current time is still BEFORE the end time, the session will start
-      if (currentMinutes >= startMinutes && currentMinutes < endMinutes && !entry.isProcessed) {
-        console.log(`📅 ✅ TRIGGER: Starting session for ${entry.subject}`);
+      if (shouldStart) {
+        console.log(`\n📅 ✅✅✅ TRIGGER: Starting session for ${entry.subject} ✅✅✅`);
         console.log(`   ⏰ Scheduled: ${entry.startTime}, Current: ${currentTime}, End: ${entry.endTime}`);
-        console.log(`   ✅ Starting session (uploaded late but still within session time)`);
+        console.log(`   Starting session now...`);
         const result = await autoStartLabSession(entry);
         if (result.success) {
           console.log(`✅ Session auto-started successfully: ${entry.subject}`);
@@ -4761,6 +4884,8 @@ cron.schedule('* * * * *', async () => {
         }
       }
     }
+    
+    console.log(`${'='.repeat(60)}\n`);
   } catch (error) {
     console.error('❌ Timetable monitor error:', error);
   }

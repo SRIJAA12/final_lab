@@ -979,9 +979,14 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                     const errorCount = result.errorCount || 0;
                     
                     showMessage('timetableUploadResults', 
-                        `✅ Timetable uploaded successfully!<br>
-                        📊 Successfully imported: ${successCount} entries<br>
+                        `✅ <strong>Timetable uploaded successfully!</strong><br><br>
+                        📊 Successfully imported: <strong>${successCount}</strong> entries<br>
                         ${errorCount > 0 ? `❌ Failed: ${errorCount} entries<br>` : ''}
+                        <br>
+                        ⚡ <strong>AUTO-START FEATURE ACTIVE:</strong><br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;• Sessions scheduled for NOW will start automatically!<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;• Late uploads are handled automatically<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;• Check admin dashboard for auto-start notifications<br>
                         ${result.errors && result.errors.length > 0 ? '<br><strong>Errors:</strong><br>' + result.errors.map(e => e.error || e).join('<br>') : ''}`, 
                         'success');
                     

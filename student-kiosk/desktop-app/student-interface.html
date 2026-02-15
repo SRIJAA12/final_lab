@@ -204,7 +204,29 @@
                 <button type="button" class="btn-secondary" onclick="showFirstTimeSignin()">
                     <i class="fas fa-user-plus"></i> First-time Sign-in
                 </button>
+
+                <button type="button" class="btn-secondary" onclick="showGuestLogin()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <i class="fas fa-user-shield"></i> Guest Mode
+                </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Guest Login Modal -->
+    <div class="session-modal" id="guestLoginModal">
+        <div class="session-card">
+            <h1><i class="fas fa-user-shield"></i> Guest Mode Login</h1>
+            <p style="color: #6c757d; margin-bottom: 20px;">Enter the 4-digit guest password provided by your administrator</p>
+            <form id="guestLoginForm">
+                <div class="form-group">
+                    <label class="form-label"><strong>Guest Password (4 digits)</strong></label>
+                    <input type="password" class="form-control" id="guestPassword" placeholder="Enter 4-digit password" maxlength="4" pattern="[0-9]{4}" required style="text-align: center; font-size: 24px; letter-spacing: 8px;">
+                </div>
+                <button type="submit" class="btn btn-primary w-100" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none;">
+                    <i class="fas fa-sign-in-alt"></i> Login as Guest
+                </button>
+                <button type="button" class="btn btn-secondary w-100 mt-2" onclick="showLoginPage()">Cancel</button>
+            </form>
         </div>
     </div>
 
@@ -293,6 +315,11 @@
         let socket = null;
         let pc = null;
         let remoteVideo = null;
+        
+        // Offer queue system to prevent overwhelming kiosk with rapid restarts
+        let isProcessingOffer = false;
+        let offerQueue = [];
+        let currentDisplayStream = null;
 
         // Initialize Socket.io for guest mode and screen mirroring
         function initializeSocket() {
@@ -368,10 +395,28 @@
                     // Screen mirroring: admin offer for WebRTC
                     socket.on('admin-offer', async (data) => {
                         console.log('📹 Admin offer received for screen mirroring');
+                        
+                        // Queue system: If already processing an offer, queue this one
+                        if (isProcessingOffer) {
+                            console.log('⏳ KIOSK: Already processing an offer, queueing this one...');
+                            offerQueue.push(data);
+                            console.log(`📋 KIOSK: Queue size: ${offerQueue.length}`);
+                            return;
+                        }
+                        
                         try {
                             await handleAdminOffer(data);
                         } catch (error) {
                             console.error('❌ Error handling admin offer:', error);
+                        } finally {
+                            // Process next queued offer if any
+                            if (offerQueue.length > 0) {
+                                const nextOffer = offerQueue.shift();
+                                console.log(`🔄 KIOSK: Processing queued offer (${offerQueue.length} remaining)...`);
+                                setTimeout(() => {
+                                    socket.emit('admin-offer', nextOffer); // Re-trigger handler
+                                }, 1000); // 1 second delay between processing queued offers
+                            }
                         }
                     });
 
@@ -430,15 +475,36 @@
         }
 
         async function handleAdminOffer(data) {
+            console.log('📹 ========================================');
             console.log('📹 KIOSK: Handling admin offer for screen mirroring');
             const { offer, sessionId, adminSocketId } = data;
             console.log('📹 KIOSK: Offer params:', { hasOffer: !!offer, sessionId, adminSocketId });
             
+            // Set processing flag
+            isProcessingOffer = true;
+            
+            // Add timestamp to track how long this takes
+            const startTime = Date.now();
+            
             try {
+                // Cleanup existing display stream if any
+                if (currentDisplayStream) {
+                    console.log('🧽 KIOSK: Stopping existing display stream before creating new one');
+                    currentDisplayStream.getTracks().forEach(track => {
+                        track.stop();
+                        console.log('⏹️ KIOSK: Stopped track:', track.kind);
+                    });
+                    currentDisplayStream = null;
+                }
+                
                 // Close existing peer connection if any
                 if (pc) {
                     console.log('🔄 KIOSK: Closing existing peer connection before creating new one');
-                    pc.close();
+                    try {
+                        pc.close();
+                    } catch (e) {
+                        console.warn('⚠️ Error closing old peer connection:', e);
+                    }
                     pc = null;
                 }
                 
@@ -448,17 +514,106 @@
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun1.l.google.com:19302' },
-                        { urls: 'stun:stun2.l.google.com:19302' }
-                    ]
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        { urls: 'stun:stun3.l.google.com:19302' },
+                        { urls: 'stun:stun4.l.google.com:19302' },
+                        // TURN server for NAT traversal (fallback relay)
+                        {
+                            urls: 'turn:openrelay.metered.ca:80',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        },
+                        {
+                            urls: 'turn:openrelay.metered.ca:443',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        }
+                    ],
+                    iceCandidatePoolSize: 10,
+                    iceTransportPolicy: 'all', // Try all candidates (host, srflx, relay)
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require'
                 });
+
+                // Monitor connection state
+                pc.onconnectionstatechange = () => {
+                    const timestamp = new Date().toLocaleTimeString();
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`🔄 KIOSK: Connection state changed: ${pc.connectionState} (${elapsed}s elapsed, ${timestamp})`);
+                    
+                    if (pc.connectionState === 'connected') {
+                        console.log(`✅ KIOSK: WebRTC connected successfully at ${elapsed}s`);
+                        console.log('   ICE state:', pc.iceConnectionState);
+                        console.log('   Signaling state:', pc.signalingState);
+                    } else if (pc.connectionState === 'connecting') {
+                        console.log(`🔗 KIOSK: WebRTC connecting at ${elapsed}s...`);
+                        console.log('   ICE state:', pc.iceConnectionState);
+                        console.log('   Signaling state:', pc.signalingState);
+                        
+                        // 🔥 DTLS TIMEOUT WARNING: If stuck in "connecting" for 15+ seconds
+                        setTimeout(() => {
+                            if (pc.connectionState === 'connecting') {
+                                const elapsedNow = ((Date.now() - startTime) / 1000).toFixed(1);
+                                console.error(`❌ ❌ KIOSK: Still in "connecting" state after ${elapsedNow}s (15s timeout threshold)`);
+                                console.error('   This indicates DTLS handshake is failing');
+                                console.error('   Current ICE state:', pc.iceConnectionState);
+                                console.error('   Current signaling state:', pc.signalingState);
+                                console.error('   ⚠️ POSSIBLE CAUSES:');
+                                console.error('   1. System clock skew between admin and student PC (MOST COMMON)');
+                                console.error('   2. Firewall blocking DTLS/UDP packets');
+                                console.error('   3. Network packet loss or high latency');
+                                console.error('   ➡️ Admin will retry with exponential backoff...');
+                            }
+                        }, 15000);
+                    } else if (pc.connectionState === 'disconnected') {
+                        console.warn(`⚠️ KIOSK: WebRTC disconnected at ${elapsed}s - connection may recover automatically`);
+                    } else if (pc.connectionState === 'failed') {
+                        console.error(`❌ KIOSK: WebRTC connection failed at ${elapsed}s`);
+                    } else if (pc.connectionState === 'closed') {
+                        console.log('⏹️ KIOSK: WebRTC connection closed');
+                    }
+                };
+
+                // Monitor ICE connection state
+                pc.oniceconnectionstatechange = () => {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`🧊 KIOSK: ICE connection state changed: ${pc.iceConnectionState} (${elapsed}s elapsed)`);
+                    console.log('   Connection state:', pc.connectionState);
+                    console.log('   Signaling state:', pc.signalingState);
+                    
+                    if (pc.iceConnectionState === 'connected') {
+                        console.log(`✅ KIOSK: ICE connected at ${elapsed}s`);
+                        
+                        // Check if connection state also transitions to connected
+                        setTimeout(() => {
+                            if (pc.connectionState !== 'connected') {
+                                console.warn(`⚠️ KIOSK: ICE connected but connection state still "${pc.connectionState}" after 5s`);
+                                console.warn('   This may indicate DTLS handshake is slow or failing');
+                            } else {
+                                console.log('✅ KIOSK: Both ICE and connection state are now connected');
+                            }
+                        }, 5000);
+                    } else if (pc.iceConnectionState === 'disconnected') {
+                        console.warn(`⚠️ KIOSK: ICE disconnected at ${elapsed}s - may reconnect automatically`);
+                    } else if (pc.iceConnectionState === 'failed') {
+                        console.error(`❌ KIOSK: ICE connection failed at ${elapsed}s`);
+                    } else if (pc.iceConnectionState === 'checking') {
+                        console.log(`🔍 KIOSK: ICE checking connectivity at ${elapsed}s...`);
+                    } else if (pc.iceConnectionState === 'completed') {
+                        console.log(`✅ KIOSK: ICE completed at ${elapsed}s`);
+                    }
+                };
 
                 // Handle ICE candidates
                 pc.onicecandidate = (event) => {
                     if (event.candidate && socket) {
+                        console.log('🧊 KIOSK: Sending ICE candidate:', event.candidate.type);
                         socket.emit('webrtc-ice-candidate', {
                             candidate: event.candidate,
                             sessionId: sessionId
                         });
+                    } else if (!event.candidate) {
+                        console.log('🧊 KIOSK: ICE gathering complete');
                     }
                 };
 
@@ -515,6 +670,9 @@
                 console.log('✅ KIOSK: Screen captured successfully');
                 console.log('✅ KIOSK: Captured tracks:', displayStream.getTracks().length);
 
+                // Store stream for cleanup on next offer
+                currentDisplayStream = displayStream;
+
                 // Add video tracks to peer connection
                 displayStream.getVideoTracks().forEach((track) => {
                     console.log('📹 KIOSK: Adding video track to peer connection:', track.label);
@@ -547,15 +705,26 @@
 
                 console.log('✅✅✅ KIOSK: Answer sent to admin with video stream');
                 console.log('✅ If admin doesn\'t get this, check server forwarding!');
+                console.log('📹 ========================================');
             } catch (error) {
                 console.error('❌ KIOSK: Error in WebRTC handshake:', error);
                 console.error('❌ KIOSK: Stack:', error.stack);
                 if (socket) {
                     socket.emit('webrtc-error', {
                         error: error.message,
-                        sessionId: sessionId
+                        sessionId: sessionId,
+                        details: {
+                            pcState: pc ? pc.connectionState : 'no-pc',
+                            iceState: pc ? pc.iceConnectionState : 'no-pc',
+                            hasStream: !!currentDisplayStream,
+                            elapsedTime: ((Date.now() - startTime) / 1000).toFixed(2)
+                        }
                     });
                 }
+            } finally {
+                // Clear processing flag
+                isProcessingOffer = false;
+                console.log('✅ KIOSK: Offer processing complete, ready for next offer');
             }
         }
 
@@ -961,10 +1130,67 @@
             }
         });
 
+        function showGuestLogin() {
+            document.querySelector('.login-container').style.display = 'none';
+            document.getElementById('guestLoginModal').classList.add('active');
+            // Clear previous input
+            document.getElementById('guestPassword').value = '';
+        }
+
+        // Guest Login Form Handler
+        document.getElementById('guestLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const guestPassword = document.getElementById('guestPassword').value.trim();
+            const systemNumber = document.getElementById('systemNumber').textContent;
+
+            if (!guestPassword || guestPassword.length !== 4) {
+                showError('Please enter a valid 4-digit password');
+                return;
+            }
+
+            console.log(`🔐 Guest login attempt`);
+
+            try {
+                const result = await window.electronAPI.guestLogin({
+                    password: guestPassword,
+                    systemNumber
+                });
+
+                if (result.success) {
+                    console.log(`✅ Guest login successful!`);
+                    console.log(`🎫 KIOSK: Updating registration with sessionId: ${result.sessionId}`);
+                    
+                    // 🎫 RE-REGISTER KIOSK WITH SESSION ID (for screen mirroring)
+                    if (socket && socket.connected) {
+                        socket.emit('register-kiosk', {
+                            sessionId: result.sessionId,
+                            systemNumber: systemNumber,
+                            labId: 'CC1',  // Default lab
+                            isGuest: true
+                        });
+                    }
+                    
+                    document.getElementById('sessionStudentName').textContent = 'Guest User';
+                    document.getElementById('sessionStudentId').textContent = 'GUEST';
+                    document.getElementById('sessionSystem').textContent = systemNumber;
+                    document.getElementById('sessionLoginTime').textContent = new Date().toLocaleTimeString();
+                    document.querySelector('.login-container').style.display = 'none';
+                    document.getElementById('guestLoginModal').classList.remove('active');
+                    document.getElementById('sessionModal').classList.add('active');
+                } else {
+                    showError(result.error || 'Guest login failed. Invalid password.');
+                }
+            } catch (error) {
+                showError('Guest login error: ' + error.message);
+            }
+        });
+
         function showLoginPage() {
             document.querySelector('.login-container').style.display = 'flex';
             document.getElementById('forgotPasswordModal').classList.remove('active');
             document.getElementById('firstTimeModal').classList.remove('active');
+            document.getElementById('guestLoginModal').classList.remove('active');
             document.getElementById('sessionModal').classList.remove('active');
         }
 

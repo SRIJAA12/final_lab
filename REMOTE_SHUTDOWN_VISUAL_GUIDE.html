@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔌 Remote Shutdown Feature - Visual Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.2rem;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .feature-card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.3);
+        }
+        
+        .feature-icon {
+            font-size: 4rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        
+        .feature-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        
+        .feature-description {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+        
+        .mockup {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+        }
+        
+        .student-card-mockup {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .card-header-mockup {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .student-name-mockup {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .student-details-mockup {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 1rem;
+        }
+        
+        .video-preview-mockup {
+            background: #000;
+            height: 120px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            margin-bottom: 1rem;
+        }
+        
+        .button-group-mockup {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .btn-mockup {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-expand-mockup {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-shutdown-mockup {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .countdown-mockup {
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            color: white;
+            margin-top: 1rem;
+        }
+        
+        .countdown-number {
+            font-size: 6rem;
+            font-weight: bold;
+            margin: 2rem 0;
+        }
+        
+        .flow-diagram {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 2rem;
+        }
+        
+        .flow-step {
+            background: #f8f9fa;
+            border-left: 5px solid #667eea;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            position: relative;
+        }
+        
+        .flow-step::before {
+            content: '→';
+            position: absolute;
+            left: -30px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 2rem;
+            color: #667eea;
+        }
+        
+        .flow-step:first-child::before {
+            content: '';
+        }
+        
+        .flow-step h3 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+        
+        .flow-step p {
+            color: #666;
+            margin: 0;
+        }
+        
+        .code-block {
+            background: #2c3e50;
+            color: #00ff00;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 1rem;
+            text-align: left;
+            border: 1px solid #dee2e6;
+        }
+        
+        .comparison-table th {
+            background: #667eea;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .comparison-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .badge-warning {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .badge-info {
+            background: #17a2b8;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔌 Remote Shutdown Feature</h1>
+            <p>Complete Implementation Guide with Visual Examples</p>
+        </div>
+
+        <!-- Feature Grid -->
+        <div class="feature-grid">
+            <!-- Feature 1 -->
+            <div class="feature-card">
+                <div class="feature-icon">👤</div>
+                <div class="feature-title">Individual Shutdown</div>
+                <div class="feature-description">
+                    Shutdown specific student systems from the admin dashboard. Each student card now has a dedicated shutdown button.
+                </div>
+                <div class="mockup">
+                    <div class="student-card-mockup">
+                        <div class="card-header-mockup">
+                            <div class="student-name-mockup">👤 John Doe</div>
+                        </div>
+                        <div class="student-details-mockup">
+                            <div><strong>ID:</strong> 2021001</div>
+                            <div><strong>System:</strong> CC1-12</div>
+                            <div><strong>Login:</strong> 10:30:45</div>
+                        </div>
+                        <div class="video-preview-mockup">
+                            📺 Screen Preview
+                        </div>
+                        <div class="button-group-mockup">
+                            <button class="btn-mockup btn-expand-mockup">🔍 Expand</button>
+                            <button class="btn-mockup btn-shutdown-mockup">🔌 Shutdown</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feature 2 -->
+            <div class="feature-card">
+                <div class="feature-icon">🔴</div>
+                <div class="feature-title">Bulk Shutdown</div>
+                <div class="feature-description">
+                    Shutdown all logged-in student systems simultaneously with a single button click. Perfect for ending lab sessions.
+                </div>
+                <div class="mockup">
+                    <p style="margin-bottom: 1rem; color: #666;"><strong>Control Panel Button:</strong></p>
+                    <button class="btn-mockup btn-shutdown-mockup" style="width: 100%; padding: 1rem; font-size: 1rem;">
+                        ⚠️ Shutdown All Lab Systems
+                    </button>
+                    <p style="margin-top: 1rem; color: #666; font-size: 0.9rem; text-align: center;">
+                        <em>Requires confirmation before execution</em>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Feature 3 -->
+            <div class="feature-card">
+                <div class="feature-icon">⚠️</div>
+                <div class="feature-title">Student Warning</div>
+                <div class="feature-description">
+                    Students receive a 10-second countdown warning before shutdown, giving them time to save their work.
+                </div>
+                <div class="countdown-mockup">
+                    <h1 style="font-size: 3rem; margin-bottom: 1rem;">⚠️ SYSTEM SHUTDOWN</h1>
+                    <p style="font-size: 1.5rem; margin-bottom: 1rem;">This computer is shutting down...</p>
+                    <div class="countdown-number">10</div>
+                    <p style="font-size: 1.2rem; margin-bottom: 1rem;">Please save your work immediately!</p>
+                    <p style="font-size: 0.9rem; opacity: 0.9;">Shutdown initiated by Lab Administrator</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flow Diagram -->
+        <div class="flow-diagram">
+            <h2 style="text-align: center; color: #2c3e50; margin-bottom: 2rem;">📊 Shutdown Process Flow</h2>
+            
+            <div class="flow-step">
+                <h3>Step 1: Admin Initiates Shutdown</h3>
+                <p>Admin clicks the "🔌 Shutdown" button on a student card or "Shutdown All" button</p>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 2: Confirmation Dialog</h3>
+                <p>Browser shows confirmation dialog to prevent accidental shutdowns</p>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 3: Socket Event Sent</h3>
+                <p>Admin dashboard sends socket event to backend server with session ID</p>
+                <div class="code-block">
+socket.emit('shutdown-system', { sessionId: '...' });</div>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 4: Server Relays Command</h3>
+                <p>Backend server emits shutdown command to specific student kiosk</p>
+                <div class="code-block">
+io.to(kioskSocketId).emit('force-shutdown-system', {
+    systemNumber: 'CC1-12',
+    timestamp: '2026-02-15T10:30:00Z',
+    admin: 'Lab Administrator'
+});</div>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 5: Student Sees Warning</h3>
+                <p>Full-screen countdown overlay appears on student's screen</p>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 6: Countdown Completes</h3>
+                <p>After 10 seconds, kiosk sends IPC message to Electron main process</p>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 7: Windows Shutdown</h3>
+                <p>Electron executes Windows shutdown command</p>
+                <div class="code-block">
+shutdown /s /f /t 0
+// /s = Shutdown
+// /f = Force close apps
+// /t 0 = Immediate</div>
+            </div>
+            
+            <div class="flow-step">
+                <h3>Step 8: System Powers Off</h3>
+                <p>Student's computer shuts down completely</p>
+            </div>
+        </div>
+
+        <!-- Comparison -->
+        <div class="flow-diagram">
+            <h2 style="text-align: center; color: #2c3e50; margin-bottom: 2rem;">📋 Feature Comparison</h2>
+            
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Individual Shutdown</th>
+                        <th>Shutdown All</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Button Location</strong></td>
+                        <td>On each student card</td>
+                        <td>Control panel at top</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Systems Affected</strong></td>
+                        <td>Single selected system</td>
+                        <td>All logged-in systems</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Confirmation</strong></td>
+                        <td>Single confirmation</td>
+                        <td>Double confirmation</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Warning Time</strong></td>
+                        <td>10 seconds</td>
+                        <td>10 seconds (each system)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Use Case</strong></td>
+                        <td>Specific student issue</td>
+                        <td>Lab session end</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Logged in DB</strong></td>
+                        <td><span class="badge badge-success">✓ Yes</span></td>
+                        <td><span class="badge badge-success">✓ Yes</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Technical Details -->
+        <div class="flow-diagram">
+            <h2 style="text-align: center; color: #2c3e50; margin-bottom: 2rem;">🛠️ Technical Details</h2>
+            
+            <h3 style="color: #667eea; margin-bottom: 1rem;">Socket Events</h3>
+            
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">Admin → Server</h4>
+                <div class="code-block">
+// Individual shutdown
+socket.emit('shutdown-system', { sessionId })
+
+// Bulk shutdown
+socket.emit('shutdown-all-systems', { labId })</div>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">Server → Kiosk</h4>
+                <div class="code-block">
+io.to(kioskSocketId).emit('force-shutdown-system', {
+    systemNumber: 'CC1-12',
+    timestamp: '2026-02-15T10:30:00Z',
+    admin: 'Lab Administrator'
+})</div>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">Server → Admin (Feedback)</h4>
+                <div class="code-block">
+// Success
+socket.emit('shutdown-success', { sessionId, systemNumber })
+
+// Error
+socket.emit('shutdown-error', { sessionId, error })</div>
+            </div>
+            
+            <h3 style="color: #667eea; margin-bottom: 1rem; margin-top: 2rem;">Files Modified</h3>
+            
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Changes</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>central-admin/server/app.js</code></td>
+                        <td>Enhanced shutdown-system & shutdown-all-systems events</td>
+                        <td><span class="badge badge-success">✓ Modified</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>central-admin/dashboard/admin-dashboard.html</code></td>
+                        <td>Added shutdown button to student cards + event listeners</td>
+                        <td><span class="badge badge-success">✓ Modified</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>student-kiosk/student-interface.html</code></td>
+                        <td>force-shutdown-system listener (already implemented)</td>
+                        <td><span class="badge badge-info">✓ Ready</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>student-kiosk/preload.js</code></td>
+                        <td>forceWindowsShutdown IPC bridge (already implemented)</td>
+                        <td><span class="badge badge-info">✓ Ready</span></td>
+                    </tr>
+                    <tr>
+                        <td><code>student-kiosk/main-simple.js</code></td>
+                        <td>Windows shutdown handler (already implemented)</td>
+                        <td><span class="badge badge-info">✓ Ready</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Usage Scenarios -->
+        <div class="flow-diagram">
+            <h2 style="text-align: center; color: #2c3e50; margin-bottom: 2rem;">🎓 Usage Scenarios</h2>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                <div style="background: #e8f5e8; border-left: 5px solid #28a745; padding: 1.5rem; border-radius: 8px;">
+                    <h3 style="color: #155724; margin-bottom: 1rem;">✅ Scenario 1: Misbehaving Student</h3>
+                    <p style="color: #155724; margin-bottom: 0.5rem;"><strong>Problem:</strong> One student browsing unauthorized sites</p>
+                    <p style="color: #155724; margin-bottom: 0.5rem;"><strong>Solution:</strong> Click individual shutdown button</p>
+                    <p style="color: #155724;"><strong>Result:</strong> Only that system shuts down</p>
+                </div>
+                
+                <div style="background: #fff3cd; border-left: 5px solid #ffc107; padding: 1.5rem; border-radius: 8px;">
+                    <h3 style="color: #856404; margin-bottom: 1rem;">⏰ Scenario 2: Lab Session End</h3>
+                    <p style="color: #856404; margin-bottom: 0.5rem;"><strong>Problem:</strong> Lab period is over</p>
+                    <p style="color: #856404; margin-bottom: 0.5rem;"><strong>Solution:</strong> Click "Shutdown All"</p>
+                    <p style="color: #856404;"><strong>Result:</strong> All systems shut down cleanly</p>
+                </div>
+                
+                <div style="background: #f8d7da; border-left: 5px solid #dc3545; padding: 1.5rem; border-radius: 8px;">
+                    <h3 style="color: #721c24; margin-bottom: 1rem;">🚨 Scenario 3: Emergency</h3>
+                    <p style="color: #721c24; margin-bottom: 0.5rem;"><strong>Problem:</strong> Network issue or security threat</p>
+                    <p style="color: #721c24; margin-bottom: 0.5rem;"><strong>Solution:</strong> Bulk shutdown command</p>
+                    <p style="color: #721c24;"><strong>Result:</strong> Controlled shutdown of entire lab</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Benefits -->
+        <div class="flow-diagram">
+            <h2 style="text-align: center; color: #2c3e50; margin-bottom: 2rem;">💡 Key Benefits</h2>
+            
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 1.5rem; border-radius: 12px;">
+                    <h3 style="margin-bottom: 0.5rem;">🎯 Granular Control</h3>
+                    <p style="margin: 0; opacity: 0.9;">Shutdown specific systems without affecting others</p>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #f093fb, #f5576c); color: white; padding: 1.5rem; border-radius: 12px;">
+                    <h3 style="margin-bottom: 0.5rem;">⚡ Bulk Management</h3>
+                    <p style="margin: 0; opacity: 0.9;">End entire lab session with one click</p>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #4facfe, #00f2fe); color: white; padding: 1.5rem; border-radius: 12px;">
+                    <h3 style="margin-bottom: 0.5rem;">👤 User-Friendly</h3>
+                    <p style="margin: 0; opacity: 0.9;">10-second warning gives time to save work</p>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #43e97b, #38f9d7); color: white; padding: 1.5rem; border-radius: 12px;">
+                    <h3 style="margin-bottom: 0.5rem;">📊 Accurate Tracking</h3>
+                    <p style="margin: 0; opacity: 0.9;">Only logged-in systems appear in dashboard</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Testing Checklist -->
+        <div class="flow-diagram">
+            <h2 style="text-align: center; color: #2c3e50; margin-bottom: 2rem;">✅ Testing Checklist</h2>
+            
+            <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px;">
+                <h3 style="color: #667eea; margin-bottom: 1rem;">Before Testing</h3>
+                <ul style="list-style: none; padding: 0;">
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Server is running on admin PC
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Admin dashboard is accessible
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ At least one student kiosk is logged in
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Network connectivity verified
+                    </li>
+                </ul>
+                
+                <h3 style="color: #667eea; margin-bottom: 1rem; margin-top: 2rem;">Individual Shutdown Test</h3>
+                <ul style="list-style: none; padding: 0;">
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Shutdown button visible on student card
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Confirmation dialog appears
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Student sees countdown warning
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ System shuts down after 10 seconds
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Student card disappears from dashboard
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Action logged in database
+                    </li>
+                </ul>
+                
+                <h3 style="color: #667eea; margin-bottom: 1rem; margin-top: 2rem;">Bulk Shutdown Test</h3>
+                <ul style="list-style: none; padding: 0;">
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Multiple students logged in (3+)
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ "Shutdown All" button clicked
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ Confirmation dialog appears
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ All students see countdown
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ All systems shut down
+                    </li>
+                    <li style="padding: 0.5rem 0; border-bottom: 1px solid #dee2e6;">
+                        ☐ All cards disappear from dashboard
+                    </li>
+                    <li style="padding: 0.5rem 0;">
+                        ☐ Success notification shown
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="header" style="margin-top: 2rem;">
+            <h2 style="color: #28a745; margin-bottom: 1rem;">✨ Implementation Complete!</h2>
+            <p style="color: #666; font-size: 1rem;">
+                The remote shutdown feature is now fully functional with both individual and bulk capabilities.
+                <br>
+                <strong>Ready for production use!</strong> 🎉
+            </p>
+        </div>
+    </div>
+</body>
+</html>

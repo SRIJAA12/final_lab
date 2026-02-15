@@ -757,13 +757,18 @@
         let connectedStudents = new Map();
         let monitoringConnections = new Map();
         // Queue ICE candidates that arrive before remote description is set
-        let pendingICE = new Map(); // sessionId -> Array<RTCIceCandidateInit>        let sessionActive = false;
+        let pendingICE = new Map(); // sessionId -> Array<RTCIceCandidateInit>
+        let connectionStartTime = new Map(); // Track when connections started (sessionId -> timestamp)
+        let sessionActive = false;
         let currentLabSession = null;
         let sessionTimer = null;
         let sessionEndTime = null;
         let sessionExported = false; // Track if CSV has been exported
         let screenReadySessions = new Set(); // Track which kiosk screens are ready
         let autoRefreshInterval = null; // Periodic refresh timer
+        let connectionDisconnectTime = new Map(); // Track WHEN each connection disconnects
+        let connectionRetryCount = new Map(); // Track retry attempts per session (for exponential backoff)
+        let exhaustedRetrySessions = new Set(); // Track sessions that exhausted all retries (don't restart these)
         
         // FIXED SERVER URL - Admin system only (no auto-detection needed)
         const serverUrl = 'http://10.10.46.103:7401';
@@ -1003,8 +1008,87 @@
                     if (sessionActive || connectedStudents.size > 0) {
                         saveAdminSessionState();
                     }
-                }, 10000);
-                console.log('✅ Auto-refresh started (every 10 seconds)');
+                }, 20000); // Increased to 20 seconds to reduce interference with WebRTC
+                console.log('✅ Auto-refresh started (every 20 seconds)');
+                
+                // 🔥 IMPROVED: Connection health monitor - checks every 15 seconds for fast recovery
+                setInterval(() => {
+                    console.log('\n🔍 === CONNECTION HEALTH CHECK ===');
+                    console.log(`📊 Total students: ${connectedStudents.size}`);
+                    console.log(`📊 Total peer connections: ${monitoringConnections.size}`);
+                    
+                    let connectedCount = 0;
+                    let connectingCount = 0;
+                    let failedCount = 0;
+                    let disconnectedCount = 0;
+                    
+                    const now = Date.now();
+                    
+                    monitoringConnections.forEach((pc, sessionId) => {
+                        const state = pc.connectionState;
+                        const iceState = pc.iceConnectionState;
+                        const hasVideo = document.getElementById(`video-${sessionId}`)?.querySelector('video')?.srcObject;
+                        
+                        // 🛡️ CRITICAL: Use disconnect duration, not connection age
+                        const disconnectTime = connectionDisconnectTime.get(sessionId);
+                        const disconnectDuration = disconnectTime ? (now - disconnectTime) / 1000 : 0;
+                        
+                        // 🔥 NEW: Track how long connection has been in "connecting" state
+                        const connectingStartTime = connectionStartTime.get(sessionId);
+                        const connectingDuration = connectingStartTime ? (now - connectingStartTime) / 1000 : 0;
+                        
+                        // 🔥 DTLS STUCK CHECK: ICE connected but connection state stuck at "connecting"
+                        // Check BOTH: connectingDuration >= 20 OR disconnectDuration >= 10 (backdated by DTLS timeout)
+                        const isDtlsStuck = (state === 'connecting' && 
+                                           (iceState === 'connected' || iceState === 'completed') && 
+                                           (connectingDuration >= 20 || disconnectDuration >= 10));
+                        
+                        // 🔥 CRITICAL FIX: Only consider "connected" if BOTH states are healthy
+                        // Don't count as connected if ICE is connected but connection state is stuck
+                        const isFullyConnected = (state === 'connected' && iceState === 'connected');
+                        const isDisconnected = (state === 'disconnected' || iceState === 'disconnected');
+                        const isFailed = (state === 'failed' || state === 'closed' || iceState === 'failed');
+                        
+                        console.log(`  Session ${sessionId.substring(0, 8)}...: ${state} / ${iceState} / Video: ${hasVideo ? '✅' : '❌'} / DisconnectDuration: ${disconnectDuration.toFixed(1)}s / ConnectingTime: ${connectingDuration.toFixed(1)}s`);
+                        
+                        // Count states - DTLS stuck counts as connecting, not connected
+                        if (isFullyConnected) connectedCount++;
+                        else if (state === 'connecting' || state === 'new' || isDtlsStuck) connectingCount++;
+                        else if (isFailed) failedCount++;
+                        else if (isDisconnected) disconnectedCount++;
+                        
+                        // 🛡️ RACE CONDITION FIX: Don't restart sessions that already exhausted all retries
+                        if (exhaustedRetrySessions.has(sessionId)) {
+                            console.log(`  ⏭️ Skipping exhausted session: ${sessionId} (already tried 5 times)`);
+                            return; // Skip health check restart for this session (forEach callback - use return not continue)
+                        }
+                        
+                        // 🛡️ IMPROVED: Restart if failed, disconnected 10+ seconds, OR DTLS stuck
+                        const shouldRestart = isFailed || (isDisconnected && disconnectDuration >= 10) || isDtlsStuck;
+                        
+                        if (shouldRestart) {
+                            if (isDtlsStuck) {
+                                console.error(`  ❌ ❌ HEALTH CHECK DETECTED DTLS STUCK for session: ${sessionId}`);
+                                console.error(`     ICE connected but connection state stuck at "connecting" for ${connectingDuration.toFixed(1)}s`);
+                                console.error(`     Disconnect duration: ${disconnectDuration.toFixed(1)}s - RESTARTING NOW`);
+                            } else {
+                                console.warn(`  ⚠️ Restarting failed connection for session: ${sessionId} (state: ${state}, disconnect: ${disconnectDuration.toFixed(1)}s)`);
+                            }
+                            try { pc.close(); } catch(e) {}
+                            monitoringConnections.delete(sessionId);
+                            connectionStartTime.delete(sessionId);
+                            connectionDisconnectTime.delete(sessionId);
+                            setTimeout(() => startMonitoring(sessionId), 500); // Fast restart
+                        } else if (state === 'connecting' || state === 'new') {
+                            console.log(`  ⏳ Connection still establishing for session: ${sessionId} (${connectingDuration.toFixed(1)}s) - leaving it alone`);
+                        } else if (isDisconnected && disconnectDuration < 10) {
+                            console.log(`  🔄 Connection disconnected for session: ${sessionId} (${disconnectDuration.toFixed(1)}s) - letting WebRTC auto-reconnect`);
+                        }
+                    });
+                    
+                    console.log(`📊 Summary: ${connectedCount} connected, ${connectingCount} connecting, ${failedCount} failed, ${disconnectedCount} disconnected`);
+                    console.log('🔍 === END HEALTH CHECK ===\n');
+                }, 15000); // Check every 15 seconds for fast recovery
             });
             
             socket.on('disconnect', () => {
@@ -1481,9 +1565,7 @@
                     hasShownRestoreNotification = true;
                 }
             }
-        }
-
-        // Display active sessions
+        }        // Display active sessions
         function displayActiveSessions(sessions) {
             const grid = document.getElementById('studentsGrid');
             
@@ -1493,12 +1575,28 @@
             ) : [];
             
             console.log(`📊 Total sessions received: ${sessions?.length || 0}, Actual logged-in students: ${actualStudentSessions.length}`);
+            console.log('📋 All received sessions:', sessions?.map(s => {
+                const id = s._id || s.sessionId || s.id || 'no-id';
+                const sid = s.studentId || 'no-studentId';
+                const sys = s.systemNumber || 'no-system';
+                return `${id.substring(0, 8)}... (${sid} @ ${sys})`;
+            }).join(', ') || 'none');
+            console.log('📋 Filtered student sessions:', actualStudentSessions.map(s => {
+                const id = s._id || s.sessionId || s.id || 'no-id';
+                const sid = s.studentId || 'no-studentId';
+                const sys = s.systemNumber || 'no-system';
+                return `${id.substring(0, 8)}... (${sid} @ ${sys})`;
+            }).join(', ') || 'none');
             
             if (!actualStudentSessions || actualStudentSessions.length === 0) {
-                // Only clear if we don't have any existing connections
-                if (connectedStudents.size === 0) {
-                    grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
-                }
+                // ✅ FIX: Always clear the grid and connectedStudents when no students
+                grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
+                connectedStudents.clear(); // ✅ CRITICAL: Clear the map to show 0 count
+                // Close all monitoring connections
+                monitoringConnections.forEach((pc, sessionId) => {
+                    try { pc.close(); } catch(e) {}
+                });
+                monitoringConnections.clear();
                 updateStats();
                 return;
             }
@@ -1507,134 +1605,117 @@
             const currentSessionIds = new Set(actualStudentSessions.map(s => s._id || s.sessionId || s.id));
             const existingSessionIds = new Set(connectedStudents.keys());
             
-            // Check if sessions are the same
-            const sessionsChanged = currentSessionIds.size !== existingSessionIds.size ||
-                                   ![...currentSessionIds].every(id => existingSessionIds.has(id));
+            // 🔥 CRITICAL FIX: Calculate which sessions are new, removed, or unchanged
+            const newSessionIds = [...currentSessionIds].filter(id => !existingSessionIds.has(id));
+            const removedSessionIds = [...existingSessionIds].filter(id => !currentSessionIds.has(id));
+            const unchangedSessionIds = [...currentSessionIds].filter(id => existingSessionIds.has(id));
+            
+            console.log(`📊 Session changes: ${newSessionIds.length} new, ${removedSessionIds.length} removed, ${unchangedSessionIds.length} unchanged`);
             
             // Check if grid has content
             const gridHasStudents = grid.children.length > 0 && !grid.querySelector('.no-students');
             
-// ✅ FIX: ALWAYS verify monitoring for all sessions, even if grid hasn't changed
-            // This ensures screen mirroring works immediately after page load/refresh
-            console.log(`🔍 Checking ${actualStudentSessions.length} sessions for monitoring status...`);
-            actualStudentSessions.forEach((session, index) => {
-                const sessionId = session._id || session.sessionId || session.id;
-                if (!sessionId) return;
+            // 🔥 REMOVE OLD SESSIONS: Clean up sessions that no longer exist
+            removedSessionIds.forEach(sessionId => {
+                console.log('🗑️ Removing session:', sessionId);
+                removeStudentFromGrid(sessionId);
+                const pc = monitoringConnections.get(sessionId);
+                if (pc) {
+                    try { pc.close(); } catch(e) {}
+                    monitoringConnections.delete(sessionId);
+                }
+                connectedStudents.delete(sessionId);
+            });
+            
+            // 🔥 ADD NEW SESSIONS: Add cards for new students only
+            newSessionIds.forEach((sessionId, index) => {
+                const session = actualStudentSessions.find(s => (s._id || s.sessionId || s.id) === sessionId);
+                if (session) {
+                    console.log('➕ Adding new session:', sessionId);
+                    connectedStudents.set(sessionId, session);
+                    addStudentToGrid(session);
+                    
+                    // Start monitoring after a short delay, staggered to avoid race conditions
+                    // Stagger by 1 second for Ethernet LAN (was 2s for safety)
+                    setTimeout(() => {
+                        console.log('🎥 Starting monitoring for NEW session:', sessionId, '(stagger:', (index + 1), 'seconds)');
+                        startMonitoring(sessionId);
+                    }, (index + 1) * 1000); // Stagger by 1 second each
+                }
+            });
+            
+            // 🔥 VERIFY UNCHANGED SESSIONS: Ensure existing sessions have active monitoring
+            unchangedSessionIds.forEach((sessionId, index) => {
+                const session = actualStudentSessions.find(s => (s._id || s.sessionId || s.id) === sessionId);
+                if (!session) {
+                    console.warn('⚠️ Session data not found for unchanged session:', sessionId);
+                    return;
+                }
+                
+                // 🛡️ CRITICAL: Ensure card and video container exist BEFORE checking connection
+                addStudentToGrid(session);
                 
                 const hasConnection = monitoringConnections.has(sessionId);
                 const pc = monitoringConnections.get(sessionId);
-                const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+                const state = pc?.connectionState;
+                const iceState = pc?.iceConnectionState;
+                const isConnected = pc && (state === 'connected' || iceState === 'connected');
+                const isConnecting = pc && (state === 'connecting' || state === 'new' || iceState === 'checking');
+                const isDisconnected = pc && (state === 'disconnected' || iceState === 'disconnected');
+                const isFailed = pc && (state === 'failed' || state === 'closed' || iceState === 'failed');
                 const videoContainer = document.getElementById(`video-${sessionId}`);
                 const hasVideo = videoContainer && videoContainer.querySelector('video')?.srcObject;
                 
-                // Start monitoring if: no connection, connection failed, or no video stream
-                if (!hasConnection || !isConnected || !hasVideo) {
-                    console.log('🎥 Starting/Restarting monitoring for:', sessionId, {
+                // 🛡️ CRITICAL FIX: Track DISCONNECT DURATION, not connection age
+                const disconnectTime = connectionDisconnectTime.get(sessionId);
+                const disconnectDuration = disconnectTime ? (Date.now() - disconnectTime) / 1000 : 0;
+                const hasBeenDisconnectedTooLong = isDisconnected && disconnectDuration >= 10;
+                
+                // 🛡️ FIX: Only restart if:
+                // 1. No connection exists
+                // 2. Connection failed/closed
+                // 3. Disconnected for 10+ seconds (not just connection age >= 10)
+                const needsRestart = !hasConnection || isFailed || hasBeenDisconnectedTooLong;
+                
+                if (needsRestart) {
+                    console.log('🔄 Restarting monitoring for EXISTING session:', sessionId, {
                         hasConnection,
+                        state,
+                        iceState,
                         isConnected,
+                        isDisconnected,
+                        isFailed,
                         hasVideo: !!hasVideo,
-                        reason: !hasConnection ? 'no connection' : !isConnected ? 'connection not established' : 'no video stream'
+                        disconnectDuration: disconnectDuration.toFixed(1) + 's'
                     });
                     
-                    // Clean up any failed connection
-                    if (pc && !isConnected) {
+                    // Clean up failed connection
+                    if (pc) {
                         try { pc.close(); } catch(e) {}
                         monitoringConnections.delete(sessionId);
+                        connectionStartTime.delete(sessionId);
+                        connectionDisconnectTime.delete(sessionId);
                     }
                     
-                    // ✅ FIX: Start monitoring immediately without delay for instant screen mirroring
-                    // Stagger connections slightly to avoid overwhelming the server
-                    setTimeout(() => startMonitoring(sessionId), index * 200);
+                    // Restart with minimal stagger to avoid race conditions
+                    // Use 300ms stagger for fast Ethernet LAN
+                    const staggerDelay = (index * 300) + 200; // 200ms base + 300ms per student
+                    console.log('⏱️ Will restart monitoring in', staggerDelay / 1000, 'seconds');
+                    setTimeout(() => startMonitoring(sessionId), staggerDelay);
+                } else if (isConnecting) {
+                    console.log('⏳ Session connecting:', sessionId, '- state:', state, '- ICE:', iceState, '- GIVING IT TIME');
+                } else if (isDisconnected) {
+                    console.log('⚠️ Session disconnected:', sessionId, '- duration:', disconnectDuration.toFixed(1) + 's - waiting for auto-reconnect (will restart at 10s)');
+                } else if (isConnected) {
+                    console.log('✅ Session healthy:', sessionId, '- connection:', state, '- ICE:', iceState);
                 } else {
-                    console.log('✅ Monitoring already active and working for:', sessionId);
+                    console.log('⚠️ Session in unexpected state:', sessionId, '- state:', state, '- ICE:', iceState);
                 }
             });
             
-            // Only skip grid rebuild if sessions haven't changed AND grid exists
-            if (!sessionsChanged && gridHasStudents) {
-                console.log('✅ Sessions unchanged and grid populated, skipping grid rebuild');
-                updateStats();
-                return;
-            }
-            
-            if (!sessionsChanged && !gridHasStudents) {
-                console.log('🔄 Sessions unchanged but grid is EMPTY - rebuilding...');
-            } else if (sessionsChanged) {
-                console.log('🔄 Sessions changed, rebuilding grid...');
-            }
-            
-            // Preserve existing monitoring connections
-            const existingConnections = new Map(monitoringConnections);
-            
-            // CRITICAL FIX: Only clear grid if sessions actually changed or grid is empty
-            // This prevents losing student data on refresh when nothing changed
-            if (sessionsChanged || !gridHasStudents) {
-                grid.innerHTML = '';
-                connectedStudents.clear();
-            }
-            
-            console.log('🎥 DISPLAYING sessions and preserving existing connections...');
-            
-            actualStudentSessions.forEach(session => {
-                const sessionId = session._id || session.sessionId || session.id;
-                if (sessionId) {
-                    connectedStudents.set(sessionId, session);
-                    
-                    // Create the student card first
-                    addStudentToGrid(session);
-                    
-                    // Check if we have an existing WORKING connection
-                    if (existingConnections.has(sessionId)) {
-                        const existingPC = existingConnections.get(sessionId);
-                        const isConnected = existingPC && 
-                                          (existingPC.connectionState === 'connected' || 
-                                           existingPC.iceConnectionState === 'connected');
-                        
-                        if (isConnected) {
-                            console.log('🔗 PRESERVING active WebRTC connection for session:', sessionId);
-                            // Keep the existing connection - DO NOT close it!
-                            monitoringConnections.set(sessionId, existingPC);
-                            
-                            // Reattach video if needed
-                            const videoContainer = document.getElementById(`video-${sessionId}`);
-                            if (videoContainer && existingPC.getRemoteStreams) {
-                                const streams = existingPC.getRemoteStreams();
-                                if (streams && streams.length > 0) {
-                                    const video = videoContainer.querySelector('video') || document.createElement('video');
-                                    if (!video.srcObject) {
-                                        video.srcObject = streams[0];
-                                        video.autoplay = true;
-                                        video.playsInline = true;
-                                        if (!videoContainer.querySelector('video')) {
-                                            videoContainer.innerHTML = '';
-                                            videoContainer.appendChild(video);
-                                        }
-                                        console.log('✅ Reattached video stream to grid');
-                                    }
-                                }
-                            }
-                            return; // CRITICAL: Skip starting new connection
-                        } else {
-                            console.log('❌ Existing connection DEAD - will restart for:', sessionId);
-                            // Close the failed connection
-                            try { existingPC.close(); } catch(e) {}
-                        }
-                    }
-                    
-                    // No existing connection or it failed - start fresh after delay
-                    setTimeout(() => {
-                        const pc = monitoringConnections.get(sessionId);
-                        const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
-                        
-                        if (!monitoringConnections.has(sessionId) || !isConnected) {
-                            console.log('🎥 AUTO-STARTING monitoring for:', sessionId);
-                            startMonitoring(sessionId);
-                        } else {
-                            console.log('✅ Connection already established for:', sessionId);
-                        }
-                    }, 2000);
-                }
-            });
+            // ✅ No need to rebuild grid - we've added/removed/updated cards individually
+            console.log('✅ Grid updated incrementally - no full rebuild needed');
+            console.log(`📊 Final state: ${connectedStudents.size} students, ${monitoringConnections.size} active peer connections`);
             
             updateStats();
         }
@@ -1654,10 +1735,43 @@
                 return;
             }
             
-            // Remove existing card if present
+            // 🔥 CRITICAL FIX: Check if card already exists - if yes, UPDATE it instead of replacing
             const existingCard = document.getElementById(`student-${sessionId}`);
             if (existingCard) {
-                existingCard.remove();
+                console.log('🔄 Card already exists for session:', sessionId, '- updating instead of replacing');
+                // DON'T remove the card - just update the info if needed
+                // This preserves the video container and peer connection!
+                const studentInfo = existingCard.querySelector('.student-info');
+                if (studentInfo) {
+                    const loginTime = new Date(sessionData.loginTime).toLocaleTimeString();
+                    const isGuest = sessionData.studentId === 'GUEST' || sessionData.isGuest;
+                    studentInfo.innerHTML = `
+                        <div class="student-name">${isGuest ? '🔓' : '👤'} ${sessionData.studentName}</div>
+                        ${isGuest ? '<div class="guest-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-top: 5px; display: inline-block;">GUEST MODE</div>' : ''}
+                        <div class="student-details">
+                            <div><strong>ID:</strong> ${sessionData.studentId}</div>
+                            <div><strong>System:</strong> ${sessionData.systemNumber}</div>
+                            <div><strong>Login:</strong> ${loginTime}</div>
+                        </div>
+                    `;
+                }
+                
+                // 🛡️ CRITICAL: Ensure video container exists before returning early
+                let videoContainer = document.getElementById(`video-${sessionId}`);
+                if (!videoContainer) {
+                    console.warn('⚠️ Video container missing for existing card, recreating...');
+                    const studentActions = existingCard.querySelector('.student-actions');
+                    if (studentActions) {
+                        // Insert video container before actions
+                        const videoDiv = document.createElement('div');
+                        videoDiv.className = 'video-container';
+                        videoDiv.id = `video-${sessionId}`;
+                        videoDiv.innerHTML = '<div class="no-video">🔄 Auto-connecting to screen...</div>';
+                        existingCard.insertBefore(videoDiv, studentActions);
+                        console.log('✅ Video container recreated for session:', sessionId);
+                    }
+                }
+                return; // CRITICAL: Exit early to preserve video container
             }
             
             const studentCard = document.createElement('div');
@@ -1692,11 +1806,7 @@
             }
             grid.appendChild(studentCard);
             
-            connectedStudents.set(sessionId, sessionData);
-            
-            // NOTE: Monitoring is started by displayActiveSessions() or session-created handler
-            // Do NOT start monitoring here to avoid race conditions
-            console.log('✅ Student card added to grid:', sessionId);
+            console.log('✅ NEW student card added to grid:', sessionId);
         }
 
         // Remove student from grid
@@ -1726,6 +1836,8 @@
                     console.error('⚠️ Error closing peer connection:', e);
                 }
                 monitoringConnections.delete(sessionId);
+                connectionStartTime.delete(sessionId); // Clean up start time
+                connectionDisconnectTime.delete(sessionId); // Clean up disconnect time
                 console.log('✅ Removed from monitoringConnections map');
             }
             
@@ -1735,20 +1847,74 @@
                 grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
                 console.log('📭 Grid is now empty - showing no students message');
             }
-        }
-
-        // Start monitoring a student
+        }        // Start monitoring a student
         async function startMonitoring(sessionId) {
             try {
-                console.log('📹 Starting monitoring for session:', sessionId);
+                const retryCount = connectionRetryCount.get(sessionId) || 0;
+                console.log(`📹 Starting monitoring for session: ${sessionId} (attempt ${retryCount + 1})`);
+                
+                // Check if already connected - but verify it's actually working with VIDEO
+                const existingConnection = monitoringConnections.get(sessionId);
+                if (existingConnection) {
+                    const isConnected = existingConnection.connectionState === 'connected' || 
+                                      existingConnection.iceConnectionState === 'connected';
+                    
+                    // ✅ IMPROVED: Also check if video is actually flowing
+                    const videoContainer = document.getElementById(`video-${sessionId}`);
+                    const hasActiveVideo = videoContainer && 
+                                          videoContainer.querySelector('video')?.srcObject &&
+                                          videoContainer.querySelector('video')?.srcObject.active;
+                    
+                    if (isConnected && hasActiveVideo) {
+                        console.log('✅ Already connected with active video for session:', sessionId, '- skipping duplicate');
+                        // Clear retry counter and exhausted flag on successful connection
+                        connectionRetryCount.delete(sessionId);
+                        exhaustedRetrySessions.delete(sessionId);
+                        return;
+                    }
+                    
+                    console.log('🔄 Existing connection exists but not working properly - restarting for session:', sessionId, 
+                               '{ connected:', isConnected, ', hasVideo:', hasActiveVideo, '}');
+                    try {
+                        existingConnection.close();
+                    } catch (e) {
+                        console.error('Error closing existing connection:', e);
+                    }
+                    monitoringConnections.delete(sessionId);
+                    connectionStartTime.delete(sessionId);
+                    connectionDisconnectTime.delete(sessionId);
+                }
+                
+                // ✅ FIX: Clear any pending ICE candidates for this session
+                if (pendingICE.has(sessionId)) {
+                    console.log('🧊 Clearing pending ICE candidates for session:', sessionId);
+                    pendingICE.delete(sessionId);
+                }
                 
                 const videoContainer = document.getElementById(`video-${sessionId}`);
                 if (!videoContainer) {
                     throw new Error('Video container not found');
                 }
                 
-                // Create video element
-                const video = document.createElement('video');
+                // 🔥 CRITICAL FIX: Always clear old video element and create fresh one
+                let video = videoContainer.querySelector('video');
+                if (video) {
+                    // Stop all old tracks first
+                    if (video.srcObject) {
+                        const oldTracks = video.srcObject.getTracks();
+                        oldTracks.forEach(track => {
+                            track.stop();
+                            console.log('🛑 Stopped old video track:', track.kind);
+                        });
+                        video.srcObject = null;
+                    }
+                    // Remove old video element
+                    video.remove();
+                    console.log('🗑️ Removed old video element');
+                }
+                
+                // Create fresh video element
+                video = document.createElement('video');
                 video.autoplay = true;
                 video.muted = true;
                 video.style.width = '100%';
@@ -1757,20 +1923,40 @@
                 
                 videoContainer.innerHTML = '';
                 videoContainer.appendChild(video);
+                console.log('✅ Created fresh video element for session:', sessionId);
                 
-                // Create WebRTC peer connection with multiple STUN servers
+                // ✅ FIX: Create WebRTC peer connection with unique configuration per session
                 const peerConnection = new RTCPeerConnection({
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun1.l.google.com:19302' },
                         { urls: 'stun:stun2.l.google.com:19302' },
                         { urls: 'stun:stun3.l.google.com:19302' },
-                        { urls: 'stun:stun4.l.google.com:19302' }
+                        { urls: 'stun:stun4.l.google.com:19302' },
+                        // TURN server for NAT traversal (fallback relay)
+                        {
+                            urls: 'turn:openrelay.metered.ca:80',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        },
+                        {
+                            urls: 'turn:openrelay.metered.ca:443',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        }
                     ],
-                    iceCandidatePoolSize: 10
+                    iceCandidatePoolSize: 10,
+                    iceTransportPolicy: 'all', // Try all candidates (host, srflx, relay)
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require'
                 });
                 
-                console.log('🔗 Created peer connection with enhanced ICE configuration');
+                console.log('🔗 Created peer connection with enhanced ICE configuration for session:', sessionId);
+                
+                // 🔥 CRITICAL: Store connection IMMEDIATELY to prevent duplicates
+                monitoringConnections.set(sessionId, peerConnection);
+                connectionStartTime.set(sessionId, Date.now()); // Track when this connection started
+                console.log(`📊 Active peer connections: ${monitoringConnections.size}`);
                 
                 // Check if there are any queued ICE candidates from before this connection was created
                 const preQueuedCandidates = pendingICE.get(sessionId) || [];
@@ -1793,29 +1979,43 @@
                     
                     console.log('📺 ✅ RECEIVED REMOTE STREAM for session:', sessionId, event);
                     console.log('📺 Stream tracks:', event.streams[0].getTracks());
-                    video.srcObject = event.streams[0];
+                    
+                    // 🔥 CRITICAL FIX: Get fresh reference to video element from DOM
+                    // This ensures we're setting srcObject on the current video element,
+                    // not a stale reference if connection was restarted
+                    const currentVideoContainer = document.getElementById(`video-${sessionId}`);
+                    const currentVideo = currentVideoContainer ? currentVideoContainer.querySelector('video') : null;
+                    
+                    if (!currentVideo) {
+                        console.error('❌ Video element not found in DOM for session:', sessionId);
+                        console.error('   Container exists:', !!currentVideoContainer);
+                        return;
+                    }
+                    
+                    console.log('✅ Setting srcObject on current video element (attached to DOM:', currentVideo.isConnected, ')');
+                    currentVideo.srcObject = event.streams[0];
                     
                     // Add video event listeners for debugging
-                    video.onloadedmetadata = () => {
+                    currentVideo.onloadedmetadata = () => {
                         console.log('✅ Video metadata loaded for session:', sessionId);
                         // Force play the video once metadata is loaded
-                        video.play().then(() => {
+                        currentVideo.play().then(() => {
                             console.log('▶️ ✅ Video playback started successfully for session:', sessionId);
                         }).catch(err => {
                             console.error('❌ Failed to start video playback:', err);
                         });
                     };
                     
-                    video.onplay = () => {
+                    currentVideo.onplay = () => {
                         console.log('▶️ Video started playing for session:', sessionId);
                     };
                     
-                    video.onerror = (error) => {
+                    currentVideo.onerror = (error) => {
                         console.error('❌ Video error for session:', sessionId, error);
                     };
                     
                     // Also try to play immediately in case metadata is already loaded
-                    video.play().catch(err => {
+                    currentVideo.play().catch(err => {
                         console.log('⏳ Video play deferred until metadata loads:', err.message);
                     });
                 };
@@ -1855,19 +2055,34 @@
                     
                     if (peerConnection.connectionState === 'connected') {
                         console.log('✅ ✅ WebRTC CONNECTED for session:', sessionId, '- Video should be flowing now!');
+                        // Clear disconnect time on successful reconnect
+                        connectionDisconnectTime.delete(sessionId);
                         if (statusDiv) {
                             statusDiv.innerHTML = '✅ Connected';
                             statusDiv.style.color = '#28a745';
                         }
-                    } else if (peerConnection.connectionState === 'failed') {
-                        console.error('❌ WebRTC connection failed for session:', sessionId);
+                    } else if (peerConnection.connectionState === 'disconnected') {
+                        // Record WHEN the disconnection happened
+                        if (!connectionDisconnectTime.has(sessionId)) {
+                            connectionDisconnectTime.set(sessionId, Date.now());
+                            console.warn('⚠️ WebRTC disconnected for session:', sessionId, '- Tracking disconnect time, will give 10s for auto-reconnect');
+                        }
                         if (statusDiv) {
-                            statusDiv.innerHTML = '❌ Connection failed';
+                            statusDiv.innerHTML = '⚠️ Disconnected - waiting for reconnect...';
+                            statusDiv.style.color = '#ffc107';
+                        }
+                        // Don't immediately restart - WebRTC has built-in reconnection
+                        // The health check will restart if it doesn't recover
+                    } else if (peerConnection.connectionState === 'failed') {
+                        console.error('❌ WebRTC connection failed for session:', sessionId, '- will restart on next health check');
+                        if (statusDiv) {
+                            statusDiv.innerHTML = '❌ Connection failed - restarting...';
                             statusDiv.style.color = '#dc3545';
                         }
                     } else if (peerConnection.connectionState === 'connecting') {
                         if (statusDiv) {
                             statusDiv.innerHTML = '🔗 Connecting...';
+                            statusDiv.style.color = '#007bff';
                         }
                     }
                 };
@@ -1877,6 +2092,89 @@
                     console.log('🧊 ICE connection state changed for session:', sessionId, peerConnection.iceConnectionState);
                     if (peerConnection.iceConnectionState === 'connected') {
                         console.log('✅ ICE CONNECTED for session:', sessionId);
+                        // Clear disconnect time on successful ICE reconnect
+                        connectionDisconnectTime.delete(sessionId);
+                        
+                        // 🔥 DTLS TIMEOUT CHECK: If ICE connects but connection state is still "connecting" after 15 seconds,
+                        // this indicates DTLS handshake failure - restart with exponential backoff
+                        setTimeout(() => {
+                            const currentConnectionState = peerConnection.connectionState;
+                            const currentIceState = peerConnection.iceConnectionState;
+                            
+                            if (currentConnectionState === 'connecting' && 
+                                (currentIceState === 'connected' || currentIceState === 'completed')) {
+                                
+                                // Get retry count and calculate exponential backoff
+                                const retryCount = connectionRetryCount.get(sessionId) || 0;
+                                const backoffDelay = Math.min(500 * Math.pow(2, retryCount), 8000); // 500ms, 1s, 2s, 4s, 8s (max)
+                                connectionRetryCount.set(sessionId, retryCount + 1);
+                                
+                                console.error('❌ ❌ DTLS HANDSHAKE TIMEOUT for session:', sessionId);
+                                console.error('   ICE is connected but connection state stuck at "connecting" for 15s');
+                                console.error('   This indicates DTLS encryption handshake failed');
+                                console.error(`   Retry attempt: ${retryCount + 1} - Backoff delay: ${backoffDelay}ms`);
+                                
+                                // Add system clock skew warning after 2+ failures
+                                if (retryCount >= 2) {
+                                    console.error('⚠️ ⚠️ MULTIPLE DTLS FAILURES - Possible causes:');
+                                    console.error('   1. System clock skew between admin and student PC (MOST COMMON)');
+                                    console.error('   2. Firewall blocking DTLS/UDP packets');
+                                    console.error('   3. Network packet loss or high latency');
+                                    console.error('   ➡️ RECOMMENDED: Check if both system clocks are synchronized!');
+                                }
+                                
+                                // Give up after 5 attempts (would take ~15s timeout × 5 = 75 seconds)
+                                if (retryCount >= 5) {
+                                    console.error('❌ ❌ GIVING UP after 5 DTLS timeout attempts for session:', sessionId);
+                                    console.error('   Please check system clocks and network configuration');
+                                    exhaustedRetrySessions.add(sessionId); // Mark as exhausted to prevent health check restart
+                                    const statusDiv = document.getElementById(`status-${sessionId}`);
+                                    if (statusDiv) {
+                                        statusDiv.innerHTML = '❌ DTLS Failed - Check system clock';
+                                        statusDiv.style.color = '#dc3545';
+                                    }
+                                    return; // Don't retry anymore
+                                }
+                                
+                                console.error(`   🔥 RESTARTING CONNECTION with ${backoffDelay}ms backoff`);
+                                
+                                const statusDiv = document.getElementById(`status-${sessionId}`);
+                                if (statusDiv) {
+                                    statusDiv.innerHTML = `🔄 DTLS retry ${retryCount + 1}/5...`;
+                                    statusDiv.style.color = '#ffc107';
+                                }
+                                
+                                // Close the failed connection immediately
+                                try {
+                                    console.log('🔄 Closing DTLS stuck connection for session:', sessionId);
+                                    peerConnection.close();
+                                    monitoringConnections.delete(sessionId);
+                                    connectionStartTime.delete(sessionId);
+                                    connectionDisconnectTime.delete(sessionId);
+                                } catch (e) {
+                                    console.error('❌ Error closing connection:', e);
+                                }
+                                
+                                // Restart monitoring with exponential backoff
+                                setTimeout(() => {
+                                    console.log(`🔄 Restarting monitoring after DTLS timeout (attempt ${retryCount + 1}) for session:`, sessionId);
+                                    startMonitoring(sessionId);
+                                }, backoffDelay);
+                                
+                            } else if (currentConnectionState === 'connected') {
+                                // Success! Clear retry counter and exhausted flag
+                                connectionRetryCount.delete(sessionId);
+                                exhaustedRetrySessions.delete(sessionId);
+                                console.log('✅ Connection completed successfully for session:', sessionId,
+                                           '(ICE:', currentIceState, '+ Connection:', currentConnectionState, ')');
+                            }
+                        }, 15000); // Check after 15 seconds (increased from 10s to give DTLS more time)
+                    } else if (peerConnection.iceConnectionState === 'disconnected') {
+                        // Track ICE disconnection time
+                        if (!connectionDisconnectTime.has(sessionId)) {
+                            connectionDisconnectTime.set(sessionId, Date.now());
+                            console.warn('⚠️ ICE disconnected for session:', sessionId, '- Tracking for auto-reconnect');
+                        }
                     } else if (peerConnection.iceConnectionState === 'failed') {
                         console.error('❌ ICE connection FAILED for session:', sessionId);
                         const statusDiv = document.getElementById(`status-${sessionId}`);
@@ -1902,7 +2200,7 @@
                     sessionId: sessionId,
                     adminSocketId: socket.id
                 });
-                console.log('✅ ADMIN: Offer sent to kiosk');
+                console.log('✅ ADMIN: Offer sent to kiosk for session:', sessionId);
                 
                 // Update status
                 const statusDiv = document.getElementById(`status-${sessionId}`);
@@ -1910,7 +2208,8 @@
                     statusDiv.innerHTML = '📤 Offer sent, waiting for answer...';
                 }
                 
-                monitoringConnections.set(sessionId, peerConnection);
+                // NOTE: Connection already stored above (before offer)
+                // monitoringConnections.set(sessionId, peerConnection); // Already done!
                 
                 // Update card style
                 const studentCard = document.getElementById(`student-${sessionId}`);
@@ -1919,6 +2218,8 @@
                 }
                 
                 updateStats();
+                
+                console.log(`✅ Monitoring setup complete for session: ${sessionId} - Total connections: ${monitoringConnections.size}`);
                 
             } catch (error) {
                 console.error('Error starting monitoring:', error);
@@ -1934,6 +2235,8 @@
             if (peerConnection) {
                 peerConnection.close();
                 monitoringConnections.delete(sessionId);
+                connectionStartTime.delete(sessionId); // Clean up start time
+                connectionDisconnectTime.delete(sessionId); // Clean up disconnect time
             }
             
             const videoContainer = document.getElementById(`video-${sessionId}`);
@@ -2044,20 +2347,30 @@
             const fullscreenModal = document.getElementById('fullscreen-modal');
             const snapshotBtn = document.getElementById('snapshotBtn');
             
+            // Clear any existing stream first
+            if (fullscreenVideo.srcObject) {
+                const oldTracks = fullscreenVideo.srcObject.getTracks();
+                oldTracks.forEach(track => track.stop());
+                fullscreenVideo.srcObject = null;
+            }
+            
             // FIXED: Clone the stream to avoid conflicts
             const clonedStream = stream.clone();
             console.log('📹 Cloned stream tracks:', clonedStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
             
-            // Set the cloned stream to fullscreen video
+            // Set the cloned stream to fullscreen video and wait for it to load
             fullscreenVideo.srcObject = clonedStream;
             
-            // Force play
-            fullscreenVideo.play().then(() => {
-                console.log('✅ Fullscreen video playing');
-            }).catch(err => {
-                console.error('❌ Failed to play fullscreen video:', err);
-                alert('❌ Failed to play video. Please try again.');
-            });
+            // Wait for metadata to load before playing
+            fullscreenVideo.onloadedmetadata = () => {
+                console.log('✅ Fullscreen video metadata loaded, starting playback');
+                fullscreenVideo.play().then(() => {
+                    console.log('✅ Fullscreen video playing');
+                }).catch(err => {
+                    console.error('❌ Failed to play fullscreen video:', err);
+                    // Don't alert on play error - video might still work
+                });
+            };
             
             // Store session ID for snapshot
             fullscreenVideo.dataset.sessionId = sessionId;
@@ -2068,6 +2381,11 @@
                 document.getElementById('fullscreen-student-name').textContent = studentData.studentName || 'Unknown Student';
                 document.getElementById('fullscreen-student-details').textContent = `Roll: ${studentData.studentId} | System: ${studentData.systemNumber}`;
             }
+            
+            // Remove old event handlers to prevent duplicates
+            fullscreenVideo.onplaying = null;
+            fullscreenVideo.onpause = null;
+            fullscreenVideo.onerror = null;
             
             // Show snapshot button when video is playing
             fullscreenVideo.onplaying = () => {
@@ -2096,10 +2414,25 @@
             const fullscreenVideo = document.getElementById('fullscreen-video');
             const snapshotBtn = document.getElementById('snapshotBtn');
             
+            // Stop all tracks in the cloned stream
+            if (fullscreenVideo.srcObject) {
+                const tracks = fullscreenVideo.srcObject.getTracks();
+                tracks.forEach(track => {
+                    track.stop();
+                    console.log('🛑 Stopped fullscreen video track:', track.kind);
+                });
+            }
+            
             fullscreenModal.classList.remove('active');
             document.body.style.overflow = 'auto';
             fullscreenVideo.srcObject = null;
             snapshotBtn.style.display = 'none';
+            
+            // Clear event handlers
+            fullscreenVideo.onloadedmetadata = null;
+            fullscreenVideo.onplaying = null;
+            fullscreenVideo.onpause = null;
+            fullscreenVideo.onerror = null;
         }
         
         // Take snapshot from fullscreen video
@@ -2193,11 +2526,16 @@
         // Load all labs on page load
         async function loadAllLabs() {
             try {
+                const labSelect = document.getElementById('labSelect');
+                if (!labSelect) {
+                    // Lab select UI not present, skip this
+                    return;
+                }
+                
                 const response = await fetch('/api/labs');
                 const data = await response.json();
                 
                 if (data.success) {
-                    const labSelect = document.getElementById('labSelect');
                     labSelect.innerHTML = '<option value="">-- Select Lab --</option>';
                     
                     Object.values(data.labs).forEach(lab => {
@@ -2216,7 +2554,6 @@
                 }
             } catch (error) {
                 console.error('Error loading labs:', error);
-                showNotification('Failed to load labs. Check server connection.', 'error');
             }
         }
 
@@ -2272,8 +2609,7 @@
             `;
             toast.textContent = message;
             document.body.appendChild(toast);
-            
-            // Remove after 4 seconds
+              // Remove after 4 seconds
             setTimeout(() => {
                 toast.style.animation = 'slideOut 0.3s ease';
                 setTimeout(() => toast.remove(), 300);
@@ -2286,13 +2622,16 @@
             // This ensures accurate count even with duplicate logins
             const uniqueStudents = new Set();
             connectedStudents.forEach((data, sessionId) => {
-                if (data.studentId && data.systemNumber) {
+                // ✅ FIX: Only count valid student entries (not empty or undefined)
+                // FIXED: Changed data.name to data.studentName to match actual session data structure
+                if (data && data.studentId && data.systemNumber && data.studentName) {
                     uniqueStudents.add(`${data.studentId}-${data.systemNumber}`);
                 }
             });
             
             const actualActiveCount = uniqueStudents.size;
             
+            // ✅ FIX: Show 0 if no students are connected
             document.getElementById('totalStudents').textContent = actualActiveCount;
             document.getElementById('activeStudents').textContent = actualActiveCount;
             document.getElementById('monitoringStudents').textContent = monitoringConnections.size;
