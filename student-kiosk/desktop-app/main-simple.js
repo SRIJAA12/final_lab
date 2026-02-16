@@ -421,8 +421,8 @@ function createTimerWindow(studentName, studentId) {
     title: '⏱️ Active Session Timer',
     alwaysOnTop: true,
     skipTaskbar: false,
-    minimizable: false,  // 🔒 SECURITY: Cannot minimize
-    closable: false,  // Cannot be closed
+    minimizable: true,  // ✅ FIX: Allow minimize so students can minimize the timer
+    closable: false,  // 🔒 KEEP: Cannot be closed (must use Logout button)
     resizable: false,
     webPreferences: {
       nodeIntegration: true,  // Enable for ipcRenderer in timer
@@ -489,6 +489,33 @@ function createTimerWindow(studentName, studentId) {
           font-weight: bold;
           -webkit-app-region: drag;  /* Draggable title bar */
           border-bottom: 1px solid rgba(255,255,255,0.2);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .title-text {
+          flex: 1;
+        }
+        .minimize-btn {
+          background: rgba(255,255,255,0.2);
+          border: none;
+          color: white;
+          width: 24px;
+          height: 24px;
+          border-radius: 3px;
+          cursor: pointer;
+          font-size: 16px;
+          line-height: 20px;
+          text-align: center;
+          -webkit-app-region: no-drag;
+          transition: all 0.2s;
+          font-weight: bold;
+        }
+        .minimize-btn:hover {
+          background: rgba(255,255,255,0.3);
+        }
+        .minimize-btn:active {
+          background: rgba(255,255,255,0.4);
         }
         .content {
           padding: 15px;
@@ -533,7 +560,10 @@ function createTimerWindow(studentName, studentId) {
       </style>
     </head>
     <body>
-      <div class="title-bar">⏱️ Active Session Timer</div>
+      <div class="title-bar">
+        <div class="title-text">⏱️ Active Session Timer</div>
+        <button class="minimize-btn" onclick="minimizeWindow()" title="Minimize">_</button>
+      </div>
       <div class="content">
       <h3>Session Active</h3>
       <div class="timer" id="timer">00:00:00</div>
@@ -561,6 +591,10 @@ function createTimerWindow(studentName, studentId) {
           if (confirm('Are you sure you want to end your session and logout?')) {
             ipcRenderer.send('timer-logout-clicked');
           }
+        }
+        
+        function minimizeWindow() {
+          ipcRenderer.send('minimize-timer-window');
         }
       </script>
     </body>
@@ -714,6 +748,14 @@ function setupIPCHandlers() {
       setTimeout(() => {
         mainWindow.reload();
       }, 500);
+    }
+  });
+  
+  // ✅ FIX: Handle minimize from timer window
+  ipcMain.on('minimize-timer-window', () => {
+    if (timerWindow && !timerWindow.isDestroyed()) {
+      timerWindow.minimize();
+      console.log('✅ Timer window minimized');
     }
   });
   

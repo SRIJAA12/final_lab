@@ -898,41 +898,56 @@
             // Request active sessions from server
             socket.emit('get-active-sessions');
             
-            // Wait for sessions to be loaded
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // ✅ FIX: Reduced wait time from 2000ms to 500ms for faster startup
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             console.log(`🔍 Found ${connectedStudents.size} connected students`);
             
             // Restart screen mirroring for all connected students
             if (connectedStudents.size > 0) {
-                console.log('🎥 Restarting screen mirroring for all students...');
+                console.log('🎥 🚀 INSTANT PARALLEL screen mirroring for ALL students...');
                 
-                // Wait for UI to be ready
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // ✅ FIX: NO UI WAIT - start immediately
                 
-                // Start monitoring for each student
+                // Clear any stale connections first
+                monitoringConnections.forEach((pc, sessionId) => {
+                    try {
+                        pc.close();
+                        console.log('🗑️ Cleared stale connection:', sessionId);
+                    } catch (e) {}
+                });
+                monitoringConnections.clear();
+                connectionStartTime.clear();
+                connectionDisconnectTime.clear();
+                
+                // ✅ FIX: Start ALL connections in PARALLEL - no delays, no throttling
+                // This allows 60+ systems to connect simultaneously without waiting
+                const startPromises = [];
                 let reconnectCount = 0;
                 for (const [sessionId, sessionData] of connectedStudents.entries()) {
-                    console.log(`🎥 Reconnecting to session: ${sessionId} (${sessionData.name})`);
+                    console.log(`🎥 🚀 INSTANT reconnect for: ${sessionId} (${sessionData.name})`);
                     
                     // Check if video container exists
                     const videoContainer = document.getElementById(`video-${sessionId}`);
                     if (videoContainer) {
-                        // Start monitoring after a short delay
-                        setTimeout(() => {
-                            startMonitoring(sessionId);
-                        }, reconnectCount * 500); // Stagger reconnections
+                        // ✅ CRITICAL: Start IMMEDIATELY in parallel - no setTimeout delays
+                        startPromises.push(startMonitoring(sessionId));
                         reconnectCount++;
                     } else {
                         console.warn(`⚠️ Video container not found for session: ${sessionId}`);
                     }
                 }
                 
-                console.log(`✅ Initiated reconnection for ${reconnectCount} students`);
+                // Wait for all connections to start (not complete, just initiated)
+                Promise.allSettled(startPromises).then(() => {
+                    console.log(`✅ All ${reconnectCount} connections initiated in parallel`);
+                });
+                
+                console.log(`✅ Initiated parallel reconnection for ${reconnectCount} students`);
                 
                 showNotification(
                     `🔄 SESSION RESTORED\n\n` +
-                    `🎥 Reconnecting screen mirroring for ${reconnectCount} students...`,
+                    `🎥 Reconnecting screen mirroring for ${reconnectCount} students in parallel...`,
                     'info',
                     5000
                 );
@@ -1118,8 +1133,9 @@
                 
                 const sessionId = sessionData._id || sessionData.sessionId || sessionData.id;
                 
-                // Add to grid if not already there
+                // Add to grid and connectedStudents map if not already there
                 if (!connectedStudents.has(sessionId)) {
+                    connectedStudents.set(sessionId, sessionData); // ✅ FIX: Add to map immediately
                     addStudentToGrid(sessionData);
                     updateStats();
                     
@@ -1127,26 +1143,26 @@
                     saveAdminSessionState();
                 }
                 
-                // CRITICAL: Start monitoring immediately for new session
+                // ✅ FIX: Start monitoring IMMEDIATELY for new session (no delay)
                 if (sessionId) {
-                    setTimeout(() => {
-                        const pc = monitoringConnections.get(sessionId);
-                        const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+                    // Check if monitoring is already active
+                    const pc = monitoringConnections.get(sessionId);
+                    const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+                    
+                    if (!monitoringConnections.has(sessionId) || !isConnected) {
+                        console.log('🎥 ⚡ INSTANT START for NEW session:', sessionId);
                         
-                        if (!monitoringConnections.has(sessionId) || !isConnected) {
-                            console.log('🎥 AUTO-STARTING monitoring for NEW session:', sessionId);
-                            
-                            // Clean up failed connection if exists
-                            if (pc && !isConnected) {
-                                try { pc.close(); } catch(e) {}
-                                monitoringConnections.delete(sessionId);
-                            }
-                            
-                            startMonitoring(sessionId);
-                        } else {
-                            console.log('✅ Monitoring already active for:', sessionId);
+                        // Clean up failed connection if exists
+                        if (pc && !isConnected) {
+                            try { pc.close(); } catch(e) {}
+                            monitoringConnections.delete(sessionId);
                         }
-                    }, 300); // Reduced delay for faster instant connection
+                        
+                        // Start immediately - no setTimeout delay
+                        startMonitoring(sessionId);
+                    } else {
+                        console.log('✅ Monitoring already active for:', sessionId);
+                    }
                 }
             });
             
@@ -1218,36 +1234,35 @@
                 
                 screenReadySessions.add(data.sessionId);
                 
-                // Wait for grid element to be ready, then start monitoring immediately
-                const tryStartMonitoring = (attempt = 0) => {
-                    const videoContainer = document.getElementById(`video-${data.sessionId}`);
+                // ✅ FIX: Check if monitoring is already working, if not start immediately
+                // Don't wait for video container or connectedStudents - just verify the connection state
+                const pc = monitoringConnections.get(data.sessionId);
+                const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+                const videoContainer = document.getElementById(`video-${data.sessionId}`);
+                const hasActiveVideo = videoContainer && 
+                                      videoContainer.querySelector('video')?.srcObject &&
+                                      videoContainer.querySelector('video')?.srcObject.active;
+                
+                if (!monitoringConnections.has(data.sessionId) || (!isConnected && !hasActiveVideo)) {
+                    console.log(`🎥 ⚡ KIOSK READY - Starting monitoring for:`, data.sessionId);
                     
-                    if (videoContainer && connectedStudents.has(data.sessionId)) {
-                        const pc = monitoringConnections.get(data.sessionId);
-                        const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
-                        
-                        // Start monitoring if no connection or connection is not working
-                        if (!monitoringConnections.has(data.sessionId) || !isConnected) {
-                            console.log(`🎥 ⚡ IMMEDIATE START - Screen ready (attempt ${attempt + 1}):`, data.sessionId);
-                            // Clean up failed connection
-                            if (pc && !isConnected) {
-                                try { pc.close(); } catch(e) {}
-                                monitoringConnections.delete(data.sessionId);
-                            }
+                    // Clean up failed connection if exists
+                    if (pc && !isConnected) {
+                        try { pc.close(); } catch(e) {}
+                        monitoringConnections.delete(data.sessionId);
+                    }
+                    
+                    // Wait brief moment for video container to be created (from addStudentToGrid)
+                    setTimeout(() => {
+                        if (document.getElementById(`video-${data.sessionId}`)) {
                             startMonitoring(data.sessionId);
                         } else {
-                            console.log('✅ Monitoring already active and connected for:', data.sessionId);
+                            console.warn('⚠️ Video container not ready yet, will be started by auto-monitor');
                         }
-                    } else if (attempt < 10) {
-                        // Video container not ready yet, wait 200ms and retry (up to 2 seconds)
-                        console.log(`⏳ Waiting for video container (attempt ${attempt + 1})...`);
-                        setTimeout(() => tryStartMonitoring(attempt + 1), 200);
-                    } else {
-                        console.error('❌ Video container never appeared for session:', data.sessionId);
-                    }
-                };
-                
-                tryStartMonitoring();
+                    }, 100);
+                } else {
+                    console.log('✅ Monitoring already active and working for:', data.sessionId, '- connection:', pc?.connectionState, '- ICE:', pc?.iceConnectionState);
+                }
             });
             
             // WebRTC signaling
@@ -1627,7 +1642,7 @@
                 connectedStudents.delete(sessionId);
             });
             
-            // 🔥 ADD NEW SESSIONS: Add cards for new students only
+            // 🔥 ADD NEW SESSIONS: Add cards for new students only (PARALLEL)
             newSessionIds.forEach((sessionId, index) => {
                 const session = actualStudentSessions.find(s => (s._id || s.sessionId || s.id) === sessionId);
                 if (session) {
@@ -1635,12 +1650,10 @@
                     connectedStudents.set(sessionId, session);
                     addStudentToGrid(session);
                     
-                    // Start monitoring after a short delay, staggered to avoid race conditions
-                    // Stagger by 1 second for Ethernet LAN (was 2s for safety)
-                    setTimeout(() => {
-                        console.log('🎥 Starting monitoring for NEW session:', sessionId, '(stagger:', (index + 1), 'seconds)');
-                        startMonitoring(sessionId);
-                    }, (index + 1) * 1000); // Stagger by 1 second each
+                    // ✅ FIX: Start monitoring IMMEDIATELY in PARALLEL (no stagger)
+                    // This allows 60+ systems to connect at once
+                    console.log('🎥 ⚡ INSTANT START for NEW session:', sessionId);
+                    startMonitoring(sessionId);
                 }
             });
             
@@ -2095,8 +2108,9 @@
                         // Clear disconnect time on successful ICE reconnect
                         connectionDisconnectTime.delete(sessionId);
                         
-                        // 🔥 DTLS TIMEOUT CHECK: If ICE connects but connection state is still "connecting" after 15 seconds,
+                        // 🔥 DTLS TIMEOUT CHECK: If ICE connects but connection state is still "connecting" after 5 seconds,
                         // this indicates DTLS handshake failure - restart with exponential backoff
+                        // ✅ FIX: Reduced from 15s to 5s for faster recovery (60 systems need quick retries)
                         setTimeout(() => {
                             const currentConnectionState = peerConnection.connectionState;
                             const currentIceState = peerConnection.iceConnectionState;
@@ -2106,11 +2120,11 @@
                                 
                                 // Get retry count and calculate exponential backoff
                                 const retryCount = connectionRetryCount.get(sessionId) || 0;
-                                const backoffDelay = Math.min(500 * Math.pow(2, retryCount), 8000); // 500ms, 1s, 2s, 4s, 8s (max)
+                                const backoffDelay = Math.min(300 * Math.pow(2, retryCount), 5000); // 300ms, 600ms, 1.2s, 2.4s, 5s (max)
                                 connectionRetryCount.set(sessionId, retryCount + 1);
                                 
                                 console.error('❌ ❌ DTLS HANDSHAKE TIMEOUT for session:', sessionId);
-                                console.error('   ICE is connected but connection state stuck at "connecting" for 15s');
+                                console.error('   ICE is connected but connection state stuck at "connecting" for 5s');
                                 console.error('   This indicates DTLS encryption handshake failed');
                                 console.error(`   Retry attempt: ${retryCount + 1} - Backoff delay: ${backoffDelay}ms`);
                                 
@@ -2168,7 +2182,7 @@
                                 console.log('✅ Connection completed successfully for session:', sessionId,
                                            '(ICE:', currentIceState, '+ Connection:', currentConnectionState, ')');
                             }
-                        }, 15000); // Check after 15 seconds (increased from 10s to give DTLS more time)
+                        }, 5000); // ✅ FIX: Reduced from 15s to 5s - check DTLS status after 5 seconds for faster retry
                     } else if (peerConnection.iceConnectionState === 'disconnected') {
                         // Track ICE disconnection time
                         if (!connectionDisconnectTime.has(sessionId)) {

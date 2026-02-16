@@ -1259,24 +1259,34 @@
                         // Reset logging out flag
                         isLoggingOut = false;
                         
-                        // Show success message
-                        showError('✅ Logged out successfully. System remains active.', 'success');
+                        // ✅ FIX: Show success message with setTimeout to ensure visibility
+                        setTimeout(() => {
+                            showError('✅ Logged out successfully. System remains active.', 'success');
+                        }, 100);
                         
                         console.log('🔒 Returned to kiosk login screen - system still in kiosk mode');
                     } else {
-                        console.error('❌ Logout failed:', result.error);
+                        console.error('❌ Logout failed:', result.error || 'Unknown error');
                         isLoggingOut = false; // Reset flag on failure
-                        alert('Logout failed: ' + result.error);
+                        // ✅ FIX: Only show error if there's an actual error (not if just no session)
+                        if (result.error && result.error !== 'No active session') {
+                            showError('Logout failed: ' + result.error, 'error');
+                        } else {
+                            // If no active session, just return to login screen silently
+                            document.getElementById('sessionModal').classList.remove('active');
+                            document.querySelector('.login-container').style.display = 'flex';
+                        }
                     }
                 } catch (error) {
                     console.error('❌ Logout error:', error);
                     isLoggingOut = false; // Reset flag on error
-                    alert('Logout error: ' + error.message);
+                    // ✅ FIX: More informative error message
+                    showError('Logout error: ' + (error.message || 'Unknown error'), 'error');
                 }
             } else {
                 console.error('❌ electronAPI.studentLogout not available');
                 isLoggingOut = false; // Reset flag
-                alert('Logout functionality not available');
+                showError('Logout functionality not available', 'error');
             }
         }
 
@@ -1296,6 +1306,29 @@
             // After login, allow all keys
             if (isLoggedIn) {
                 return;
+            }
+            
+            // ✅ FIX: Allow normal typing in input fields
+            // Don't block alphanumeric keys, numbers, backspace, delete, etc. when in input fields
+            const target = e.target;
+            const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+            
+            if (isInputField) {
+                // Allow normal input characters in input fields
+                const allowedKeys = [
+                    'Backspace', 'Delete', 'Tab', 'Enter', 'ArrowLeft', 'ArrowRight', 
+                    'ArrowUp', 'ArrowDown', 'Home', 'End', 'Shift', 'CapsLock'
+                ];
+                
+                // Allow alphanumeric characters (a-z, 0-9) and allowed special keys
+                const isAlphanumeric = /^[a-zA-Z0-9]$/.test(e.key);
+                const isAllowedKey = allowedKeys.includes(e.key);
+                const isSpecialChar = e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+                
+                if (isAlphanumeric || isAllowedKey || isSpecialChar) {
+                    // Allow normal typing in input fields
+                    return;
+                }
             }
             
             // Block Escape key from exiting fullscreen

@@ -53,8 +53,13 @@ window.addEventListener('contextmenu', (e) => {
   console.log('Context menu disabled');
 });
 
-// Block text selection
+// Block text selection (except in input fields)
 document.addEventListener('selectstart', (e) => {
+  // ✅ FIX: Allow text selection in input fields
+  const target = e.target;
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+    return; // Allow selection in input fields
+  }
   e.preventDefault();
 });
 
@@ -68,6 +73,28 @@ document.addEventListener('drop', (e) => {
 
 // Block EVERYTHING - Complete kiosk lockdown
 window.addEventListener('keydown', (e) => {
+  // ✅ FIX: Allow normal typing in input fields
+  const target = e.target;
+  const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+  
+  if (isInputField) {
+    // Allow normal input characters in input fields
+    const allowedKeys = [
+      'Backspace', 'Delete', 'Tab', 'Enter', 'ArrowLeft', 'ArrowRight', 
+      'ArrowUp', 'ArrowDown', 'Home', 'End', 'Shift', 'CapsLock'
+    ];
+    
+    // Allow alphanumeric characters (a-z, 0-9) and allowed special keys
+    const isAlphanumeric = /^[a-zA-Z0-9]$/.test(e.key);
+    const isAllowedKey = allowedKeys.includes(e.key);
+    const isSpecialChar = e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+    
+    if (isAlphanumeric || isAllowedKey || isSpecialChar) {
+      // Allow normal typing in input fields
+      return;
+    }
+  }
+  
   // Block ESC key - prevent fullscreen exit
   if (e.key === 'Escape') {
     e.preventDefault();

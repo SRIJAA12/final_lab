@@ -56,8 +56,13 @@ window.addEventListener('contextmenu', (e) => {
   console.log('Context menu disabled');
 });
 
-// Block text selection
+// Block text selection (except in input fields)
 document.addEventListener('selectstart', (e) => {
+  // ✅ FIX: Allow text selection in input fields
+  const target = e.target;
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+    return; // Allow selection in input fields
+  }
   e.preventDefault();
 });
 
