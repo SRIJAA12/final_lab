@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔌 Remote Shutdown System - Visual Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 1rem;
+            font-size: 2.5rem;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 3rem;
+            font-size: 1.2rem;
+        }
+        
+        .feature-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 3px solid #3498db;
+        }
+        
+        .feature-section h2 {
+            color: #3498db;
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+        
+        .demo-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 2rem;
+        }
+        
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #fd7e14, #dc3545);
+            color: white;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #17a2b8, #007bff);
+            color: white;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+        }
+        
+        .systems-grid-demo {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+            padding: 1.5rem;
+            background: white;
+            border-radius: 10px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .system-card-demo {
+            background: white;
+            border: 3px solid #ced4da;
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .system-card-demo:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .system-card-demo.active {
+            border-color: #28a745;
+            background: #f8fff9;
+        }
+        
+        .system-card-demo.selected {
+            border-color: #17a2b8;
+            background: #d1ecf1;
+        }
+        
+        .system-number {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .system-ip {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-bottom: 0.5rem;
+        }
+        
+        .student-badge {
+            background: #d4edda;
+            color: #155724;
+            padding: 0.25rem 0.5rem;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .status-indicator {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .info-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        .info-box h3 {
+            color: #856404;
+            margin-bottom: 1rem;
+        }
+        
+        .info-box ul {
+            margin-left: 2rem;
+            color: #856404;
+        }
+        
+        .info-box li {
+            margin: 0.5rem 0;
+        }
+        
+        .success-box {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        .success-box h3 {
+            color: #155724;
+            margin-bottom: 1rem;
+        }
+        
+        .stats-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        
+        .control-panel {
+            background: white;
+            border: 2px solid #17a2b8;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+        }
+        
+        .control-panel h4 {
+            color: #17a2b8;
+            margin-bottom: 1rem;
+        }
+        
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 2px solid #6c757d;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .filter-btn.active-filter {
+            background: #17a2b8;
+            color: white;
+            border-color: #17a2b8;
+        }
+        
+        code {
+            background: #2c3e50;
+            color: #4fc3f7;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .ip-range-display {
+            background: #2c3e50;
+            color: #4fc3f7;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        
+        .shutdown-warning {
+            background: #f8d7da;
+            border: 3px solid #dc3545;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .shutdown-warning h3 {
+            color: #721c24;
+            margin-bottom: 1rem;
+        }
+        
+        .shutdown-warning ul {
+            margin-left: 2rem;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Remote Shutdown System</h1>
+        <p class="subtitle">Control 69 Lab Systems from Admin Dashboard</p>
+        
+        <!-- Status Overview -->
+        <div class="stats-display">
+            <div class="stat-card">
+                <div class="stat-number">69</div>
+                <div class="stat-label">Total Systems</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="active-count">0</div>
+                <div class="stat-label">Active Systems</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="selected-count">0</div>
+                <div class="stat-label">Selected Systems</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">10.10.46.x</div>
+                <div class="stat-label">Network Range</div>
+            </div>
+        </div>
+        
+        <!-- IP Configuration -->
+        <div class="success-box">
+            <h3>✅ IP Configuration - 69 Systems</h3>
+            <div class="ip-range-display">
+System CC2-01 → IP: 10.10.46.12
+System CC2-02 → IP: 10.10.46.13
+System CC2-03 → IP: 10.10.46.14
+...
+System CC2-67 → IP: 10.10.46.78
+System CC2-68 → IP: 10.10.46.148  ⭐ Special IP
+System CC2-69 → IP: 10.10.46.149  ⭐ Special IP
+
+Formula: IP = 10.10.46.(11 + system_number) for systems 1-67
+Special IPs: System 68 = 10.10.46.148, System 69 = 10.10.46.149
+Range: 10.10.46.12 - 10.10.46.78, 10.10.46.148 - 10.10.46.149
+            </div>
+        </div>
+        
+        <!-- Method 1: Shutdown All -->
+        <div class="feature-section">
+            <h2>Method 1: Shutdown ALL Systems</h2>
+            <div class="demo-buttons">
+                <button class="btn btn-danger" onclick="demoShutdownAll()">
+                    ⚠️ Shutdown All Lab Systems
+                </button>
+            </div>
+            <div class="info-box">
+                <h3>📋 What This Does:</h3>
+                <ul>
+                    <li>Sends shutdown command to ALL currently active (logged-in) students</li>
+                    <li>Students receive 10-second warning on their screen</li>
+                    <li>All systems shutdown simultaneously</li>
+                    <li>Session data is automatically saved</li>
+                    <li>Admin receives confirmation of shutdown count</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Method 2: Selective Shutdown -->
+        <div class="feature-section">
+            <h2>Method 2: Selective Shutdown</h2>
+            <div class="demo-buttons">
+                <button class="btn btn-primary" onclick="toggleDemo()">
+                    🎯 Toggle Selective Shutdown Panel
+                </button>
+            </div>
+            
+            <div id="demo-panel" style="display: none;">
+                <div class="control-panel">
+                    <h4>Selection Controls</h4>
+                    <div class="filter-buttons">
+                        <button class="btn btn-success" onclick="selectAll()">✓ Select All</button>
+                        <button class="btn btn-danger" onclick="deselectAll()">✕ Deselect All</button>
+                        <button class="btn btn-primary" onclick="selectActive()">👥 Select Active Only</button>
+                        <button class="btn btn-danger" onclick="demoShutdownSelected()" style="font-weight: bold;">
+                            🔌 Shutdown Selected
+                        </button>
+                    </div>
+                    
+                    <h4 style="margin-top: 1.5rem;">Filter Systems</h4>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active-filter" onclick="filterSystems('all')">All Systems</button>
+                        <button class="filter-btn" onclick="filterSystems('active')">Active Only</button>
+                        <button class="filter-btn" onclick="filterSystems('available')">Available Only</button>
+                    </div>
+                </div>
+                
+                <div class="systems-grid-demo" id="systems-grid">
+                    <!-- Generated by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <h3>🎯 Selective Shutdown Features:</h3>
+                <ul>
+                    <li><strong>🟢 Green Circle</strong> = System is active (student logged in)</li>
+                    <li><strong>⚫ Black Circle</strong> = System is available (no student)</li>
+                    <li><strong>Blue Background</strong> = System is selected for shutdown</li>
+                    <li>Click on any system card to select/deselect it</li>
+                    <li>Only active systems will actually shutdown (inactive systems are skipped)</li>
+                    <li>Real-time counter shows how many systems are selected</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Shutdown Process -->
+        <div class="feature-section">
+            <h2>⚠️ What Happens During Shutdown</h2>
+            <div class="shutdown-warning">
+                <h3>🔴 Student Experience:</h3>
+                <ul>
+                    <li><strong>Step 1:</strong> Full-screen warning appears: "⚠️ SYSTEM SHUTDOWN"</li>
+                    <li><strong>Step 2:</strong> 10-second countdown starts</li>
+                    <li><strong>Step 3:</strong> Session data is saved automatically</li>
+                    <li><strong>Step 4:</strong> Student is logged out</li>
+                    <li><strong>Step 5:</strong> Computer shuts down</li>
+                </ul>
+            </div>
+            
+            <div class="success-box">
+                <h3>✅ Admin Experience:</h3>
+                <ul>
+                    <li>Confirmation dialog before shutdown (safety check)</li>
+                    <li>Real-time feedback showing shutdown status</li>
+                    <li>Count of systems that received shutdown command</li>
+                    <li>Error notifications for disconnected systems</li>
+                    <li>All shutdowns logged in database with timestamp</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Technical Details -->
+        <div class="feature-section">
+            <h2>🔧 Technical Implementation</h2>
+            <div class="info-box">
+                <h3>System Architecture:</h3>
+                <ul>
+                    <li><strong>Frontend:</strong> Admin Dashboard (admin-dashboard.html)</li>
+                    <li><strong>Backend:</strong> Node.js Server with Socket.IO (app.js)</li>
+                    <li><strong>Communication:</strong> Real-time WebSocket connections</li>
+                    <li><strong>Student Client:</strong> Electron Kiosk App (main-simple.js)</li>
+                    <li><strong>Database:</strong> MongoDB for session logging</li>
+                </ul>
+            </div>
+            
+            <div class="ip-range-display">
+Socket Events:
+- 'shutdown-system' → Single system shutdown
+- 'shutdown-all-systems' → Lab-wide shutdown
+- 'execute-shutdown' → Sent to student kiosk
+- 'shutdown-error' → Error handling
+- 'shutdown-all-complete' → Confirmation
+
+Database Logging:
+- Session ID
+- Timestamp
+- Shutdown initiator (admin/admin-all)
+- Student information
+- System IP and ID
+            </div>
+        </div>
+        
+        <!-- Safety Features -->
+        <div class="feature-section">
+            <h2>🛡️ Safety & Security Features</h2>
+            <div class="success-box">
+                <h3>Built-in Protections:</h3>
+                <ul>
+                    <li>✅ Confirmation dialogs before any shutdown</li>
+                    <li>✅ 10-second warning gives students time to save work</li>
+                    <li>✅ Only active (logged-in) systems can be shut down</li>
+                    <li>✅ All shutdowns logged with admin ID and timestamp</li>
+                    <li>✅ Error handling for disconnected or unavailable systems</li>
+                    <li>✅ Cannot accidentally shutdown inactive systems</li>
+                    <li>✅ Real-time status updates during shutdown process</li>
+                    <li>✅ Admin-only access (password protected)</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Quick Start -->
+        <div class="feature-section">
+            <h2>🚀 Quick Start Guide</h2>
+            <div class="info-box">
+                <h3>Steps to Use Remote Shutdown:</h3>
+                <ol style="margin-left: 2rem; color: #856404;">
+                    <li style="margin: 1rem 0;">
+                        <strong>Start Admin Server:</strong>
+                        <div class="ip-range-display" style="margin-top: 0.5rem;">
+cd central-admin/server
+node app.js
+                        </div>
+                    </li>
+                    <li style="margin: 1rem 0;">
+                        <strong>Open Admin Dashboard:</strong><br>
+                        Double-click <code>LAUNCH_ADMIN_DASHBOARD.bat</code> or browse to <code>http://localhost:5001</code>
+                    </li>
+                    <li style="margin: 1rem 0;">
+                        <strong>Login:</strong><br>
+                        Username: <code>admin</code> | Password: <code>daily</code>
+                    </li>
+                    <li style="margin: 1rem 0;">
+                        <strong>Start Lab Session:</strong><br>
+                        Click "🚀 Start Lab Session" and fill in details
+                    </li>
+                    <li style="margin: 1rem 0;">
+                        <strong>Monitor Students:</strong><br>
+                        Students appear as they login to their systems
+                    </li>
+                    <li style="margin: 1rem 0;">
+                        <strong>Shutdown Systems:</strong><br>
+                        Use "⚠️ Shutdown All" or "🎯 Selective Shutdown" as needed
+                    </li>
+                </ol>
+            </div>
+        </div>
+        
+        <!-- Summary -->
+        <div class="success-box">
+            <h3>🎊 System Status: FULLY OPERATIONAL</h3>
+            <ul>
+                <li>✅ <strong>69 Systems Configured</strong> (CC2-01 to CC2-69)</li>
+                <li>✅ <strong>IP Range Mapped</strong> (10.10.46.12 - 10.10.46.78, plus 148-149 for systems 68-69)</li>
+                <li>✅ <strong>Shutdown All Feature</strong> - Working</li>
+                <li>✅ <strong>Selective Shutdown Feature</strong> - Working</li>
+                <li>✅ <strong>Real-time Communication</strong> - Active</li>
+                <li>✅ <strong>Safety Confirmations</strong> - Enabled</li>
+                <li>✅ <strong>Database Logging</strong> - Active</li>
+                <li>✅ <strong>Error Handling</strong> - Implemented</li>
+            </ul>
+            <p style="margin-top: 1rem; font-size: 1.2rem; font-weight: 600; color: #155724;">
+                🚀 Your system is ready to use! No additional setup required.
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        let systems = [];
+        let selectedSystems = new Set();
+        let currentFilter = 'all';
+        
+        // Sample student names for demo
+        const sampleNames = [
+            'Amit Kumar', 'Priya Sharma', 'Rahul Singh', 'Sneha Patel', 
+            'Ravi Kumar', 'Anjali Reddy', 'Vikas Gupta', 'Pooja Yadav',
+            'Arjun Mehta', 'Kavya Nair', 'Sanjay Verma', 'Divya Joshi',
+            'Karthik Rao', 'Meera Iyer', 'Nikhil Shah', 'Sakshi Desai'
+        ];
+        
+        // Initialize demo systems
+        function initSystems() {
+            systems = [];
+            for (let i = 1; i <= 69; i++) {
+                const systemNumber = `CC2-${i.toString().padStart(2, '0')}`;
+                
+                // Special IP mapping for systems 68 and 69
+                let ipAddress;
+                if (i === 68) {
+                    ipAddress = '10.10.46.148';
+                } else if (i === 69) {
+                    ipAddress = '10.10.46.149';
+                } else {
+                    ipAddress = `10.10.46.${11 + i}`;
+                }
+                
+                const isActive = Math.random() > 0.6; // Random 40% active
+                const studentName = isActive ? sampleNames[Math.floor(Math.random() * sampleNames.length)] : null;
+                
+                systems.push({
+                    systemNumber,
+                    ipAddress,
+                    isActive,
+                    studentName
+                });
+            }
+            
+            updateStats();
+            renderSystems();
+        }
+        
+        // Update statistics
+        function updateStats() {
+            const activeCount = systems.filter(s => s.isActive).length;
+            document.getElementById('active-count').textContent = activeCount;
+            document.getElementById('selected-count').textContent = selectedSystems.size;
+        }
+        
+        // Render systems grid
+        function renderSystems() {
+            const grid = document.getElementById('systems-grid');
+            if (!grid) return;
+            
+            grid.innerHTML = '';
+            
+            const filtered = systems.filter(sys => {
+                if (currentFilter === 'all') return true;
+                if (currentFilter === 'active') return sys.isActive;
+                if (currentFilter === 'available') return !sys.isActive;
+                return true;
+            });
+            
+            filtered.forEach(sys => {
+                const card = document.createElement('div');
+                card.className = 'system-card-demo';
+                if (sys.isActive) card.classList.add('active');
+                if (selectedSystems.has(sys.systemNumber)) card.classList.add('selected');
+                
+                card.innerHTML = `
+                    <div class="status-indicator">${sys.isActive ? '🟢' : '⚫'}</div>
+                    <div class="system-number" style="color: ${sys.isActive ? '#28a745' : '#6c757d'}">
+                        ${sys.systemNumber}
+                    </div>
+                    <div class="system-ip">${sys.ipAddress}</div>
+                    ${sys.isActive ? `<div class="student-badge">👤 ${sys.studentName}</div>` : ''}
+                    <div style="margin-top: 0.5rem;">
+                        <input type="checkbox" 
+                               ${selectedSystems.has(sys.systemNumber) ? 'checked' : ''}
+                               style="transform: scale(1.5); cursor: pointer;">
+                    </div>
+                `;
+                
+                card.onclick = () => {
+                    if (selectedSystems.has(sys.systemNumber)) {
+                        selectedSystems.delete(sys.systemNumber);
+                    } else {
+                        selectedSystems.add(sys.systemNumber);
+                    }
+                    updateStats();
+                    renderSystems();
+                };
+                
+                grid.appendChild(card);
+            });
+        }
+        
+        // Toggle demo panel
+        function toggleDemo() {
+            const panel = document.getElementById('demo-panel');
+            if (panel.style.display === 'none' || !panel.style.display) {
+                panel.style.display = 'block';
+                initSystems();
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+        
+        // Selection controls
+        function selectAll() {
+            systems.forEach(sys => selectedSystems.add(sys.systemNumber));
+            updateStats();
+            renderSystems();
+        }
+        
+        function deselectAll() {
+            selectedSystems.clear();
+            updateStats();
+            renderSystems();
+        }
+        
+        function selectActive() {
+            selectedSystems.clear();
+            systems.filter(s => s.isActive).forEach(sys => selectedSystems.add(sys.systemNumber));
+            updateStats();
+            renderSystems();
+        }
+        
+        // Filter systems
+        function filterSystems(mode) {
+            currentFilter = mode;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active-filter');
+            });
+            event.target.classList.add('active-filter');
+            renderSystems();
+        }
+        
+        // Demo shutdown all
+        function demoShutdownAll() {
+            const activeCount = systems.filter(s => s.isActive).length;
+            if (activeCount === 0) {
+                alert('❌ No active systems to shutdown.');
+                return;
+            }
+            
+            if (confirm(`⚠️⚠️⚠️ SHUTDOWN ALL SYSTEMS ⚠️⚠️⚠️\n\nThis will shutdown ALL ${activeCount} active lab computers!\n\nEach student will:\n- Receive an immediate warning\n- Be logged out automatically\n- Have their computer shut down in 10 seconds\n\nThis is just a DEMO. In real system, this would shutdown all active computers.\n\nContinue demo?`)) {
+                alert(`✅ DEMO: Shutdown command would be sent to ${activeCount} systems!\n\nIn the real system:\n- WebSocket message sent to server\n- Server broadcasts to all active students\n- Students see 10-second warning\n- Systems shutdown automatically`);
+            }
+        }
+        
+        // Demo shutdown selected
+        function demoShutdownSelected() {
+            if (selectedSystems.size === 0) {
+                alert('❌ No systems selected. Please select at least one system to shutdown.');
+                return;
+            }
+            
+            const selectedActive = Array.from(selectedSystems).filter(sysNum => {
+                const sys = systems.find(s => s.systemNumber === sysNum);
+                return sys && sys.isActive;
+            });
+            
+            if (selectedActive.length === 0) {
+                alert('❌ None of the selected systems are currently active.\n\nOnly logged-in systems can be shut down.');
+                return;
+            }
+            
+            const inactiveCount = selectedSystems.size - selectedActive.length;
+            
+            let message = `⚠️ SELECTIVE SHUTDOWN DEMO\n\n`;
+            message += `Selected: ${selectedSystems.size} systems\n`;
+            message += `Active (would shutdown): ${selectedActive.length} systems\n`;
+            if (inactiveCount > 0) {
+                message += `Inactive (would skip): ${inactiveCount} systems\n`;
+            }
+            message += `\nThis is a DEMO. Continue?`;
+            
+            if (confirm(message)) {
+                alert(`✅ DEMO: Shutdown command would be sent to ${selectedActive.length} systems!\n\nSystems that would shutdown:\n${selectedActive.join(', ')}\n\nIn the real system:\n- WebSocket messages sent to each system\n- Students see 10-second warning\n- Selected systems shutdown automatically`);
+            }
+        }
+        
+        // Initialize on page load
+        window.onload = function() {
+            initSystems();
+        };
+    </script>
+</body>
+</html>

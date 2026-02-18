@@ -301,23 +301,6 @@
         .close-fullscreen:hover {
             background: rgba(255, 255, 255, 0.3);
         }
-        
-        /* Shutdown button styles */
-        .btn-shutdown {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 0.4rem 0.8rem;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-shutdown:hover {
-            background: #c82333;
-            transform: scale(1.05);
-        }
 
         .guest-access-btn:hover:not(:disabled) {
             transform: translateY(-2px);
@@ -527,9 +510,6 @@
                 </button>
                 <button class="btn btn-warning" onclick="forceClearSessions()" style="background: #dc3545; color: white;">
                     🧹 Force Clear All
-                </button>
-                <button class="btn btn-danger" onclick="shutdownAllSystems()" style="background: #fd7e14; color: white; font-weight: bold;">
-                    ⚠️ Shutdown All Lab Systems
                 </button>
             </div>
 
@@ -1274,17 +1254,6 @@
             socket.on('webrtc-ice-candidate', ({ candidate, sessionId }) => {
                 console.log('🧊 ✅ ADMIN RECEIVED ICE CANDIDATE from kiosk for session:', sessionId, candidate.type);
                 handleICECandidate(candidate, sessionId);
-            });
-            
-            // Listen for shutdown events
-            socket.on('shutdown-error', ({ sessionId, error }) => {
-                console.error('❌ Shutdown error for session:', sessionId, error);
-                showNotification(`Shutdown failed: ${error}`, 'danger');
-            });
-
-            socket.on('shutdown-all-complete', ({ labId, count }) => {
-                console.log(`✅ Shutdown complete for ${count} systems in lab ${labId}`);
-                showNotification(`Successfully sent shutdown to ${count} systems`, 'success');
             });
 
             // Listen for scheduled report ready events
@@ -2512,24 +2481,6 @@
             }, 'image/png');
         }
 
-        // Shutdown specific system
-        function shutdownSystem(sessionId, systemNumber) {
-            if (confirm(`⚠️ SHUTDOWN CONFIRMATION\n\nAre you sure you want to shutdown ${systemNumber}?\n\nThis will:\n- Immediately notify the student\n- Logout their session\n- Shut down their computer in 10 seconds\n\nContinue?`)) {
-                console.log(`🔌 Sending shutdown command for session: ${sessionId}`);
-                socket.emit('shutdown-system', { sessionId });
-                
-                // Show feedback
-                const statusElement = document.getElementById(`status-${sessionId}`);
-                if (statusElement) {
-                    statusElement.innerHTML = '🔌 Shutdown initiated...';
-                    statusElement.style.color = '#dc3545';
-                }
-                
-                // Show toast notification
-                showNotification(`Shutdown command sent to ${systemNumber}`, 'warning');
-            }
-        }
-
         // ========================================================================
         // MULTI-LAB SUPPORT & SYSTEM REGISTRY
         // ========================================================================
@@ -2574,35 +2525,8 @@
         // Load systems for selected lab
         // ========================================================================
         // GUEST ACCESS FUNCTIONS REMOVED
+        // SHUTDOWN FUNCTIONALITY REMOVED
         // ========================================================================
-
-        // Shutdown all systems in the lab
-        function shutdownAllSystems() {
-            const activeCount = connectedStudents.size;
-            
-            if (activeCount === 0) {
-                alert('❌ No active systems to shutdown.');
-                return;
-            }
-            
-            if (confirm(`⚠️⚠️⚠️ SHUTDOWN ALL SYSTEMS ⚠️⚠️⚠️\n\nThis will shutdown ALL ${activeCount} active lab computers!\n\nEach student will:\n- Receive an immediate warning\n- Be logged out automatically\n- Have their computer shut down in 10 seconds\n\nThis action cannot be undone!\n\nAre you ABSOLUTELY SURE?`)) {
-                const labId = 'CC1'; // Default lab ID - you can make this dynamic if needed
-                console.log(`🔌 Sending shutdown ALL command for lab: ${labId}`);
-                socket.emit('shutdown-all-systems', { labId });
-                
-                // Show feedback for all students
-                connectedStudents.forEach((student, sessionId) => {
-                    const statusElement = document.getElementById(`status-${sessionId}`);
-                    if (statusElement) {
-                        statusElement.innerHTML = '🔌 Shutdown initiated...';
-                        statusElement.style.color = '#dc3545';
-                    }
-                });
-                
-                // Show toast notification
-                showNotification(`Shutdown command sent to ALL ${activeCount} systems`, 'danger');
-            }
-        }
 
         // Show notification toast
         function showNotification(message, type = 'info') {

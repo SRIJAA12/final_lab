@@ -120,6 +120,7 @@ const sessionSchema = new mongoose.Schema({
   computerName: String,
   labId: String,
   systemNumber: String,
+  ipAddress: String, // Added to help match systems with custom IPs
   loginTime: { type: Date, default: Date.now },
   logoutTime: Date,
   duration: Number,
@@ -2444,12 +2445,19 @@ app.post('/api/student-login', async (req, res) => {
       { status: 'completed', logoutTime: new Date() }
     );
 
+    // Extract clean IP address (remove IPv6 prefix if present)
+    let clientIP = req.ip || req.connection.remoteAddress || '';
+    if (clientIP.startsWith('::ffff:')) {
+      clientIP = clientIP.substring(7); // Remove '::ffff:' prefix
+    }
+
     const newSession = new Session({ 
       studentName: isGuest ? 'Guest User' : studentName, 
       studentId: isGuest ? 'GUEST' : studentId, 
       computerName, 
       labId, 
-      systemNumber, 
+      systemNumber,
+      ipAddress: clientIP, // Save cleaned IP for system matching
       loginTime: new Date(), 
       status: 'active',
       isGuest: isGuest || false
@@ -2464,7 +2472,7 @@ app.post('/api/student-login', async (req, res) => {
         {
           systemNumber,
           labId,
-          ipAddress: req.ip || req.connection.remoteAddress,
+          ipAddress: clientIP, // Use cleaned IP address
           status: isGuest ? 'guest' : 'logged-in',
           currentSessionId: newSession._id,
           currentStudentId: isGuest ? 'GUEST' : studentId,
@@ -2474,7 +2482,7 @@ app.post('/api/student-login', async (req, res) => {
         },
         { upsert: true, new: true }
       );
-      console.log(`✅ System registry updated: ${systemNumber} -> ${studentName} (Session: ${newSession._id})`);
+      console.log(`✅ System registry updated: ${systemNumber} -> ${studentName} (Session: ${newSession._id}, IP: ${clientIP})`);
     } catch (regError) {
       console.error('❌ Error updating system registry:', regError);
     }

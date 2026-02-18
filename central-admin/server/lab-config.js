@@ -16,17 +16,21 @@ const LAB_CONFIG = {
     labId: 'CC1',
     labName: 'Computer Center Lab 1',
     ipPrefix: '192.168.29',  // For testing on laptop
-    systemCount: 60,
-    systemRange: generateSystemRange('CC1', 60)
+    systemCount: 69,
+    systemRange: generateSystemRange('CC1', 69),
+    ipRangeStart: 12,  // Start at 192.168.29.12
+    ipRangeEnd: 255    // End at 192.168.29.255 (supports up to 244 systems)
   },
   
-  // Computer Center Lab 2
+  // Computer Center Lab 2 - 69 Systems (10.10.46.12 - 10.10.46.80)
   'CC2': {
     labId: 'CC2',
     labName: 'Computer Center Lab 2',
     ipPrefix: '10.10.46',
-    systemCount: 60,
-    systemRange: generateSystemRange('CC2', 60)
+    systemCount: 69,
+    systemRange: generateSystemRange('CC2', 69),
+    ipRangeStart: 12,  // Start at 10.10.46.12
+    ipRangeEnd: 80     // End at 10.10.46.80 (69 systems total)
   },
   
   // Computer Center Lab 3

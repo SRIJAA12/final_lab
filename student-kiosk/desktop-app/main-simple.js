@@ -1205,49 +1205,76 @@ function setupIPCHandlers() {
   // System shutdown handler
   ipcMain.handle('shutdown-system', async () => {
     try {
-      console.log('🔌 System shutdown command received from admin');
+      console.log('🔌 ========================================');
+      console.log('🔌 SYSTEM SHUTDOWN COMMAND RECEIVED');
+      console.log('🔌 Session active:', sessionActive);
+      console.log('🔌 Platform:', os.platform());
+      console.log('🔌 ========================================');
       
       // Perform logout first if there's an active session
       if (sessionActive && currentSession) {
         console.log('🚪 Logging out before shutdown...');
-        await fetch(`${SERVER_URL}/api/student-logout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: currentSession.id }),
-        }).catch(err => console.error('❌ Logout error during shutdown:', err));
+        try {
+          await fetch(`${SERVER_URL}/api/student-logout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSession.id }),
+          });
+          console.log('✅ Logout completed before shutdown');
+        } catch (err) {
+          console.error('❌ Logout error during shutdown:', err.message);
+        }
       }
       
       // Import exec for executing system commands
       const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execPromise = promisify(exec);
+      
       const platform = os.platform();
       let shutdownCommand;
       
       if (platform === 'win32') {
-        // Windows: shutdown in 90 seconds (1 minute 30 seconds) with message
-        shutdownCommand = 'shutdown /s /t 90 /c "System shutdown initiated by administrator"';
+        // Windows: shutdown in 60 seconds with message
+        shutdownCommand = 'shutdown /s /t 60 /c "System shutdown - Session ended" /f';
       } else if (platform === 'linux') {
         // Linux: shutdown in 1 minute
-        shutdownCommand = 'sudo shutdown -h +1 "System shutdown initiated by administrator"';
+        shutdownCommand = 'sudo shutdown -h +1 "System shutdown - Session ended"';
       } else if (platform === 'darwin') {
         // macOS: shutdown in 1 minute
-        shutdownCommand = 'sudo shutdown -h +1 "System shutdown initiated by administrator"';
+        shutdownCommand = 'sudo shutdown -h +1 "System shutdown - Session ended"';
       }
       
-      console.log(`🔌 Executing shutdown command (90-second delay): ${shutdownCommand}`);
+      console.log(`🔌 Executing shutdown command: ${shutdownCommand}`);
+      console.log('🔌 Shutdown will occur in 60 seconds...');
       
-      exec(shutdownCommand, (error, stdout, stderr) => {
-        if (error) {
-          console.error('❌ Shutdown command error:', error);
-        } else {
-          console.log('✅ Shutdown command executed successfully (90-second delay)');
-          console.log('stdout:', stdout);
-          if (stderr) console.log('stderr:', stderr);
-        }
-      });
-      
-      return { success: true, message: 'Shutdown initiated' };
+      try {
+        const { stdout, stderr } = await execPromise(shutdownCommand);
+        console.log('✅✅✅ SHUTDOWN COMMAND EXECUTED SUCCESSFULLY!');
+        console.log('✅ System will shut down in 60 seconds');
+        if (stdout) console.log('  stdout:', stdout);
+        if (stderr) console.log('  stderr:', stderr);
+        
+        return { 
+          success: true, 
+          message: 'Shutdown initiated - System will shut down in 60 seconds',
+          delay: 60
+        };
+      } catch (execError) {
+        console.error('❌ SHUTDOWN COMMAND FAILED:', execError.message);
+        console.error('❌ Command:', shutdownCommand);
+        console.error('❌ Error code:', execError.code);
+        console.error('❌ Full error:', execError);
+        
+        return { 
+          success: false, 
+          error: `Shutdown command failed: ${execError.message}`,
+          details: execError.code
+        };
+      }
     } catch (error) {
-      console.error('❌ Shutdown error:', error);
+      console.error('❌ SHUTDOWN ERROR:', error);
+      console.error('❌ Stack:', error.stack);
       return { success: false, error: error.message };
     }
   });

@@ -320,6 +320,10 @@
         let isProcessingOffer = false;
         let offerQueue = [];
         let currentDisplayStream = null;
+        
+        // Pre-warmed screen stream for instant mirroring
+        let preWarmedStream = null;
+        let isScreenReady = false;
 
         // Initialize Socket.io for guest mode and screen mirroring
         function initializeSocket() {
@@ -330,21 +334,48 @@
                 }
                 
                 window.electronAPI.getServerUrl().then(serverUrl => {
-                    console.log(`📡 Connecting to server: ${serverUrl}`);
+                    console.log(`📡 ========================================`);
+                    console.log(`📡 CONNECTING TO SERVER: ${serverUrl}`);
+                    console.log(`📡 ========================================`);
                     socket = io(serverUrl, {
                         reconnection: true,
-                        transports: ['websocket', 'polling']
+                        reconnectionDelay: 1000,
+                        reconnectionDelayMax: 5000,
+                        reconnectionAttempts: Infinity,
+                        transports: ['websocket', 'polling'],
+                        // 🚀 OPTIMIZATION: Keep connection alive
+                        pingTimeout: 60000,
+                        pingInterval: 25000,
+                        // Upgrade to WebSocket ASAP for lower latency
+                        upgrade: true,
+                        rememberUpgrade: true
                     });
 
-                    // 🎫 REGISTER KIOSK WITH SERVER (for pre-login state)
+                    // 🎫 SOCKET CONNECTION EVENTS
                     socket.on('connect', () => {
                         const systemNumber = document.getElementById('systemNumber')?.textContent || 'CC1-01';
+                        console.log(`✅✅✅ SOCKET CONNECTED SUCCESSFULLY!`);
+                        console.log(`🎫 Socket ID: ${socket.id}`);
+                        console.log(`🎫 System Number: ${systemNumber}`);
                         console.log(`🎫 KIOSK: Registering with server (pre-login) - System: ${systemNumber}`);
                         socket.emit('register-kiosk', {
                             sessionId: null,  // Will be updated after login
                             systemNumber: systemNumber,
                             labId: 'CC1'  // Default lab
                         });
+                        console.log('✅ Register-kiosk event emitted');
+                    });
+                    
+                    socket.on('connect_error', (error) => {
+                        console.error('❌ SOCKET CONNECTION ERROR:', error);
+                    });
+                    
+                    socket.on('disconnect', (reason) => {
+                        console.warn('⚠️ SOCKET DISCONNECTED:', reason);
+                    });
+                    
+                    socket.on('reconnect', (attemptNumber) => {
+                        console.log(`✅ SOCKET RECONNECTED after ${attemptNumber} attempts`);
                     });
 
                     // 🎫 LISTEN FOR SESSION LOGIN SUCCESS - Critical for screen mirroring
@@ -354,22 +385,31 @@
                         
                         // Only re-register if this is for our system
                         if (data.systemNumber === currentSystem) {
-                            console.log('🎫 KIOSK: RE-REGISTERING with sessionId for screen mirroring:', data.sessionId);
+                            console.log('🎫 KIOSK: RE-REGISTERING with sessionId:', data.sessionId);
                             socket.emit('register-kiosk', {
                                 sessionId: data.sessionId,
                                 systemNumber: data.systemNumber,
                                 labId: data.labId || 'CC1'
                             });
                             
-                            // Notify that screen is ready for monitoring
-                            setTimeout(() => {
+                            // 🚀 PRE-WARM: Capture screen immediately
+                            preWarmScreenCapture().then(() => {
+                                // Notify that screen is ready
                                 socket.emit('kiosk-screen-ready', {
                                     sessionId: data.sessionId,
                                     hasVideo: true,
                                     timestamp: new Date().toISOString()
                                 });
-                                console.log('📺 KIOSK: Notified server that screen is ready for monitoring');
-                            }, 1000);
+                                console.log('📺 KIOSK: Screen pre-warmed and ready');
+                            }).catch(err => {
+                                console.error('❌ Pre-warm failed:', err.message);
+                                // Still notify, will capture on-demand
+                                socket.emit('kiosk-screen-ready', {
+                                    sessionId: data.sessionId,
+                                    hasVideo: false,
+                                    timestamp: new Date().toISOString()
+                                });
+                            });
                         }
                     });
 
@@ -394,28 +434,31 @@
 
                     // Screen mirroring: admin offer for WebRTC
                     socket.on('admin-offer', async (data) => {
-                        console.log('📹 Admin offer received for screen mirroring');
+                        console.log('📹 ========================================');
+                        console.log('📹 ADMIN OFFER RECEIVED');
+                        console.log('📹 Session ID:', data.sessionId);
+                        console.log('📹 Admin Socket ID:', data.adminSocketId);
+                        console.log('📹 ========================================');
                         
-                        // Queue system: If already processing an offer, queue this one
+                        // 🚀 OPTIMIZATION: Process immediately if not busy, otherwise queue
                         if (isProcessingOffer) {
-                            console.log('⏳ KIOSK: Already processing an offer, queueing this one...');
+                            console.log('⏳ KIOSK: Busy, queueing offer...');
                             offerQueue.push(data);
-                            console.log(`📋 KIOSK: Queue size: ${offerQueue.length}`);
+                            console.log(`📋 Queue size: ${offerQueue.length}`);
                             return;
                         }
                         
                         try {
                             await handleAdminOffer(data);
                         } catch (error) {
-                            console.error('❌ Error handling admin offer:', error);
+                            console.error('❌ Error handling offer:', error);
                         } finally {
-                            // Process next queued offer if any
+                            // 🚀 Process next queued offer immediately
                             if (offerQueue.length > 0) {
                                 const nextOffer = offerQueue.shift();
-                                console.log(`🔄 KIOSK: Processing queued offer (${offerQueue.length} remaining)...`);
-                                setTimeout(() => {
-                                    socket.emit('admin-offer', nextOffer); // Re-trigger handler
-                                }, 1000); // 1 second delay between processing queued offers
+                                console.log(`🔄 Processing queued offer (${offerQueue.length} remaining)`);
+                                // Process immediately without delay for faster multi-system handling
+                                setTimeout(() => handleAdminOffer(nextOffer), 100);
                             }
                         }
                     });
@@ -473,6 +516,72 @@
                 console.error('❌ Socket error:', error);
             }
         }
+        
+        // 🚀 PRE-WARM: Capture screen stream in advance for instant mirroring
+        async function preWarmScreenCapture() {
+            if (preWarmedStream) {
+                console.log('✅ Screen already pre-warmed');
+                return preWarmedStream;
+            }
+            
+            console.log('🚀 ========================================');
+            console.log('🚀 PRE-WARMING SCREEN CAPTURE');
+            console.log('🚀 ========================================');
+            
+            try {
+                // Try getDisplayMedia first
+                try {
+                    preWarmedStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            cursor: 'always',
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            frameRate: { ideal: 30 }
+                        },
+                        audio: false
+                    });
+                    console.log('✅ Pre-warm: getDisplayMedia() succeeded');
+                } catch (error1) {
+                    console.log('⚠️ Pre-warm: getDisplayMedia failed, trying getUserMedia...');
+                    
+                    // Fallback to getUserMedia with chromeMediaSource
+                    const sources = await window.electronAPI.getScreenSources();
+                    if (sources.length === 0) {
+                        throw new Error('No screen sources available');
+                    }
+                    
+                    const screenSource = sources[0];
+                    preWarmedStream = await navigator.mediaDevices.getUserMedia({
+                        audio: false,
+                        video: {
+                            mandatory: {
+                                chromeMediaSource: 'desktop',
+                                chromeMediaSourceId: screenSource.id,
+                                minWidth: 1280,
+                                maxWidth: 1920,
+                                minHeight: 720,
+                                maxHeight: 1080,
+                                maxFrameRate: 30
+                            }
+                        }
+                    });
+                    console.log('✅ Pre-warm: getUserMedia succeeded');
+                }
+                
+                console.log('✅✅✅ Screen pre-warmed successfully!');
+                console.log('✅ Tracks:', preWarmedStream.getTracks().length);
+                preWarmedStream.getTracks().forEach(track => {
+                    console.log(`  - ${track.kind}: ${track.label} (${track.readyState})`);
+                });
+                
+                isScreenReady = true;
+                return preWarmedStream;
+            } catch (error) {
+                console.error('❌ Pre-warm failed:', error.message);
+                isScreenReady = false;
+                throw error;
+            }
+        }
 
         async function handleAdminOffer(data) {
             console.log('📹 ========================================');
@@ -515,24 +624,19 @@
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun1.l.google.com:19302' },
                         { urls: 'stun:stun2.l.google.com:19302' },
-                        { urls: 'stun:stun3.l.google.com:19302' },
-                        { urls: 'stun:stun4.l.google.com:19302' },
                         // TURN server for NAT traversal (fallback relay)
                         {
                             urls: 'turn:openrelay.metered.ca:80',
                             username: 'openrelayproject',
                             credential: 'openrelayproject'
-                        },
-                        {
-                            urls: 'turn:openrelay.metered.ca:443',
-                            username: 'openrelayproject',
-                            credential: 'openrelayproject'
                         }
                     ],
                     iceCandidatePoolSize: 10,
-                    iceTransportPolicy: 'all', // Try all candidates (host, srflx, relay)
+                    iceTransportPolicy: 'all',
                     bundlePolicy: 'max-bundle',
-                    rtcpMuxPolicy: 'require'
+                    rtcpMuxPolicy: 'require',
+                    // 🚀 OPTIMIZATION: Enable aggressive ICE gathering
+                    iceGatheringPolicy: 'all'
                 });
 
                 // Monitor connection state
@@ -550,21 +654,15 @@
                         console.log('   ICE state:', pc.iceConnectionState);
                         console.log('   Signaling state:', pc.signalingState);
                         
-                        // 🔥 DTLS TIMEOUT WARNING: If stuck in "connecting" for 15+ seconds
+                        // 🔥 DTLS TIMEOUT WARNING: Reduced to 10s for faster feedback
                         setTimeout(() => {
-                            if (pc.connectionState === 'connecting') {
+                            if (pc && pc.connectionState === 'connecting') {
                                 const elapsedNow = ((Date.now() - startTime) / 1000).toFixed(1);
-                                console.error(`❌ ❌ KIOSK: Still in "connecting" state after ${elapsedNow}s (15s timeout threshold)`);
-                                console.error('   This indicates DTLS handshake is failing');
+                                console.error(`⚠️ KIOSK: Still connecting after ${elapsedNow}s (may be slow network)`);
                                 console.error('   Current ICE state:', pc.iceConnectionState);
                                 console.error('   Current signaling state:', pc.signalingState);
-                                console.error('   ⚠️ POSSIBLE CAUSES:');
-                                console.error('   1. System clock skew between admin and student PC (MOST COMMON)');
-                                console.error('   2. Firewall blocking DTLS/UDP packets');
-                                console.error('   3. Network packet loss or high latency');
-                                console.error('   ➡️ Admin will retry with exponential backoff...');
                             }
-                        }, 15000);
+                        }, 10000);
                     } else if (pc.connectionState === 'disconnected') {
                         console.warn(`⚠️ KIOSK: WebRTC disconnected at ${elapsed}s - connection may recover automatically`);
                     } else if (pc.connectionState === 'failed') {
@@ -577,28 +675,16 @@
                 // Monitor ICE connection state
                 pc.oniceconnectionstatechange = () => {
                     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                    console.log(`🧊 KIOSK: ICE connection state changed: ${pc.iceConnectionState} (${elapsed}s elapsed)`);
-                    console.log('   Connection state:', pc.connectionState);
-                    console.log('   Signaling state:', pc.signalingState);
+                    console.log(`🧊 KIOSK: ICE state: ${pc.iceConnectionState} (${elapsed}s)`);
                     
                     if (pc.iceConnectionState === 'connected') {
                         console.log(`✅ KIOSK: ICE connected at ${elapsed}s`);
-                        
-                        // Check if connection state also transitions to connected
-                        setTimeout(() => {
-                            if (pc.connectionState !== 'connected') {
-                                console.warn(`⚠️ KIOSK: ICE connected but connection state still "${pc.connectionState}" after 5s`);
-                                console.warn('   This may indicate DTLS handshake is slow or failing');
-                            } else {
-                                console.log('✅ KIOSK: Both ICE and connection state are now connected');
-                            }
-                        }, 5000);
                     } else if (pc.iceConnectionState === 'disconnected') {
-                        console.warn(`⚠️ KIOSK: ICE disconnected at ${elapsed}s - may reconnect automatically`);
+                        console.warn(`⚠️ KIOSK: ICE disconnected at ${elapsed}s - may reconnect`);
                     } else if (pc.iceConnectionState === 'failed') {
-                        console.error(`❌ KIOSK: ICE connection failed at ${elapsed}s`);
+                        console.error(`❌ KIOSK: ICE failed at ${elapsed}s`);
                     } else if (pc.iceConnectionState === 'checking') {
-                        console.log(`🔍 KIOSK: ICE checking connectivity at ${elapsed}s...`);
+                        console.log(`🔍 KIOSK: ICE checking at ${elapsed}s...`);
                     } else if (pc.iceConnectionState === 'completed') {
                         console.log(`✅ KIOSK: ICE completed at ${elapsed}s`);
                     }
@@ -607,10 +693,12 @@
                 // Handle ICE candidates
                 pc.onicecandidate = (event) => {
                     if (event.candidate && socket) {
-                        console.log('🧊 KIOSK: Sending ICE candidate:', event.candidate.type);
+                        // 🚀 TRICKLE ICE: Send candidates immediately for faster connection
+                        console.log('🧊 KIOSK: Sending ICE candidate immediately:', event.candidate.type);
                         socket.emit('webrtc-ice-candidate', {
                             candidate: event.candidate,
-                            sessionId: sessionId
+                            sessionId: sessionId,
+                            adminSocketId: adminSocketId  // Send to specific admin
                         });
                     } else if (!event.candidate) {
                         console.log('🧊 KIOSK: ICE gathering complete');
@@ -618,65 +706,103 @@
                 };
 
                 // Set remote description
+                console.log('🎬 KIOSK: Setting remote description...');
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                console.log('✅ KIOSK: Remote description set successfully');
 
-                // 🎥 CAPTURE DESKTOP SCREEN
-                console.log('🎥 KIOSK: Attempting screen capture via getDisplayMedia...');
+                // 🎥 CAPTURE DESKTOP SCREEN - Use pre-warmed stream if available
+                console.log('🎥 ========================================');
+                console.log('🎥 KIOSK: STARTING SCREEN CAPTURE');
+                console.log('🎥 Pre-warmed stream available:', !!preWarmedStream);
+                console.log('🎥 ========================================');
                 let displayStream = null;
                 
-                try {
-                    // First try: navigator.mediaDevices.getDisplayMedia (standard method, Electron 22+)
-                    displayStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: {
-                            cursor: 'always'
-                        },
-                        audio: false
-                    });
-                    console.log('✅ KIOSK: getDisplayMedia() succeeded');
-                } catch (error1) {
-                    console.warn('⚠️ KIOSK: getDisplayMedia failed, trying alternative approach:', error1.message);
+                // 🚀 INSTANT MIRRORING: Use pre-warmed stream if available
+                if (preWarmedStream && preWarmedStream.getTracks().every(t => t.readyState === 'live')) {
+                    console.log('🚀🚀🚀 Using PRE-WARMED stream - INSTANT CONNECTION!');
+                    displayStream = preWarmedStream;
+                    console.log('✅ Pre-warmed stream has', displayStream.getVideoTracks().length, 'video tracks');
+                } else {
+                    // Pre-warmed stream not available or tracks stopped, capture fresh
+                    if (preWarmedStream) {
+                        console.log('⚠️ Pre-warmed stream exists but tracks are not live, capturing fresh...');
+                        preWarmedStream.getTracks().forEach(t => t.stop());
+                        preWarmedStream = null;
+                    }
                     
-                    // Second try: Use desktopCapturer sources with getUserMedia
+                    console.log('🎥 Capturing screen stream (no pre-warm available)...');
                     try {
-                        const sources = await window.electronAPI.getScreenSources();
-                        console.log(`📺 KIOSK: Got ${sources.length} screen sources`);
-
-                        if (sources.length === 0) {
-                            throw new Error('No screen sources available');
-                        }
-
-                        // Use the primary screen
-                        const screenSource = sources[0];
-                        console.log(`📺 KIOSK: Using screen source: ${screenSource.name} (ID: ${screenSource.id})`);
-
-                        displayStream = await navigator.mediaDevices.getUserMedia({
-                            audio: false,
+                        // First try: navigator.mediaDevices.getDisplayMedia
+                        console.log('🎥 KIOSK: Attempting getDisplayMedia() method...');
+                        displayStream = await navigator.mediaDevices.getDisplayMedia({
                             video: {
-                                mandatory: {
-                                    chromeMediaSource: 'desktop',
-                                    chromeMediaSourceId: screenSource.id
-                                }
-                            }
+                                cursor: 'always',
+                                width: { ideal: 1920 },
+                                height: { ideal: 1080 },
+                                frameRate: { ideal: 30 }
+                            },
+                            audio: false
                         });
-                        console.log('✅ KIOSK: getUserMedia with chromeMediaSource succeeded');
-                    } catch (error2) {
-                        console.error('❌ KIOSK: Both methods failed');
-                        console.error('  Method 1 (getDisplayMedia):', error1.message);
-                        console.error('  Method 2 (getUserMedia+chrome):', error2.message);
-                        throw new Error(`Screen capture failed: ${error1.message}`);
+                        console.log('✅✅✅ KIOSK: getDisplayMedia() SUCCEEDED!');
+                        console.log('✅ Video tracks:', displayStream.getVideoTracks().length);
+                    } catch (error1) {
+                        console.warn('⚠️ KIOSK: getDisplayMedia failed, trying alternative approach...');
+                        console.warn('⚠️ Error:', error1.message);
+                        
+                        // Second try: Use desktopCapturer sources with getUserMedia
+                        try {
+                            console.log('🎥 KIOSK: Trying getUserMedia with chromeMediaSource...');
+                            const sources = await window.electronAPI.getScreenSources();
+                            console.log(`📺 KIOSK: Got ${sources.length} screen sources`);
+
+                            if (sources.length === 0) {
+                                throw new Error('No screen sources available');
+                            }
+
+                            // Use the primary screen
+                            const screenSource = sources[0];
+                            console.log(`📺 KIOSK: Using screen source: ${screenSource.name} (ID: ${screenSource.id})`);
+
+                            displayStream = await navigator.mediaDevices.getUserMedia({
+                                audio: false,
+                                video: {
+                                    mandatory: {
+                                        chromeMediaSource: 'desktop',
+                                        chromeMediaSourceId: screenSource.id,
+                                        minWidth: 1280,
+                                        maxWidth: 1920,
+                                        minHeight: 720,
+                                        maxHeight: 1080,
+                                        maxFrameRate: 30
+                                    }
+                                }
+                            });
+                            console.log('✅✅✅ KIOSK: getUserMedia with chromeMediaSource SUCCEEDED!');
+                            console.log('✅ Video tracks:', displayStream.getVideoTracks().length);
+                        } catch (error2) {
+                            console.error('❌ KIOSK: Both methods failed');
+                            console.error('  Method 1 (getDisplayMedia):', error1.message);
+                            console.error('  Method 2 (getUserMedia+chrome):', error2.message);
+                            throw new Error(`Screen capture failed: ${error1.message}`);
+                        }
                     }
                 }
 
                 console.log('✅ KIOSK: Screen captured successfully');
                 console.log('✅ KIOSK: Captured tracks:', displayStream.getTracks().length);
+                displayStream.getTracks().forEach(track => {
+                    console.log(`  - Track: ${track.kind}, label: ${track.label}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+                });
 
                 // Store stream for cleanup on next offer
                 currentDisplayStream = displayStream;
 
                 // Add video tracks to peer connection
+                console.log('📹 KIOSK: Adding video tracks to peer connection...');
                 displayStream.getVideoTracks().forEach((track) => {
-                    console.log('📹 KIOSK: Adding video track to peer connection:', track.label);
-                    pc.addTrack(track, displayStream);
+                    console.log('📹 KIOSK: Adding video track:', track.label);
+                    const sender = pc.addTrack(track, displayStream);
+                    console.log('✅ Track added, sender:', sender ? 'created' : 'failed');
                 });
 
                 console.log('✅ KIOSK: Video tracks added to peer connection');
@@ -685,18 +811,27 @@
                 if (displayStream.getVideoTracks()[0]) {
                     displayStream.getVideoTracks()[0].onended = () => {
                         console.log('⏹️ KIOSK: Screen capture stopped by user');
-                        pc.close();
+                        if (pc) pc.close();
                     };
                 }
 
                 // Create answer
+                console.log('🎬 KIOSK: Creating WebRTC answer...');
                 const answer = await pc.createAnswer();
+                console.log('✅ KIOSK: Answer created:', answer.type);
+                
                 await pc.setLocalDescription(answer);
-
-                console.log('✅ KIOSK: Answer created with media tracks');
+                console.log('✅ KIOSK: Local description set');
 
                 // Send answer back to admin
-                console.log('📤 KIOSK: Sending answer to admin:', { adminSocketId, sessionId });
+                console.log('📤 ========================================');
+                console.log('📤 KIOSK: SENDING ANSWER TO ADMIN');
+                console.log('📤 Admin Socket ID:', adminSocketId);
+                console.log('📤 Session ID:', sessionId);
+                console.log('📤 Socket connected:', socket.connected);
+                console.log('📤 Socket ID:', socket.id);
+                console.log('📤 ========================================');
+                
                 socket.emit('webrtc-answer', {
                     answer: answer,
                     adminSocketId: adminSocketId,
@@ -838,21 +973,59 @@
         // Listen for session-created event from main process
         if (window.electronAPI && window.electronAPI.onSessionCreated) {
             window.electronAPI.onSessionCreated((data) => {
-                console.log('📹 Session created event received from main process:', data);
+                console.log('📹 ========================================');
+                console.log('📹 SESSION CREATED EVENT RECEIVED');
+                console.log('📹 Session ID:', data.sessionId);
+                console.log('📹 Server URL:', data.serverUrl);
+                console.log('📹 Student Info:', JSON.stringify(data.studentInfo, null, 2));
+                console.log('📹 ========================================');
                 
-                // 🎫 RE-REGISTER KIOSK WITH SESSION ID
+                // 🎫 RE-REGISTER KIOSK WITH SESSION ID FOR SCREEN MIRRORING
                 if (data.sessionId && socket && socket.connected) {
                     console.log(`🎫 KIOSK: Re-registering with sessionId: ${data.sessionId}`);
+                    console.log(`🎫 Socket connected: ${socket.connected}`);
+                    console.log(`🎫 Socket ID: ${socket.id}`);
+                    
                     socket.emit('register-kiosk', {
                         sessionId: data.sessionId,
                         systemNumber: data.studentInfo.systemNumber,
                         labId: 'CC1'
                     });
+                    console.log('✅ KIOSK: Re-registered with session ID - ready for screen mirroring');
+                    
+                    // 🚀 PRE-WARM: Capture screen stream immediately for instant mirroring
+                    preWarmScreenCapture().then(() => {
+                        console.log('✅ Screen pre-warmed and ready for instant mirroring');
+                        
+                        // Notify server that screen is ready for monitoring
+                        console.log('📺 KIOSK: Emitting kiosk-screen-ready event...');
+                        socket.emit('kiosk-screen-ready', {
+                            sessionId: data.sessionId,
+                            hasVideo: true,
+                            timestamp: new Date().toISOString()
+                        });
+                        console.log('✅ KIOSK: Screen ready event emitted - instant connection possible');
+                    }).catch(err => {
+                        console.error('❌ Pre-warm failed:', err.message);
+                        // Still notify server, will capture on-demand
+                        socket.emit('kiosk-screen-ready', {
+                            sessionId: data.sessionId,
+                            hasVideo: false,
+                            timestamp: new Date().toISOString()
+                        });
+                    });
+                } else {
+                    console.error('❌ Cannot re-register kiosk:');
+                    console.error('  - Session ID:', data.sessionId || 'missing');
+                    console.error('  - Socket exists:', !!socket);
+                    console.error('  - Socket connected:', socket ? socket.connected : 'N/A');
                 }
                 
                 // Note: Screen mirroring is handled in background for admin monitoring
                 // No visual feedback needed for student
             });
+        } else {
+            console.error('❌ window.electronAPI.onSessionCreated not available');
         }
         
         // Listen for trigger-logout event from timer window
@@ -1240,11 +1413,42 @@
             
             if (window.electronAPI && window.electronAPI.studentLogout) {
                 try {
-                    // Call logout WITHOUT shutdown - just end session
+                    // 🔌 STEP 1: Show shutdown dialog BEFORE logout
+                    console.log('⚠️ Showing shutdown warning dialog...');
+                    if (window.electronAPI.showShutdownDialog) {
+                        try {
+                            await window.electronAPI.showShutdownDialog();
+                            console.log('✅ Shutdown dialog shown');
+                        } catch (error) {
+                            console.error('⚠️ Failed to show shutdown dialog:', error);
+                        }
+                    }
+                    
+                    // 🚪 STEP 2: Perform logout (ends session)
+                    console.log('🚪 Performing logout...');
                     const result = await window.electronAPI.studentLogout();
                     console.log('✅ Logout result:', result);
+                    
                     if (result.success) {
-                        console.log('✅ Logout successful, returning to kiosk screen...');
+                        console.log('✅ Logout successful, initiating system shutdown...');
+                        
+                        // 🧹 Clean up screen streams
+                        if (preWarmedStream) {
+                            preWarmedStream.getTracks().forEach(t => t.stop());
+                            preWarmedStream = null;
+                            isScreenReady = false;
+                            console.log('✅ Pre-warmed stream cleaned up');
+                        }
+                        if (currentDisplayStream) {
+                            currentDisplayStream.getTracks().forEach(t => t.stop());
+                            currentDisplayStream = null;
+                            console.log('✅ Current display stream cleaned up');
+                        }
+                        if (pc) {
+                            pc.close();
+                            pc = null;
+                            console.log('✅ Peer connection closed');
+                        }
                         
                         // Hide session modal
                         document.getElementById('sessionModal').classList.remove('active');
@@ -1256,15 +1460,37 @@
                         document.getElementById('studentId').value = '';
                         document.getElementById('password').value = '';
                         
+                        // 🔌 STEP 3: Call shutdown system (60-second delay shutdown)
+                        console.log('🔌 Initiating system shutdown in 60 seconds...');
+                        if (window.electronAPI.shutdownSystem) {
+                            try {
+                                const shutdownResult = await window.electronAPI.shutdownSystem();
+                                console.log('✅ Shutdown result:', shutdownResult);
+                                
+                                if (shutdownResult.success) {
+                                    console.log('✅✅✅ SHUTDOWN COMMAND EXECUTED!');
+                                    console.log('✅ System will shut down in 60 seconds');
+                                    
+                                    // Show shutdown message with actual delay from result
+                                    const delay = shutdownResult.delay || 60;
+                                    showError(`⚠️ SYSTEM SHUTTING DOWN IN ${delay} SECONDS! Session ended.`, 'success');
+                                } else {
+                                    console.error('❌ Shutdown command failed:', shutdownResult.error);
+                                    showError(`❌ Shutdown failed: ${shutdownResult.error}. Please manually shutdown.`, 'error');
+                                }
+                            } catch (shutdownError) {
+                                console.error('❌ Shutdown exception:', shutdownError);
+                                showError('❌ Shutdown error: ' + shutdownError.message, 'error');
+                            }
+                        } else {
+                            console.error('❌ shutdownSystem API not available');
+                            showError('❌ Shutdown not available - please manually shutdown', 'error');
+                        }
+                        
                         // Reset logging out flag
                         isLoggingOut = false;
                         
-                        // ✅ FIX: Show success message with setTimeout to ensure visibility
-                        setTimeout(() => {
-                            showError('✅ Logged out successfully. System remains active.', 'success');
-                        }, 100);
-                        
-                        console.log('🔒 Returned to kiosk login screen - system still in kiosk mode');
+                        console.log('🔒 Session ended - system will shutdown in 90 seconds');
                     } else {
                         console.error('❌ Logout failed:', result.error || 'Unknown error');
                         isLoggingOut = false; // Reset flag on failure
