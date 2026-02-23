@@ -23,9 +23,24 @@ echo.
 echo Press any key to continue or Ctrl+C to cancel...
 pause >nul
 
-cd /d "D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk"
-
 echo.
+echo Navigating to kiosk directory...
+cd /d "D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk" 2>nul
+if %errorLevel% neq 0 (
+    COLOR 0C
+    echo [FAIL] Cannot find kiosk directory!
+    echo Expected: D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk
+    echo.
+    echo Current directory: %CD%
+    echo.
+    echo The kiosk folder may not be installed yet.
+    pause
+    exit /b 1
+)
+
+echo Current directory: %CD%
+echo.
+
 echo [1/4] Cleaning old dependencies...
 if exist "node_modules" (
     rmdir /s /q node_modules

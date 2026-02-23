@@ -426,6 +426,10 @@ function createTimerWindow(studentName, studentId) {
     }
   });
   
+  // 🔒 CRITICAL: Remove all menu options from timer window (File, Edit, etc.)
+  timerWindow.setMenu(null);
+  console.log('✅ Timer window menu removed - only minimize button available');
+  
   // 🔒 CRITICAL SECURITY: Block ALL refresh and DevTools shortcuts in timer window
   timerWindow.webContents.on('before-input-event', (event, input) => {
     // Block Ctrl+R (refresh) - CRITICAL FIX

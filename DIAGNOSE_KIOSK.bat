@@ -61,7 +61,22 @@ if exist "D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk" 
 echo.
 
 REM Change to kiosk directory
-cd /d "D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk"
+echo Navigating to kiosk directory...
+cd /d "D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk" 2>nul
+if %errorLevel% neq 0 (
+    COLOR 0C
+    echo [FAIL] Cannot navigate to kiosk directory!
+    echo Expected: D:\SDC_Lab_monitoing_system\student_deployment_package\student-kiosk
+    echo.
+    echo Current directory: %CD%
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [PASS] Found kiosk directory
+echo Current path: %CD%
+echo.
 
 REM Check critical files
 echo Checking critical files...
