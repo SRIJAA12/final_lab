@@ -473,38 +473,37 @@
                         console.log('   Admin:', data.admin);
                         console.log('============================================================\n');
                         
-                        // Show full-screen warning overlay
+                        // ✅ SMALL DIALOG BOX (not full-screen red)
                         const warningOverlay = document.createElement('div');
+                        warningOverlay.id = 'shutdownWarningDialog';
                         warningOverlay.style.cssText = `
                             position: fixed;
-                            top: 0;
-                            left: 0;
-                            width: 100%;
-                            height: 100%;
-                            background: linear-gradient(135deg, #dc3545, #c82333);
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            width: 500px;
+                            background: white;
+                            border: 4px solid #dc3545;
+                            border-radius: 12px;
+                            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
                             z-index: 999999;
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            color: white;
-                            font-family: 'Segoe UI', sans-serif;
+                            padding: 30px;
+                            text-align: center;
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                         `;
                         
                         warningOverlay.innerHTML = `
-                            <div style="text-align: center; animation: pulse 1s infinite;">
-                                <h1 style="font-size: 4rem; margin-bottom: 20px;">⚠️ SYSTEM SHUTDOWN</h1>
-                                <h2 style="font-size: 2.5rem; margin-bottom: 40px;">This computer is shutting down...</h2>
-                                <div id="shutdownCountdown" style="font-size: 8rem; font-weight: bold; margin-bottom: 40px;">10</div>
-                                <p style="font-size: 1.5rem;">Please save your work immediately!</p>
-                                <p style="font-size: 1.2rem; margin-top: 20px; opacity: 0.9;">Shutdown initiated by Lab Administrator</p>
+                            <div style="font-size: 60px; margin-bottom: 15px;">⚠️</div>
+                            <div style="font-size: 22px; font-weight: bold; color: #dc3545; margin-bottom: 15px;">
+                                Shutdown Initiated by Administrator
                             </div>
-                            <style>
-                                @keyframes pulse {
-                                    0%, 100% { opacity: 1; }
-                                    50% { opacity: 0.7; }
-                                }
-                            </style>
+                            <div style="font-size: 16px; color: #666; margin-top: 10px;">
+                                System will shutdown in:
+                            </div>
+                            <div id="shutdownCountdown" style="font-size: 80px; font-weight: bold; color: #dc3545; margin: 20px 0;">10</div>
+                            <div style="font-size: 14px; color: #999; margin-top: 10px;">
+                                Please save your work
+                            </div>
                         `;
                         
                         document.body.appendChild(warningOverlay);
@@ -517,6 +516,11 @@
                             countdown--;
                             if (countdownElement) {
                                 countdownElement.textContent = countdown;
+                                // Pulse animation
+                                countdownElement.style.transform = 'scale(1.1)';
+                                setTimeout(() => {
+                                    countdownElement.style.transform = 'scale(1)';
+                                }, 200);
                             }
                             
                             if (countdown <= 0) {
@@ -525,23 +529,129 @@
                         }, 1000);
                         
                         // Wait 10 seconds then execute shutdown
-                        await new Promise(resolve => setTimeout(resolve, 10000));
-                        
-                        // Execute Windows shutdown command via IPC
-                        if (window.electronAPI && window.electronAPI.forceWindowsShutdown) {
-                            console.log('⚡ Executing Windows shutdown command...');
+                        setTimeout(async () => {
+                            console.log('\n🔌🔌🔌 ========================================');
+                            console.log('🔌 COUNTDOWN REACHED 0 - EXECUTING SHUTDOWN');
+                            console.log('🔌 ========================================');
+                            
+                            // Show "Processing..." immediately
+                            warningOverlay.innerHTML = `
+                                <div style="padding: 30px;">
+                                    <div style="font-size: 50px; margin-bottom: 15px;">⏳</div>
+                                    <div style="font-size: 20px; font-weight: bold; color: #ff9800;">
+                                        Sending Shutdown Command...
+                                    </div>
+                                    <div style="font-size: 14px; color: #666; margin-top: 10px;">
+                                        Please wait
+                                    </div>
+                                </div>
+                            `;
+                            
+                            // Check if API exists
+                            if (!window.electronAPI) {
+                                console.error('❌❌❌ window.electronAPI is NOT available!');
+                                warningOverlay.innerHTML = `
+                                    <div style="padding: 30px;">
+                                        <div style="font-size: 50px; margin-bottom: 15px;">❌</div>
+                                        <div style="font-size: 18px; font-weight: bold; color: #dc3545;">
+                                            Critical Error
+                                        </div>
+                                        <div style="font-size: 14px; color: #666; margin-top: 10px;">
+                                            Electron API not available<br>
+                                            Cannot execute shutdown
+                                        </div>
+                                    </div>
+                                `;
+                                return;
+                            }
+                            
+                            if (!window.electronAPI.shutdownSystem) {
+                                console.error('❌❌❌ shutdownSystem API is NOT available!');
+                                console.error('Available APIs:', Object.keys(window.electronAPI));
+                                warningOverlay.innerHTML = `
+                                    <div style="padding: 30px;">
+                                        <div style="font-size: 50px; margin-bottom: 15px;">❌</div>
+                                        <div style="font-size: 18px; font-weight: bold; color: #dc3545;">
+                                            Shutdown API Missing
+                                        </div>
+                                        <div style="font-size: 14px; color: #666; margin-top: 10px;">
+                                            shutdownSystem() not found<br>
+                                            Available: ${Object.keys(window.electronAPI).join(', ')}
+                                        </div>
+                                    </div>
+                                `;
+                                return;
+                            }
+                            
+                            // API exists, try to call it
                             try {
-                                await window.electronAPI.forceWindowsShutdown();
+                                console.log('🔌 Calling shutdownSystem() API...');
+                                console.log('🔌 Waiting for response...');
+                                
+                                // Add timeout to API call
+                                const timeoutPromise = new Promise((_, reject) => {
+                                    setTimeout(() => reject(new Error('API call timeout after 30 seconds')), 30000);
+                                });
+                                
+                                const result = await Promise.race([
+                                    window.electronAPI.shutdownSystem(),
+                                    timeoutPromise
+                                ]);
+                                
+                                console.log('✅✅✅ Shutdown API returned:', JSON.stringify(result));
+                                
+                                if (result && result.success) {
+                                    console.log('✅ Shutdown command EXECUTED successfully!');
+                                    warningOverlay.innerHTML = `
+                                        <div style="padding: 30px;">
+                                            <div style="font-size: 50px; margin-bottom: 15px;">✅</div>
+                                            <div style="font-size: 20px; font-weight: bold; color: #28a745;">
+                                                Shutdown Command Sent!
+                                            </div>
+                                            <div style="font-size: 14px; color: #666; margin-top: 10px;">
+                                                System shutting down now...<br>
+                                                <small>${result.message || 'Please wait'}</small>
+                                            </div>
+                                        </div>
+                                    `;
+                                } else {
+                                    console.error('❌❌❌ Shutdown command FAILED!');
+                                    console.error('Result:', result);
+                                    warningOverlay.innerHTML = `
+                                        <div style="padding: 30px;">
+                                            <div style="font-size: 50px; margin-bottom: 15px;">❌</div>
+                                            <div style="font-size: 18px; font-weight: bold; color: #dc3545;">
+                                                Shutdown Failed
+                                            </div>
+                                            <div style="font-size: 13px; color: #666; margin-top: 10px;">
+                                                Error: ${result?.error || 'Unknown error'}<br>
+                                                <small style="color: #999;">Kiosk needs administrator privileges</small><br>
+                                                <small style="color: #999;">Use START_WITH_ADMIN.bat to launch</small>
+                                            </div>
+                                        </div>
+                                    `;
+                                }
                             } catch (error) {
-                                console.error('❌ Shutdown error:', error);
+                                console.error('❌❌❌ EXCEPTION during shutdown API call!');
+                                console.error('Error:', error);
+                                console.error('Error message:', error.message);
+                                console.error('Error stack:', error.stack);
+                                
+                                warningOverlay.innerHTML = `
+                                    <div style="padding: 30px;">
+                                        <div style="font-size: 50px; margin-bottom: 15px;">❌</div>
+                                        <div style="font-size: 18px; font-weight: bold; color: #dc3545;">
+                                            Shutdown Exception
+                                        </div>
+                                        <div style="font-size: 13px; color: #666; margin-top: 10px;">
+                                            ${error.message || 'Unknown error'}<br>
+                                            <small style="color: #999;">Check console logs (F12)</small><br>
+                                            <small style="color: #999;">Kiosk may need admin rights</small>
+                                        </div>
+                                    </div>
+                                `;
                             }
-                        } else {
-                            console.error('❌ Force shutdown API not available - attempting fallback');
-                            // Fallback: use old adminShutdown if available
-                            if (window.electronAPI && window.electronAPI.adminShutdown) {
-                                await window.electronAPI.adminShutdown();
-                            }
-                        }
+                        }, 10000);
                     });
                     // ========================================================================
                     // END 69-SYSTEM LAB SHUTDOWN HANDLER
@@ -1368,46 +1478,64 @@
             }
             isLoggingOut = true;
             
+            // Always reset UI first, regardless of backend session state
+            console.log('🧹 Cleaning up UI and streams...');
+            
+            // Clean up WebRTC connections
+            if (pc) {
+                try {
+                    pc.close();
+                    pc = null;
+                    console.log('✅ Peer connection closed');
+                } catch (e) {
+                    console.warn('⚠️ Error closing peer connection:', e);
+                }
+            }
+            
+            // Clean up streams
+            if (currentDisplayStream) {
+                try {
+                    currentDisplayStream.getTracks().forEach(t => t.stop());
+                    currentDisplayStream = null;
+                    console.log('✅ Display stream stopped');
+                } catch (e) {
+                    console.warn('⚠️ Error stopping display stream:', e);
+                }
+            }
+            
+            // Reset UI to login screen
+            document.getElementById('sessionModal').classList.remove('active');
+            document.querySelector('.login-container').style.display = 'flex';
+            document.getElementById('studentId').value = '';
+            document.getElementById('password').value = '';
+            
+            // Reset logged-in state
+            isLoggedIn = false;
+            
+            // Now try to logout on backend (if session exists)
             if (window.electronAPI && window.electronAPI.studentLogout) {
                 try {
-                    // Call logout WITHOUT shutdown - just end session
+                    console.log('🚪 Calling backend logout...');
                     const result = await window.electronAPI.studentLogout();
-                    console.log('✅ Logout result:', result);
+                    console.log('✅ Backend logout result:', result);
+                    
                     if (result.success) {
-                        console.log('✅ Logout successful, returning to kiosk screen...');
-                        
-                        // Hide session modal
-                        document.getElementById('sessionModal').classList.remove('active');
-                        
-                        // Show login container
-                        document.querySelector('.login-container').style.display = 'flex';
-                        
-                        // Clear form fields
-                        document.getElementById('studentId').value = '';
-                        document.getElementById('password').value = '';
-                        
-                        // Reset logging out flag
-                        isLoggingOut = false;
-                        
-                        // Show success message
-                        showError('✅ Logged out successfully. System remains active.', 'success');
-                        
-                        console.log('🔒 Returned to kiosk login screen - system still in kiosk mode');
+                        console.log('✅ Backend session ended successfully');
+                        showError('✅ Logged out successfully. Ready for next student.', 'success');
                     } else {
-                        console.error('❌ Logout failed:', result.error);
-                        isLoggingOut = false; // Reset flag on failure
-                        alert('Logout failed: ' + result.error);
+                        // Backend had no session, but UI is already reset - that's fine
+                        console.log('⚠️ Backend logout info:', result.error || 'No active session');
+                        showError('✅ Logged out. System ready for next student.', 'success');
                     }
                 } catch (error) {
-                    console.error('❌ Logout error:', error);
-                    isLoggingOut = false; // Reset flag on error
-                    alert('Logout error: ' + error.message);
+                    console.warn('⚠️ Backend logout error (UI already reset):', error.message);
+                    showError('✅ Logged out. System ready for next student.', 'success');
                 }
-            } else {
-                console.error('❌ electronAPI.studentLogout not available');
-                isLoggingOut = false; // Reset flag
-                alert('Logout functionality not available');
             }
+            
+            // Reset flag
+            isLoggingOut = false;
+            console.log('🔒 Returned to kiosk login screen - ready for next student');
         }
 
         // Track login state

@@ -324,6 +324,70 @@
         // Pre-warmed screen stream for instant mirroring
         let preWarmedStream = null;
         let isScreenReady = false;
+        
+        // System heartbeat to stay visible in admin dashboard
+        let heartbeatInterval = null;
+        
+        // Detect IP address from system info
+        function detectIPAddress() {
+            // Try to get from window location or use default range
+            const hostname = document.getElementById('computerName')?.textContent || 'Unknown';
+            // IP will be detected server-side from socket connection
+            return 'auto-detect';
+        }
+        
+        // 🚀 HEARTBEAT: Keep system visible in shutdown panel even before login
+        function startSystemHeartbeat(systemNumber, labId) {
+            // Clear any existing heartbeat
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+            
+            console.log('💓 Starting system heartbeat (30s interval) for:', systemNumber);
+            
+            // Send immediate heartbeat
+            sendHeartbeat(systemNumber, labId);
+            
+            // Send heartbeat every 30 seconds
+            heartbeatInterval = setInterval(() => {
+                sendHeartbeat(systemNumber, labId);
+            }, 30000);
+        }
+        
+        function sendHeartbeat(systemNumber, labId) {
+            if (!socket || !socket.connected) {
+                console.warn('⚠️ Socket not connected, skipping heartbeat');
+                return;
+            }
+            
+            const ipAddress = detectIPAddress();
+            // ✅ Determine status: logged-in if session modal is active, otherwise available
+            const isLoggedIn = document.getElementById('sessionModal')?.classList.contains('active');
+            const heartbeatData = {
+                systemNumber: systemNumber,
+                labId: labId,
+                ipAddress: ipAddress,
+                timestamp: new Date().toISOString(),
+                status: isLoggedIn ? 'logged-in' : 'available'
+            };
+            
+            // Emit via socket for real-time updates
+            socket.emit('system-heartbeat', heartbeatData);
+            
+            // Also send HTTP POST for database persistence
+            if (window.electronAPI && window.electronAPI.getServerUrl) {
+                window.electronAPI.getServerUrl().then(serverUrl => {
+                    fetch(`${serverUrl}/api/system-heartbeat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(heartbeatData)
+                    }).catch(err => {
+                        // Silent fail - heartbeat is not critical
+                        console.warn('⚠️ Heartbeat HTTP POST failed:', err.message);
+                    });
+                }).catch(err => console.warn('⚠️ Cannot get server URL for heartbeat'));
+            }
+        }
 
         // Initialize Socket.io for guest mode and screen mirroring
         function initializeSocket() {
@@ -358,12 +422,20 @@
                         console.log(`🎫 Socket ID: ${socket.id}`);
                         console.log(`🎫 System Number: ${systemNumber}`);
                         console.log(`🎫 KIOSK: Registering with server (pre-login) - System: ${systemNumber}`);
+                        
+                        // Get IP address for tracking
+                        const ipAddress = detectIPAddress();
+                        
                         socket.emit('register-kiosk', {
                             sessionId: null,  // Will be updated after login
                             systemNumber: systemNumber,
-                            labId: 'CC1'  // Default lab
+                            labId: 'CC1',  // Default lab
+                            ipAddress: ipAddress
                         });
-                        console.log('✅ Register-kiosk event emitted');
+                        console.log('✅ Register-kiosk event emitted with IP:', ipAddress);
+                        
+                        // 🚀 START HEARTBEAT: Keep system visible in admin dashboard even before login
+                        startSystemHeartbeat(systemNumber, 'CC1');
                     });
                     
                     socket.on('connect_error', (error) => {
@@ -392,24 +464,35 @@
                                 labId: data.labId || 'CC1'
                             });
                             
-                            // 🚀 PRE-WARM: Capture screen immediately
-                            preWarmScreenCapture().then(() => {
-                                // Notify that screen is ready
-                                socket.emit('kiosk-screen-ready', {
-                                    sessionId: data.sessionId,
-                                    hasVideo: true,
-                                    timestamp: new Date().toISOString()
-                                });
-                                console.log('📺 KIOSK: Screen pre-warmed and ready');
-                            }).catch(err => {
-                                console.error('❌ Pre-warm failed:', err.message);
-                                // Still notify, will capture on-demand
-                                socket.emit('kiosk-screen-ready', {
-                                    sessionId: data.sessionId,
-                                    hasVideo: false,
-                                    timestamp: new Date().toISOString()
-                                });
+                            // ✅ UPDATE HEARTBEAT: Mark as logged-in
+                            socket.emit('system-heartbeat', {
+                                systemNumber: currentSystem,
+                                labId: data.labId || 'CC1',
+                                ipAddress: detectIPAddress(),
+                                timestamp: new Date().toISOString(),
+                                status: 'logged-in' // Student is now logged in
                             });
+                            
+                            // 🚀 PRE-WARM: Capture screen immediately for instant mirroring
+                            setTimeout(() => {
+                                preWarmScreenCapture().then(() => {
+                                    // Notify that screen is ready
+                                    socket.emit('kiosk-screen-ready', {
+                                        sessionId: data.sessionId,
+                                        hasVideo: true,
+                                        timestamp: new Date().toISOString()
+                                    });
+                                    console.log('✅✅✅ Screen pre-warmed - INSTANT MIRRORING READY!');
+                                }).catch(err => {
+                                    console.error('❌ Pre-warm failed:', err.message);
+                                    // Still notify, will capture on-demand
+                                    socket.emit('kiosk-screen-ready', {
+                                        sessionId: data.sessionId,
+                                        hasVideo: false,
+                                        timestamp: new Date().toISOString()
+                                    });
+                                });
+                            }, 500); // Small delay to ensure session is fully established
                         }
                     });
 
@@ -509,6 +592,122 @@
                                 logout();
                             }, 10000);
                         }
+                    });
+
+                    // ========================================================================
+                    // 🔌 FORCE SHUTDOWN - Selective shutdown from admin dashboard
+                    // Works even BEFORE student login (pre-login available systems)
+                    // ========================================================================
+                    socket.on('force-shutdown-system', async (data) => {
+                        console.log('\n============================================================');
+                        console.log('⚡ FORCE SHUTDOWN COMMAND RECEIVED FROM ADMIN');
+                        console.log('   System:', data.systemNumber || document.getElementById('systemNumber')?.textContent);
+                        console.log('   Timestamp:', data.timestamp);
+                        console.log('   Admin:', data.admin || 'Lab Administrator');
+                        console.log('============================================================\n');
+                        
+                        // Create full-screen warning overlay
+                        const warningOverlay = document.createElement('div');
+                        warningOverlay.id = 'shutdownWarningOverlay';
+                        warningOverlay.style.cssText = `
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100%;
+                            height: 100%;
+                            background: linear-gradient(135deg, #dc3545, #c82333);
+                            z-index: 999999;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            color: white;
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        `;
+                        
+                        const countdownDisplay = document.createElement('div');
+                        countdownDisplay.style.cssText = `
+                            font-size: 120px;
+                            font-weight: bold;
+                            margin: 30px 0;
+                            text-shadow: 0 0 30px rgba(255, 255, 255, 0.5);
+                        `;
+                        
+                        const messageDiv = document.createElement('div');
+                        messageDiv.style.cssText = `
+                            font-size: 36px;
+                            font-weight: bold;
+                            margin-bottom: 20px;
+                            text-align: center;
+                        `;
+                        messageDiv.innerHTML = '⚠️ SYSTEM SHUTDOWN INITIATED BY ADMINISTRATOR';
+                        
+                        const infoDiv = document.createElement('div');
+                        infoDiv.style.cssText = `
+                            font-size: 24px;
+                            text-align: center;
+                            margin-top: 20px;
+                            opacity: 0.9;
+                        `;
+                        infoDiv.innerHTML = `
+                            <div style="margin: 10px 0;">🔌 This system will shut down in:</div>
+                            <div style="margin: 20px 0; font-size: 18px; opacity: 0.8;">Please save your work immediately!</div>
+                        `;
+                        
+                        warningOverlay.appendChild(messageDiv);
+                        warningOverlay.appendChild(infoDiv);
+                        warningOverlay.appendChild(countdownDisplay);
+                        
+                        document.body.appendChild(warningOverlay);
+                        
+                        // 10-second countdown
+                        let countdown = 10;
+                        countdownDisplay.textContent = countdown;
+                        
+                        const countdownInterval = setInterval(() => {
+                            countdown--;
+                            countdownDisplay.textContent = countdown;
+                            
+                            // Pulse animation
+                            countdownDisplay.style.transform = 'scale(1.2)';
+                            setTimeout(() => {
+                                countdownDisplay.style.transform = 'scale(1)';
+                            }, 300);
+                            
+                            if (countdown <= 0) {
+                                clearInterval(countdownInterval);
+                            }
+                        }, 1000);
+                        
+                        // ✅ FIXED: After countdown, call the CORRECT shutdown API
+                        setTimeout(async () => {
+                            console.log('🔌 Countdown complete - executing Windows shutdown NOW...');
+                            
+                            // ✅ Call the correct API function that actually exists in preload.js
+                            if (window.electronAPI && window.electronAPI.shutdownSystem) {
+                                try {
+                                    console.log('🔌 Calling shutdownSystem() API...');
+                                    const result = await window.electronAPI.shutdownSystem();
+                                    console.log('✅ Shutdown API response:', result);
+                                    
+                                    // Update display
+                                    messageDiv.innerHTML = '✅ SHUTDOWN COMMAND SENT';
+                                    infoDiv.innerHTML = '<div style="font-size: 20px;">System shutting down now...</div>';
+                                    countdownDisplay.textContent = '🔌';
+                                } catch (error) {
+                                    console.error('❌ Shutdown API error:', error);
+                                    messageDiv.innerHTML = '❌ SHUTDOWN FAILED';
+                                    infoDiv.innerHTML = `<div style="font-size: 18px; color: #ffeb3b;">Error: ${error.message}</div>`;
+                                    countdownDisplay.textContent = '⚠️';
+                                }
+                            } else {
+                                console.error('❌ shutdownSystem API not available in window.electronAPI');
+                                console.error('Available APIs:', Object.keys(window.electronAPI || {}));
+                                messageDiv.innerHTML = '❌ SHUTDOWN API NOT AVAILABLE';
+                                infoDiv.innerHTML = '<div style="font-size: 18px; color: #ffeb3b;">Contact administrator</div>';
+                                countdownDisplay.textContent = '⚠️';
+                            }
+                        }, 10000);
                     });
 
                 }).catch(err => console.error('❌ Error getting server URL:', err));
@@ -1413,24 +1612,14 @@
             
             if (window.electronAPI && window.electronAPI.studentLogout) {
                 try {
-                    // 🔌 STEP 1: Show shutdown dialog BEFORE logout
-                    console.log('⚠️ Showing shutdown warning dialog...');
-                    if (window.electronAPI.showShutdownDialog) {
-                        try {
-                            await window.electronAPI.showShutdownDialog();
-                            console.log('✅ Shutdown dialog shown');
-                        } catch (error) {
-                            console.error('⚠️ Failed to show shutdown dialog:', error);
-                        }
-                    }
-                    
-                    // 🚪 STEP 2: Perform logout (ends session)
+                    // � LOGOUT: Return to kiosk screen without shutdown
+                    // Shutdown is controlled ONLY through admin system
                     console.log('🚪 Performing logout...');
                     const result = await window.electronAPI.studentLogout();
                     console.log('✅ Logout result:', result);
                     
                     if (result.success) {
-                        console.log('✅ Logout successful, initiating system shutdown...');
+                        console.log('✅ Logout successful - returning to login screen');
                         
                         // 🧹 Clean up screen streams
                         if (preWarmedStream) {
@@ -1460,59 +1649,52 @@
                         document.getElementById('studentId').value = '';
                         document.getElementById('password').value = '';
                         
-                        // 🔌 STEP 3: Call shutdown system (60-second delay shutdown)
-                        console.log('🔌 Initiating system shutdown in 60 seconds...');
-                        if (window.electronAPI.shutdownSystem) {
-                            try {
-                                const shutdownResult = await window.electronAPI.shutdownSystem();
-                                console.log('✅ Shutdown result:', shutdownResult);
-                                
-                                if (shutdownResult.success) {
-                                    console.log('✅✅✅ SHUTDOWN COMMAND EXECUTED!');
-                                    console.log('✅ System will shut down in 60 seconds');
-                                    
-                                    // Show shutdown message with actual delay from result
-                                    const delay = shutdownResult.delay || 60;
-                                    showError(`⚠️ SYSTEM SHUTTING DOWN IN ${delay} SECONDS! Session ended.`, 'success');
-                                } else {
-                                    console.error('❌ Shutdown command failed:', shutdownResult.error);
-                                    showError(`❌ Shutdown failed: ${shutdownResult.error}. Please manually shutdown.`, 'error');
-                                }
-                            } catch (shutdownError) {
-                                console.error('❌ Shutdown exception:', shutdownError);
-                                showError('❌ Shutdown error: ' + shutdownError.message, 'error');
-                            }
-                        } else {
-                            console.error('❌ shutdownSystem API not available');
-                            showError('❌ Shutdown not available - please manually shutdown', 'error');
+                        // ✅ UPDATE STATUS: Return to 'available' status (no shutdown on normal logout)
+                        const systemNumber = document.getElementById('systemNumber')?.textContent || 'CC1-01';
+                        if (socket && socket.connected) {
+                            socket.emit('system-heartbeat', {
+                                systemNumber: systemNumber,
+                                labId: 'CC1',
+                                ipAddress: detectIPAddress(),
+                                timestamp: new Date().toISOString(),
+                                status: 'available' // Back to available, not logged-in
+                            });
+                            console.log('✅ Status updated to available - system visible but not logged-in');
                         }
                         
                         // Reset logging out flag
                         isLoggingOut = false;
                         
-                        console.log('🔒 Session ended - system will shutdown in 90 seconds');
+                        console.log('🔒 Logout complete - system remains on and available');
                     } else {
-                        console.error('❌ Logout failed:', result.error || 'Unknown error');
-                        isLoggingOut = false; // Reset flag on failure
-                        // ✅ FIX: Only show error if there's an actual error (not if just no session)
-                        if (result.error && result.error !== 'No active session') {
-                            showError('Logout failed: ' + result.error, 'error');
-                        } else {
-                            // If no active session, just return to login screen silently
-                            document.getElementById('sessionModal').classList.remove('active');
-                            document.querySelector('.login-container').style.display = 'flex';
-                        }
+                        console.log('⚠️ Backend logout info:', result.error || 'No active session');
+                        isLoggingOut = false;
+                        // ✅ FIX: Always return to login screen, even if backend has no session
+                        document.getElementById('sessionModal').classList.remove('active');
+                        document.querySelector('.login-container').style.display = 'flex';
+                        document.getElementById('studentId').value = '';
+                        document.getElementById('password').value = '';
+                        showError('✅ Logged out. System ready for next student.', 'success');
                     }
                 } catch (error) {
-                    console.error('❌ Logout error:', error);
-                    isLoggingOut = false; // Reset flag on error
-                    // ✅ FIX: More informative error message
-                    showError('Logout error: ' + (error.message || 'Unknown error'), 'error');
+                    console.warn('⚠️ Backend logout error:', error.message);
+                    isLoggingOut = false;
+                    // ✅ FIX: Return to login screen even if there's an error
+                    document.getElementById('sessionModal').classList.remove('active');
+                    document.querySelector('.login-container').style.display = 'flex';
+                    document.getElementById('studentId').value = '';
+                    document.getElementById('password').value = '';
+                    showError('✅ Logged out. System ready for next student.', 'success');
                 }
             } else {
                 console.error('❌ electronAPI.studentLogout not available');
-                isLoggingOut = false; // Reset flag
-                showError('Logout functionality not available', 'error');
+                isLoggingOut = false;
+                // ✅ FIX: Return to login screen even if API not available
+                document.getElementById('sessionModal').classList.remove('active');
+                document.querySelector('.login-container').style.display = 'flex';
+                document.getElementById('studentId').value = '';
+                document.getElementById('password').value = '';
+                showError('✅ Logged out. System ready for next student.', 'success');
             }
         }
 

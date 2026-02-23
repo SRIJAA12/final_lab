@@ -1,0 +1,169 @@
+═══════════════════════════════════════════════════════════════════
+    🚀 KIOSK AUTO-START ON WINDOWS LOGIN - QUICK GUIDE
+═══════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────┐
+│  📁 FILE TO USE: START_KIOSK_SILENT.vbs                        │
+│  ✅ BENEFIT: Starts kiosk with NO visible command window       │
+│  📍 LOCATION: Place in Windows Startup folder                  │
+└─────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+  STEP-BY-STEP INSTALLATION (2 MINUTES)
+═══════════════════════════════════════════════════════════════════
+
+STEP 1: Open Startup Folder
+────────────────────────────
+  1. Press: Win + R
+  2. Type: shell:startup
+  3. Press: Enter
+
+  ✅ This opens: C:\Users\[YOUR_NAME]\AppData\...\Startup
+
+STEP 2: Copy VBS File
+────────────────────────────
+  Drag and drop this file into the Startup folder:
+  
+  📄 START_KIOSK_SILENT.vbs
+     (from student-kiosk/desktop-app/)
+
+STEP 3: Test It
+────────────────────────────
+  Double-click the VBS file to test
+  
+  ✅ Expected: Kiosk launches silently (no CMD window)
+
+STEP 4: Restart Computer
+────────────────────────────
+  Logout or restart Windows
+  
+  ✅ Expected: Kiosk appears automatically after login
+
+═══════════════════════════════════════════════════════════════════
+  ALTERNATIVE: ALL USERS STARTUP (For All Accounts)
+═══════════════════════════════════════════════════════════════════
+
+STEP 1: Open All Users Startup Folder
+────────────────────────────────────────
+  1. Press: Win + R
+  2. Type: shell:common startup
+  3. Press: Enter
+
+  ✅ This opens: C:\ProgramData\Microsoft\...\Startup
+
+STEP 2: Copy VBS File Here
+────────────────────────────────────────
+  ⚠️ Requires Administrator rights
+  
+  Paste: START_KIOSK_SILENT.vbs
+
+  ✅ Now kiosk starts for ALL users on this computer
+
+═══════════════════════════════════════════════════════════════════
+  WHY VBS INSTEAD OF BAT?
+═══════════════════════════════════════════════════════════════════
+
+❌ DON'T USE .BAT FILES IN STARTUP
+────────────────────────────────────────
+  LAUNCH_ADMIN_DASHBOARD.bat  → Shows black CMD window ✗
+  RUN_AS_ADMIN.bat            → Shows black CMD window ✗
+  
+  Problem: Annoying black window stays open
+
+✅ USE VBS FILE INSTEAD
+────────────────────────────────────────
+  START_KIOSK_SILENT.vbs      → Completely invisible ✓
+  
+  Benefit: Runs 100% silently in background
+
+═══════════════════════════════════════════════════════════════════
+  QUICK REFERENCE COMMANDS
+═══════════════════════════════════════════════════════════════════
+
+Open Startup Folder (Current User):
+  Win + R → shell:startup
+
+Open Startup Folder (All Users):
+  Win + R → shell:common startup
+
+Check What Runs on Startup:
+  Ctrl + Shift + Esc → Startup tab
+
+Remove from Startup:
+  Win + R → shell:startup → Delete the VBS file
+
+═══════════════════════════════════════════════════════════════════
+  FILE LOCATIONS NEEDED
+═══════════════════════════════════════════════════════════════════
+
+Source File:
+  📁 student-kiosk/desktop-app/START_KIOSK_SILENT.vbs
+
+Destination (Current User):
+  📁 C:\Users\[USERNAME]\AppData\Roaming\Microsoft\
+     Windows\Start Menu\Programs\Startup\
+
+Destination (All Users):
+  📁 C:\ProgramData\Microsoft\Windows\
+     Start Menu\Programs\Startup\
+
+═══════════════════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════
+
+❌ Problem: Kiosk doesn't start automatically
+  → Solution 1: Check if VBS file is in Startup folder
+  → Solution 2: Double-click VBS file manually to test
+  → Solution 3: Check Task Manager → Startup tab
+  → Solution 4: Check if kiosk files are in correct location
+
+❌ Problem: Command window still visible
+  → Solution: You're using a .BAT file, not .VBS
+  → Fix: Use START_KIOSK_SILENT.vbs instead
+
+❌ Problem: "File is blocked" warning
+  → Solution: Right-click VBS → Properties → Unblock → OK
+
+❌ Problem: Need admin rights for shutdown
+  → Solution: See AUTO_START_SETUP_GUIDE.md
+  → Use "Scheduled Task" method (Task Scheduler)
+
+❌ Problem: VBS file doesn't work
+  → Solution 1: Make sure it's in the right folder
+  → Solution 2: Check if kiosk EXE or npm is available
+  → Solution 3: Edit VBS and check file paths
+
+═══════════════════════════════════════════════════════════════════
+  VERIFICATION CHECKLIST
+═══════════════════════════════════════════════════════════════════
+
+After setup, verify all these:
+  ✅ VBS file is in Startup folder
+  ✅ Restart computer
+  ✅ Kiosk appears automatically
+  ✅ NO command prompt window visible
+  ✅ Kiosk login screen shows
+  ✅ System number is correct
+  ✅ Can login and use normally
+
+═══════════════════════════════════════════════════════════════════
+  SUMMARY
+═══════════════════════════════════════════════════════════════════
+
+What to do:
+  1. Copy START_KIOSK_SILENT.vbs to Startup folder
+  2. Restart computer
+  3. Done!
+
+Key benefit:
+  ✅ Kiosk starts automatically when Windows logs in
+  ✅ Completely silent (no visible windows)
+  ✅ Works for both development (npm) and production (EXE)
+
+Command to open Startup folder:
+  Win + R → shell:startup → Enter
+
+File location:
+  student-kiosk/desktop-app/START_KIOSK_SILENT.vbs
+
+═══════════════════════════════════════════════════════════════════

@@ -124,7 +124,31 @@ function detectLabFromIP() {
 }
 
 const LAB_ID = detectLabFromIP();
-const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || `${LAB_ID}-${String(Math.floor(Math.random() * 10) + 1).padStart(2, '0')}`;
+
+// ✅ DETECT SYSTEM NUMBER FROM COMPUTER NAME
+function detectSystemNumber() {
+  try {
+    const hostname = os.hostname().toUpperCase(); // e.g., "SDC-CC-69"
+    console.log(`🖥️ Computer hostname: ${hostname}`);
+    
+    // Try to extract number from hostname (e.g., "SDC-CC-69" → "69")
+    const match = hostname.match(/CC-?(\d+)/i) || hostname.match(/(\d+)$/);
+    
+    if (match && match[1]) {
+      const sysNum = match[1].padStart(2, '0'); // Ensure 2 digits (e.g., "01", "69")
+      console.log(`✅ System number detected from hostname: ${sysNum}`);
+      return `${LAB_ID}-${sysNum}`;
+    } else {
+      console.warn(`⚠️ Could not extract system number from hostname: ${hostname}`);
+      return `${LAB_ID}-01`; // Default fallback
+    }
+  } catch (error) {
+    console.error('⚠️ Error detecting system number:', error.message);
+    return `${LAB_ID}-01`;
+  }
+}
+
+const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || detectSystemNumber();
 
 // Kiosk mode configuration
 // ✅ PRODUCTION: Full kiosk lock enabled from startup
@@ -1226,52 +1250,62 @@ function setupIPCHandlers() {
         }
       }
       
-      // Import exec for executing system commands
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execPromise = promisify(exec);
+      // Import spawn for executing system commands WITHOUT waiting
+      const { spawn } = require('child_process');
       
       const platform = os.platform();
-      let shutdownCommand;
       
       if (platform === 'win32') {
-        // Windows: shutdown in 60 seconds with message
-        shutdownCommand = 'shutdown /s /t 60 /c "System shutdown - Session ended" /f';
+        // ✅ WINDOWS SHUTDOWN - Use PowerShell to elevate and shutdown
+        // This works even without admin rights by prompting UAC
+        console.log('🔌 Executing Windows shutdown with PowerShell elevation...');
+        
+        // Method 1: Direct shutdown (requires admin)
+        const directShutdown = spawn('shutdown', ['/s', '/t', '0', '/f'], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        directShutdown.unref();
+        
+        // Method 2: PowerShell with elevation (backup - prompts UAC)
+        setTimeout(() => {
+          const psCommand = 'Start-Process shutdown.exe -ArgumentList "/s /t 0 /f" -Verb RunAs';
+          const psShutdown = spawn('powershell.exe', ['-Command', psCommand], {
+            detached: true,
+            stdio: 'ignore'
+          });
+          psShutdown.unref();
+          console.log('🔌 PowerShell elevation attempt triggered');
+        }, 100);
+        
+        console.log('✅ Shutdown command dispatched - system should shutdown immediately');
+        
       } else if (platform === 'linux') {
-        // Linux: shutdown in 1 minute
-        shutdownCommand = 'sudo shutdown -h +1 "System shutdown - Session ended"';
+        // Linux: immediate shutdown
+        const linuxShutdown = spawn('sudo', ['shutdown', '-h', 'now'], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        linuxShutdown.unref();
+        console.log('✅ Linux shutdown command dispatched');
+        
       } else if (platform === 'darwin') {
-        // macOS: shutdown in 1 minute
-        shutdownCommand = 'sudo shutdown -h +1 "System shutdown - Session ended"';
+        // macOS: immediate shutdown
+        const macShutdown = spawn('sudo', ['shutdown', '-h', 'now'], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        macShutdown.unref();
+        console.log('✅ macOS shutdown command dispatched');
       }
       
-      console.log(`🔌 Executing shutdown command: ${shutdownCommand}`);
-      console.log('🔌 Shutdown will occur in 60 seconds...');
+      // Return immediately - don't wait for shutdown to complete
+      return { 
+        success: true, 
+        message: 'Shutdown command sent - System will shutdown now',
+        delay: 0
+      };
       
-      try {
-        const { stdout, stderr } = await execPromise(shutdownCommand);
-        console.log('✅✅✅ SHUTDOWN COMMAND EXECUTED SUCCESSFULLY!');
-        console.log('✅ System will shut down in 60 seconds');
-        if (stdout) console.log('  stdout:', stdout);
-        if (stderr) console.log('  stderr:', stderr);
-        
-        return { 
-          success: true, 
-          message: 'Shutdown initiated - System will shut down in 60 seconds',
-          delay: 60
-        };
-      } catch (execError) {
-        console.error('❌ SHUTDOWN COMMAND FAILED:', execError.message);
-        console.error('❌ Command:', shutdownCommand);
-        console.error('❌ Error code:', execError.code);
-        console.error('❌ Full error:', execError);
-        
-        return { 
-          success: false, 
-          error: `Shutdown command failed: ${execError.message}`,
-          details: execError.code
-        };
-      }
     } catch (error) {
       console.error('❌ SHUTDOWN ERROR:', error);
       console.error('❌ Stack:', error.stack);

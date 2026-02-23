@@ -3680,6 +3680,36 @@ io.on('connection', (socket) => {
     });
     console.log('📡 Notified admins: Kiosk screen ready for session:', sessionId);
   });
+  
+  // Handle system heartbeat via Socket.IO (real-time socketId updates)
+  socket.on('system-heartbeat', async ({ systemNumber, labId, ipAddress, timestamp, status }) => {
+    try {
+      if (!systemNumber || !labId) {
+        console.warn('⚠️ Invalid heartbeat: missing systemNumber or labId');
+        return;
+      }
+      
+      // Update registry with current socket ID
+      await SystemRegistry.findOneAndUpdate(
+        { systemNumber, labId },
+        {
+          systemNumber,
+          labId,
+          ipAddress: ipAddress || socket.handshake.address,
+          socketId: socket.id, // Update with current socket ID
+          lastSeen: new Date(),
+          status: status || 'available'
+        },
+        { upsert: true, new: true }
+      );
+      
+      // Also track in kioskSystemSockets for quick lookup
+      kioskSystemSockets.set(systemNumber, socket.id);
+      
+    } catch (error) {
+      console.error('❌ Socket heartbeat error:', error);
+    }
+  });
 
   socket.on('admin-offer', ({ offer, sessionId, adminSocketId, systemNumber }) => {
     // Try to find kiosk by sessionId first (after login)
@@ -5132,6 +5162,186 @@ app.get('/api/manual-reports/:filename', async (req, res) => {
 
 // =============================================================================
 // END AUTOMATIC REPORT SCHEDULING SYSTEM
+// =============================================================================
+
+// =============================================================================
+// 🖥️ PRE-LOGIN SYSTEM TRACKING & SELECTIVE SHUTDOWN
+// Allows admin to see and shutdown systems BEFORE student login
+// =============================================================================
+
+// System heartbeat - Registers/updates kiosk even before login
+app.post('/api/system-heartbeat', async (req, res) => {
+  try {
+    const { systemNumber, labId, ipAddress, timestamp, status } = req.body;
+    
+    if (!systemNumber || !labId) {
+      return res.status(400).json({ success: false, error: 'Missing systemNumber or labId' });
+    }
+    
+    // Get client IP if not provided
+    const clientIP = ipAddress || req.ip || req.connection.remoteAddress;
+    
+    // Update or create system registry entry
+    await SystemRegistry.findOneAndUpdate(
+      { systemNumber, labId },
+      {
+        systemNumber,
+        labId,
+        ipAddress: clientIP,
+        lastSeen: new Date(),
+        status: status || 'available', // 'available' = powered on but no login
+        $setOnInsert: { 
+          createdAt: new Date()
+        }
+      },
+      { upsert: true, new: true }
+    );
+    
+    console.log(`💓 Heartbeat: System ${systemNumber} | Lab: ${labId} | IP: ${clientIP} | Status: ${status || 'available'}`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ System heartbeat error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all lab systems (including pre-login systems)
+app.get('/api/lab-systems/:labId', async (req, res) => {
+  try {
+    const { labId } = req.params;
+    
+    if (!isValidLabId(labId)) {
+      return res.status(400).json({ success: false, error: 'Invalid lab ID' });
+    }
+    
+    // ✅ SHOW ONLY ONLINE SYSTEMS (kiosk login screen or logged-in students)
+    const systems = await SystemRegistry.find({ 
+      labId
+    })
+      .sort({ systemNumber: 1 })
+      .lean();
+    
+    const now = new Date();
+    
+    // Filter to ONLY show systems that are online (heartbeat within 60 seconds)
+    const systemsWithStatus = systems
+      .map(system => {
+        const secondsSinceLastSeen = (now - new Date(system.lastSeen)) / 1000;
+        const isOnline = secondsSinceLastSeen < 60; // Online if seen within last 60 seconds
+        
+        return {
+          ...system,
+          isOnline,
+          lastSeenAgo: Math.floor(secondsSinceLastSeen),
+          status: isOnline ? system.status : 'offline'
+        };
+      })
+      .filter(s => s.isOnline); // ✅ ONLY show online systems
+    
+    // Calculate stats (only for online systems)
+    const stats = {
+      total: systemsWithStatus.length,
+      online: systemsWithStatus.length, // All returned systems are online
+      offline: 0, // Not showing offline systems
+      loggedIn: systemsWithStatus.filter(s => s.status === 'logged-in').length,
+      available: systemsWithStatus.filter(s => s.status === 'available').length,
+      guest: systemsWithStatus.filter(s => s.status === 'guest').length
+    };
+    
+    console.log(`📊 Lab ${labId} online systems: ${stats.online} total, ${stats.loggedIn} logged-in, ${stats.available} at login screen, ${stats.guest} guest`);
+    
+    res.json({ success: true, systems: systemsWithStatus, stats });
+  } catch (error) {
+    console.error('❌ Get lab systems error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Shutdown selected systems (works for pre-login AND logged-in systems)
+app.post('/api/shutdown-systems', async (req, res) => {
+  try {
+    const { systemNumbers, labId } = req.body;
+    
+    if (!Array.isArray(systemNumbers) || systemNumbers.length === 0) {
+      return res.status(400).json({ success: false, error: 'No systems selected' });
+    }
+    
+    if (!labId) {
+      return res.status(400).json({ success: false, error: 'Lab ID required' });
+    }
+    
+    console.log(`\n============================================================`);
+    console.log(`🔌 SELECTIVE SHUTDOWN REQUEST`);
+    console.log(`   Lab ID: ${labId}`);
+    console.log(`   Systems: ${systemNumbers.join(', ')}`);
+    console.log(`   Total: ${systemNumbers.length} systems`);
+    console.log(`============================================================\n`);
+    
+    // Find systems by systemNumber and labId
+    const systems = await SystemRegistry.find({
+      systemNumber: { $in: systemNumbers.map(String) },
+      labId
+    }).lean();
+    
+    let shutdownCount = 0;
+    let offlineCount = 0;
+    
+    const now = new Date();
+    
+    for (const system of systems) {
+      const secondsSinceLastSeen = (now - new Date(system.lastSeen)) / 1000;
+      const isOnline = secondsSinceLastSeen < 60;
+      
+      if (isOnline && system.socketId) {
+        // Send shutdown command via Socket.IO
+        io.to(system.socketId).emit('force-shutdown-system', {
+          systemNumber: system.systemNumber,
+          labId: system.labId,
+          timestamp: new Date().toISOString(),
+          admin: 'Lab Administrator'
+        });
+        
+        console.log(`✅ Shutdown signal sent to System ${system.systemNumber} (Socket: ${system.socketId})`);
+        shutdownCount++;
+      } else {
+        console.log(`⚠️ System ${system.systemNumber} is offline (last seen ${Math.floor(secondsSinceLastSeen)}s ago)`);
+        offlineCount++;
+      }
+    }
+    
+    // Broadcast shutdown event to all admins
+    io.to('admins').emit('systems-shutdown-initiated', {
+      labId,
+      systemNumbers,
+      shutdownCount,
+      offlineCount,
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log(`\n============================================================`);
+    console.log(`📊 SHUTDOWN SUMMARY`);
+    console.log(`   Requested: ${systemNumbers.length} systems`);
+    console.log(`   Sent: ${shutdownCount} shutdown commands`);
+    console.log(`   Offline: ${offlineCount} systems`);
+    console.log(`============================================================\n`);
+    
+    res.json({
+      success: true,
+      shutdownCount,
+      offlineCount,
+      totalRequested: systemNumbers.length,
+      message: `Shutdown command sent to ${shutdownCount} systems${offlineCount > 0 ? ` (${offlineCount} offline)` : ''}`
+    });
+    
+  } catch (error) {
+    console.error('❌ Shutdown systems error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// END PRE-LOGIN SYSTEM TRACKING & SELECTIVE SHUTDOWN
 // =============================================================================
 
 // =============================================================================

@@ -1193,14 +1193,17 @@ function setupIPCHandlers() {
         }).catch(err => console.error('❌ Logout error during shutdown:', err));
       }
       
-      // Import exec for executing system commands
+      // Import exec for executing system commands - use promisify to wait for result
       const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
       const platform = os.platform();
       let shutdownCommand;
       
       if (platform === 'win32') {
-        // Windows: shutdown in 90 seconds (1 minute 30 seconds) with message
-        shutdownCommand = 'shutdown /s /t 90 /c "System shutdown initiated by administrator"';
+        // Windows: shutdown in 5 seconds with message
+        shutdownCommand = 'shutdown /s /t 5 /c "System shutdown initiated by administrator"';
       } else if (platform === 'linux') {
         // Linux: shutdown in 1 minute
         shutdownCommand = 'sudo shutdown -h +1 "System shutdown initiated by administrator"';
@@ -1208,19 +1211,26 @@ function setupIPCHandlers() {
         // macOS: shutdown in 1 minute
         shutdownCommand = 'sudo shutdown -h +1 "System shutdown initiated by administrator"';
       }
-        console.log(`🔌 Executing shutdown command (90-second delay): ${shutdownCommand}`);
       
-      exec(shutdownCommand, (error, stdout, stderr) => {
-        if (error) {
-          console.error('❌ Shutdown command error:', error);
-        } else {
-          console.log('✅ Shutdown command executed successfully (90-second delay)');
-          console.log('stdout:', stdout);
-          if (stderr) console.log('stderr:', stderr);
-        }
-      });
+      console.log(`🔌 Executing shutdown command: ${shutdownCommand}`);
       
-      return { success: true, message: 'Shutdown initiated' };
+      // WAIT for exec to complete and check if it succeeded
+      try {
+        const { stdout, stderr } = await execAsync(shutdownCommand);
+        console.log('✅ Shutdown command executed successfully!');
+        if (stdout) console.log('stdout:', stdout);
+        if (stderr) console.log('stderr:', stderr);
+        return { success: true, message: 'Shutdown initiated - system will power off in 5 seconds' };
+      } catch (execError) {
+        console.error('❌ Shutdown command FAILED:', execError.message);
+        console.error('   Error code:', execError.code);
+        console.error('   This usually means insufficient permissions (needs admin rights)');
+        return { 
+          success: false, 
+          error: `Permission denied - needs administrator privileges. Error: ${execError.message}`,
+          code: execError.code
+        };
+      }
     } catch (error) {
       console.error('❌ Shutdown error:', error);
       return { success: false, error: error.message };
@@ -1252,27 +1262,37 @@ function setupIPCHandlers() {
         }
       }
       
-      // Import exec for executing system commands
+      // Import exec for executing system commands - use promisify to wait for result
       const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
       
-      // Windows immediate shutdown command (0 second delay)
-      const shutdownCommand = 'shutdown /s /f /t 0';
+      // Windows immediate shutdown command (5 second delay for safety)
+      const shutdownCommand = 'shutdown /s /f /t 5';
       
-      console.log('⚡ Executing IMMEDIATE Windows shutdown...');
-      console.log('   Command: shutdown /s /f /t 0');
+      console.log('⚡ Executing Windows shutdown...');
+      console.log('   Command: shutdown /s /f /t 5');
       console.log('   /s = Shutdown');
       console.log('   /f = Force close applications');
-      console.log('   /t 0 = 0 second delay (immediate)');
+      console.log('   /t 5 = 5 second delay');
       
-      exec(shutdownCommand, (error, stdout, stderr) => {
-        if (error) {
-          console.error('❌ Shutdown error:', error);
-        } else {
-          console.log('✅ Shutdown command executed - system powering off NOW');
-        }
-      });
-      
-      return { success: true, message: 'System shutting down immediately' };
+      // WAIT for exec to complete and check if it succeeded
+      try {
+        const { stdout, stderr } = await execAsync(shutdownCommand);
+        console.log('✅ Shutdown command executed successfully - system powering off in 5 seconds');
+        if (stdout) console.log('stdout:', stdout);
+        if (stderr) console.log('stderr:', stderr);
+        return { success: true, message: 'System shutting down in 5 seconds' };
+      } catch (execError) {
+        console.error('❌ Shutdown command FAILED:', execError.message);
+        console.error('   Error code:', execError.code);
+        console.error('   This usually means insufficient permissions (needs admin rights)');
+        return { 
+          success: false, 
+          error: `Permission denied - needs administrator privileges. Error: ${execError.message}`,
+          code: execError.code
+        };
+      }
     } catch (error) {
       console.error('❌ Force shutdown error:', error);
       return { success: false, error: error.message };
