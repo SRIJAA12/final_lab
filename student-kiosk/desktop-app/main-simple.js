@@ -156,6 +156,128 @@ const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || detectSystemNumber();
 const KIOSK_MODE = true; // ✅ ENABLED: Full kiosk lockdown - all shortcuts blocked
 let isKioskLocked = true; // ✅ LOCKED: Complete lockdown until student logs in
 
+// 🔒 TASKBAR LOCKDOWN: Hide/show the Windows taskbar programmatically
+// This prevents students from accessing Start menu, taskbar apps, system tray, etc.
+// Uses a SINGLE persistent hidden PowerShell process that stays alive.
+// Commands are sent via stdin pipe — NO new processes are ever spawned,
+// so NO CMD/PowerShell windows will ever flash on screen.
+
+let _taskbarPsProc = null; // The single persistent PowerShell process
+let _taskbarPsReady = false; // Whether the Add-Type has been loaded
+
+function _ensureTaskbarProcess() {
+  if (_taskbarPsProc && !_taskbarPsProc.killed) return; // Already running
+  if (process.platform !== 'win32') return;
+
+  const { spawn } = require('child_process');
+  _taskbarPsReady = false;
+
+  // Start ONE hidden PowerShell that reads commands from stdin forever
+  _taskbarPsProc = spawn('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden',
+    '-ExecutionPolicy', 'Bypass', '-Command', '-'   // Read from stdin
+  ], {
+    windowsHide: true,
+    stdio: ['pipe', 'ignore', 'ignore'],  // stdin=pipe, stdout/stderr=ignore
+    shell: false
+  });
+
+  _taskbarPsProc.on('error', (err) => {
+    console.error('⚠️ Taskbar PowerShell process error:', err.message);
+    _taskbarPsProc = null;
+    _taskbarPsReady = false;
+  });
+  _taskbarPsProc.on('exit', () => {
+    console.log('⚠️ Taskbar PowerShell process exited');
+    _taskbarPsProc = null;
+    _taskbarPsReady = false;
+  });
+
+  // Load the C# helper class once via stdin
+  const addTypeCmd = [
+    'Add-Type -TypeDefinition @"',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public class KioskTaskbar {',
+    '  [DllImport("user32.dll")] public static extern int FindWindow(string className, string windowText);',
+    '  [DllImport("user32.dll")] public static extern int ShowWindow(int hwnd, int command);',
+    '  [DllImport("user32.dll")] public static extern int FindWindowEx(int parentHandle, int childAfter, string className, string windowTitle);',
+    '  public static void Hide() {',
+    '    int hwnd = FindWindow("Shell_TrayWnd", ""); ShowWindow(hwnd, 0);',
+    '    int s = FindWindow("Button", "Start"); if(s!=0) ShowWindow(s, 0);',
+    '    int s2 = FindWindowEx(0,0,"Shell_SecondaryTrayWnd",""); if(s2!=0) ShowWindow(s2, 0);',
+    '  }',
+    '  public static void Show() {',
+    '    int hwnd = FindWindow("Shell_TrayWnd", ""); ShowWindow(hwnd, 5);',
+    '    int s = FindWindow("Button", "Start"); if(s!=0) ShowWindow(s, 5);',
+    '    int s2 = FindWindowEx(0,0,"Shell_SecondaryTrayWnd",""); if(s2!=0) ShowWindow(s2, 5);',
+    '  }',
+    '}',
+    '"@ -ErrorAction SilentlyContinue',
+    '' // empty line to flush
+  ].join('\r\n');
+
+  _taskbarPsProc.stdin.write(addTypeCmd + '\r\n');
+  _taskbarPsReady = true;
+  console.log('✅ Persistent hidden PowerShell process started for taskbar control');
+}
+
+function _sendTaskbarCommand(cmd) {
+  if (process.platform !== 'win32') return;
+  try {
+    _ensureTaskbarProcess();
+    if (_taskbarPsProc && !_taskbarPsProc.killed && _taskbarPsReady) {
+      _taskbarPsProc.stdin.write(cmd + '\r\n');
+    }
+  } catch (error) {
+    console.error('⚠️ Error sending taskbar command:', error.message);
+  }
+}
+
+function hideWindowsTaskbar() {
+  _sendTaskbarCommand('[KioskTaskbar]::Hide()');
+  console.log('🔒 Windows taskbar HIDDEN');
+}
+
+function showWindowsTaskbar() {
+  _sendTaskbarCommand('[KioskTaskbar]::Show()');
+  console.log('🔓 Windows taskbar RESTORED');
+}
+
+function killTaskbarProcess() {
+  if (_taskbarPsProc && !_taskbarPsProc.killed) {
+    try { _taskbarPsProc.stdin.end(); } catch (e) { /* ignore */ }
+    try { _taskbarPsProc.kill(); } catch (e) { /* ignore */ }
+    _taskbarPsProc = null;
+    _taskbarPsReady = false;
+  }
+}
+
+// Periodically enforce taskbar hiding while kiosk is locked
+let taskbarEnforcerInterval = null;
+
+function startTaskbarEnforcer() {
+  if (taskbarEnforcerInterval) clearInterval(taskbarEnforcerInterval);
+  hideWindowsTaskbar();
+  taskbarEnforcerInterval = setInterval(() => {
+    if (isKioskLocked) {
+      hideWindowsTaskbar();
+    } else {
+      stopTaskbarEnforcer();
+    }
+  }, 2000); // Re-hide every 2 seconds in case Windows restores it
+  console.log('🔒 Taskbar enforcer started - taskbar will stay hidden until login');
+}
+
+function stopTaskbarEnforcer() {
+  if (taskbarEnforcerInterval) {
+    clearInterval(taskbarEnforcerInterval);
+    taskbarEnforcerInterval = null;
+  }
+  showWindowsTaskbar();
+  console.log('🔓 Taskbar enforcer stopped - taskbar restored');
+}
+
 function createWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
@@ -739,15 +861,16 @@ async function handleLogoutProcess() {
     console.log('🔒 System fully locked after logout - kiosk mode active');
     
     // � LOGOUT BEHAVIOR: Return to kiosk login (no automatic shutdown)
-    console.log('🔄 Returning to kiosk login screen...');
-
-    // Re-enable kiosk shortcut blocking so the machine is locked again
+    console.log('🔄 Returning to kiosk login screen...');    // Re-enable kiosk shortcut blocking so the machine is locked again
     try {
       blockKioskShortcuts();
       console.log('🔒 Kiosk shortcuts re-registered after logout');
     } catch (e) {
       console.error('⚠️ Error re-registering kiosk shortcuts:', e.message || e);
     }
+
+    // 🔒 Re-hide the Windows taskbar after logout
+    startTaskbarEnforcer();
     
     console.log('✅ Ready for next student login');
 
@@ -859,11 +982,12 @@ function setupIPCHandlers() {
         return { success: false, error: sessionData.error || 'Session creation failed' };
       }
 
-      console.log('✅ Session created:', sessionData.sessionId);
-
-      currentSession = { id: sessionData.sessionId, student: authData.student };
+      console.log('✅ Session created:', sessionData.sessionId);      currentSession = { id: sessionData.sessionId, student: authData.student };
       sessionActive = true;
       isKioskLocked = false; // Unlock the system
+
+      // 🔓 Restore Windows taskbar so student can use the system normally
+      stopTaskbarEnforcer();
 
       // After login, minimize the kiosk window so student can work normally
       mainWindow.setClosable(false);
@@ -1066,11 +1190,12 @@ function setupIPCHandlers() {
         return { success: false, error: sessionData.error || 'Guest session creation failed' };
       }
 
-      console.log('✅ Guest session created:', sessionData.sessionId);
-
-      currentSession = { id: sessionData.sessionId, student: authData.student, isGuest: true };
+      console.log('✅ Guest session created:', sessionData.sessionId);      currentSession = { id: sessionData.sessionId, student: authData.student, isGuest: true };
       sessionActive = true;
       isKioskLocked = false; // Unlock the system
+
+      // 🔓 Restore Windows taskbar so guest can use the system normally
+      stopTaskbarEnforcer();
 
       // After guest login, allow normal window behavior
       mainWindow.setClosable(false);
@@ -1159,15 +1284,16 @@ function setupIPCHandlers() {
         return { success: false, error: sessionData.error || 'Session creation failed' };
       }
 
-      console.log('✅ Guest session created:', sessionData.sessionId);
-
-      currentSession = { 
+      console.log('✅ Guest session created:', sessionData.sessionId);      currentSession = { 
         id: sessionData.sessionId, 
         student: { name: 'Guest User', studentId: 'GUEST' },
         isGuest: true
       };
       sessionActive = true;
       isKioskLocked = false;
+
+      // 🔓 Restore Windows taskbar so guest can use the system normally
+      stopTaskbarEnforcer();
 
       // Unlock system for guest
       mainWindow.setClosable(false);
@@ -1329,10 +1455,12 @@ try {
 app.whenReady().then(() => {
   setupAutoStart();  // ✅ Setup auto-start for production
   setupIPCHandlers();
-  
-  if (KIOSK_MODE) {
+    if (KIOSK_MODE) {
     console.log('🔒 KIOSK MODE ENABLED - Full system lockdown');
     console.log('🔒 Initializing secure environment...');
+    
+    // 🔒 Hide Windows taskbar IMMEDIATELY before anything else
+    startTaskbarEnforcer();
     
     // Block shortcuts BEFORE creating window to ensure immediate lockdown
     blockKioskShortcuts();
@@ -1344,6 +1472,7 @@ app.whenReady().then(() => {
     console.log('🔒 Kiosk initialized - system fully locked');
     console.log('🔒 Window shown INSTANTLY - no gap for Windows access');
     console.log('🔒 Fullscreen window covers taskbar completely');
+    console.log('🔒 Windows taskbar HIDDEN - no Start menu access');
   } else {
     console.log('✅ TESTING MODE - Shortcuts enabled, DevTools available');
     createWindow();
@@ -1368,6 +1497,12 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // 🔓 CRITICAL: Always restore the Windows taskbar when the app quits
+  // so the system isn't left in a broken state
+  if (taskbarEnforcerInterval) clearInterval(taskbarEnforcerInterval);
+  showWindowsTaskbar();
+  // Give the show command a moment to execute, then kill the process
+  setTimeout(() => { killTaskbarProcess(); }, 500);
 });
 
 // Block keyboard shortcuts to prevent DevTools and window switching
@@ -1500,6 +1635,12 @@ async function performLogout() {
 }
 
 function gracefulLogout() {
+  // Always restore taskbar before quitting
+  if (taskbarEnforcerInterval) clearInterval(taskbarEnforcerInterval);
+  showWindowsTaskbar();
+  // Give the show command a moment, then kill the helper process
+  setTimeout(() => { killTaskbarProcess(); }, 500);
+  
   if (sessionActive && currentSession) {
     performLogout().finally(() => {
       app.quit();
