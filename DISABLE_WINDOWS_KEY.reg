@@ -1,0 +1,26 @@
+Windows Registry Editor Version 5.00
+
+; ================================================================
+; DISABLE WINDOWS KEY FOR KIOSK MODE
+; ================================================================
+; This registry modification disables the Windows key system-wide
+; Prevents students from opening Start menu in kiosk mode
+; ================================================================
+
+; Disable Windows Key (Left Windows Key)
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Keyboard Layout]
+"Scancode Map"=hex:00,00,00,00,00,00,00,00,03,00,00,00,00,00,5b,e0,00,00,5c,e0,00,00,00,00
+
+; ================================================================
+; WHAT THIS DOES:
+; - Remaps Left Windows key to nothing (disabled)
+; - Remaps Right Windows key to nothing (disabled)
+; - Takes effect after system restart
+; ================================================================
+
+; TO APPLY:
+; 1. Double-click this file
+; 2. Click "Yes" when asked for permission
+; 3. Restart the computer
+; 4. Windows key will be completely disabled
+; ================================================================

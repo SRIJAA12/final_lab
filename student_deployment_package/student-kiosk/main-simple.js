@@ -332,16 +332,20 @@ function createWindow() {
       mainWindow.moveTop();
       
       // 🔒 HARD BLOCK ESCAPE AT OS LEVEL (PREVENT TASKBAR FLASH)
+      // This is a SECOND registration attempt in case the first one in blockKioskShortcuts() failed
       try {
-        const ok = globalShortcut.register('Escape', () => {
-          if (isKioskLocked) {
-            // swallow Escape completely
-            return;
+        if (!globalShortcut.isRegistered('Escape')) {
+          const ok = globalShortcut.register('Escape', () => {
+            if (isKioskLocked) {
+              console.log('🚫 BLOCKED Escape at OS level (ready-to-show)');
+              return;
+            }
+          });
+          if (ok) {
+            console.log('✅ OS-level Escape blocked (ready-to-show)');
           }
-        });
-
-        if (ok) {
-          console.log('✅ OS-level Escape blocked');
+        } else {
+          console.log('✅ Escape already registered from blockKioskShortcuts()');
         }
       } catch (e) {
         console.error('❌ Failed to register Escape:', e);
@@ -1429,8 +1433,8 @@ function blockKioskShortcuts() {
     'Alt+Tab',                    // 🔒 Block Alt+Tab (main requirement)
     'Alt+Shift+Tab',             // 🔒 Block reverse Alt+Tab
     'CommandOrControl+Tab',
-    'F11'
-    // NOTE: 'Escape' is registered separately in ready-to-show for OS-level blocking
+    'F11',
+    'Escape'                      // 🔒 CRITICAL: Block Escape here too (double blocking)
   ];
   
   // Block system shortcuts
@@ -1496,21 +1500,30 @@ function blockKioskShortcuts() {
   
   allShortcuts.forEach(shortcut => {
     try {
-      globalShortcut.register(shortcut, () => {
-        console.log(`🚫 Blocked shortcut: ${shortcut}`);
-        // Force focus back to main window
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.focus();
-          mainWindow.setAlwaysOnTop(true);
+      const registered = globalShortcut.register(shortcut, () => {
+        if (isKioskLocked) {
+          console.log(`🚫 BLOCKED shortcut: ${shortcut}`);
+          // Force focus back to main window
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.focus();
+            mainWindow.setAlwaysOnTop(true, 'screen-saver');
+          }
+          return false;
         }
       });
+      
+      if (registered) {
+        console.log(`✅ Registered: ${shortcut}`);
+      } else {
+        console.log(`⚠️ Failed to register: ${shortcut}`);
+      }
     } catch (error) {
-      console.log(`⚠️ Could not register shortcut: ${shortcut}`);
+      console.log(`❌ Error registering ${shortcut}:`, error.message);
     }
   });
   
   console.log('🔒 FULL KIOSK MODE - All keyboard shortcuts blocked');
-  console.log(`🚫 Blocked ${allShortcuts.length} shortcuts including Alt+Tab`);
+  console.log(`🚫 Attempted to block ${allShortcuts.length} shortcuts including Escape and Windows key`);
 }
 
 // Helper function for logout
@@ -1564,3 +1577,4 @@ app.on('before-quit', (e) => {
     gracefulLogout();
   }
 });
+smlsmlmslm

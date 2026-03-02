@@ -1,0 +1,159 @@
+═══════════════════════════════════════════════════════════════
+  🔒 QUICK FIX - COPY THIS ONE FILE VIA ANYDESK 🔒
+═══════════════════════════════════════════════════════════════
+
+PROBLEM: Escape key lets students see taskbar
+
+SOLUTION: Copy 1 file via AnyDesk
+
+═══════════════════════════════════════════════════════════════
+
+STEP 1: ON YOUR LAPTOP (where code is)
+───────────────────────────────────────────────────────────
+
+📂 Open this folder:
+   d:\SDC_Lab_monitoing_system\student-kiosk\desktop-app\
+
+📄 Find this file:
+   main-simple.js
+
+✅ Copy it (Ctrl+C)
+
+═══════════════════════════════════════════════════════════════
+
+STEP 2: ON STUDENT SYSTEM (via AnyDesk)
+───────────────────────────────────────────────────────────
+
+1. 🔴 First, CLOSE the kiosk if running
+   - Press Alt+F4 (if you have access)
+   - OR: Open Task Manager → End "College Lab Kiosk"
+   - OR: Just restart the computer
+
+2. 📂 Navigate to:
+   C:\StudentKiosk\
+   
+3. 📄 Find the old file:
+   main-simple.js
+
+4. ✅ PASTE the new file (replace the old one)
+   - Right-click → Paste
+   - Choose "Replace" when asked
+
+5. 🚀 Restart the kiosk:
+   - Double-click: LAUNCH_KIOSK.bat
+   - OR: Restart Windows
+
+═══════════════════════════════════════════════════════════════
+
+STEP 3: TEST IT
+───────────────────────────────────────────────────────────
+
+✅ Test Escape Key:
+   - Wait for kiosk login screen
+   - Press Escape key 10 times rapidly
+   - ❌ Taskbar should NOT appear
+   - ✅ Kiosk stays locked
+
+✅ Test F12:
+   - Press F12
+   - ❌ DevTools should NOT open
+
+✅ Test Alt+Tab:
+   - Press Alt+Tab
+   - ❌ Cannot switch apps
+
+✅ Test Login:
+   - Login with student credentials
+   - ✅ Should work normally
+
+✅ Test After Login:
+   - Press Escape in browser
+   - ✅ Should work normally (not blocked)
+
+✅ Test Logout:
+   - Click Logout button
+   - Press Escape again
+   - ❌ Should be blocked again
+
+═══════════════════════════════════════════════════════════════
+
+REPEAT FOR EACH STUDENT SYSTEM:
+───────────────────────────────────────────────────────────
+
+For Lab with 69 systems:
+1. Connect to System 1 via AnyDesk
+2. Follow Steps 1-3 above
+3. Disconnect
+4. Connect to System 2 via AnyDesk
+5. Repeat...
+
+TIP: You can use copy-paste between systems via AnyDesk's
+     clipboard feature for faster deployment!
+
+═══════════════════════════════════════════════════════════════
+
+🔥 MAXIMUM SECURITY (OPTIONAL):
+───────────────────────────────────────────────────────────
+
+If you want the kiosk to launch IMMEDIATELY when Windows starts
+(before desktop, before taskbar):
+
+1. After deploying main-simple.js
+2. On student system, run as Administrator:
+   C:\StudentKiosk\INSTALL_SHELL_REPLACEMENT.bat
+3. Restart the system
+4. ✅ Kiosk will be the FIRST thing to appear
+5. ❌ NO Windows desktop access at all
+
+⚠️ WARNING: This replaces Windows Explorer!
+   To restore: Boot Safe Mode → Run RESTORE_EXPLORER_SHELL.bat
+
+═══════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING:
+───────────────────────────────────────────────────────────
+
+❌ Issue: "Can't find main-simple.js on student system"
+✅ Fix: Install kiosk first using the deployment package
+
+❌ Issue: "Escape still works after copying file"
+✅ Fix: Make sure you RESTARTED the kiosk after copying
+
+❌ Issue: "Kiosk won't start after copying"
+✅ Fix: Check if file was corrupted during copy
+        - Copy again via AnyDesk
+        - OR use FTP/USB drive
+
+❌ Issue: "Too many systems to update manually"
+✅ Fix: Use PowerShell script to auto-deploy:
+        - Create network share with new file
+        - Run script on all systems via AD Group Policy
+
+═══════════════════════════════════════════════════════════════
+
+EXPECTED TIME:
+───────────────────────────────────────────────────────────
+
+Per system: 2-3 minutes
+- 30 seconds: Connect via AnyDesk
+- 30 seconds: Close kiosk
+- 30 seconds: Copy & paste file
+- 30 seconds: Restart kiosk
+- 30 seconds: Test Escape key
+
+69 systems × 3 min = ~3.5 hours total
+(Can be faster with practice!)
+
+═══════════════════════════════════════════════════════════════
+
+✅ DONE!
+
+Once all systems are updated:
+- ✅ Escape key completely blocked
+- ✅ F12/DevTools blocked
+- ✅ Alt+Tab blocked
+- ✅ Windows key blocked
+- ✅ Students MUST login with credentials
+- ✅ Complete security lockdown
+
+═══════════════════════════════════════════════════════════════

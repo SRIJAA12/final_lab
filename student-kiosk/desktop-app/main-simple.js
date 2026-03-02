@@ -157,6 +157,22 @@ const KIOSK_MODE = true; // ✅ ENABLED: Full kiosk lockdown - all shortcuts blo
 let isKioskLocked = true; // ✅ LOCKED: Complete lockdown until student logs in
 
 function createWindow() {
+  // 🔒 FORCE KIOSK LOCK FUNCTION (must be declared FIRST, before any usage)
+  function forceKioskLock() {
+    if (!mainWindow || mainWindow.isDestroyed() || !isKioskLocked) return;
+
+    const { width, height } = screen.getPrimaryDisplay().bounds;
+
+    mainWindow.setBounds({ x: 0, y: 0, width, height });
+    mainWindow.setKiosk(true);
+    mainWindow.setFullScreen(true);
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    mainWindow.setSkipTaskbar(true);
+    mainWindow.maximize();
+    mainWindow.focus();
+    mainWindow.moveTop();
+  }
+
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
   const { width: screenWidth, height: screenHeight } = primaryDisplay.bounds;
@@ -304,22 +320,6 @@ function createWindow() {
       }
     });
     
-    // 🔒 FOCUS RESTORATION - Only restore when window actually loses focus
-    // Use single-shot restoration instead of aggressive loops to prevent blinking
-    mainWindow.on('blur', () => {
-      // Only restore focus if kiosk is still locked and window exists
-      if (isKioskLocked && !mainWindow.isDestroyed()) {
-        console.log('⚠️ Kiosk window lost focus, restoring...');
-        // Use setTimeout to avoid rapid-fire focus changes
-        setTimeout(() => {
-          if (isKioskLocked && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
-            mainWindow.focus();
-            mainWindow.setAlwaysOnTop(true, 'screen-saver');
-            console.log('✅ Focus restored');
-          }
-        }, 50);
-      }
-    });
   }
   
   if (KIOSK_MODE) {
@@ -345,19 +345,29 @@ function createWindow() {
       mainWindow.focus();
       mainWindow.moveTop();
       
-      // CRITICAL: Keep enforcing fullscreen to prevent taskbar from appearing
-      setInterval(() => {
-        if (isKioskLocked && !mainWindow.isDestroyed()) {
-          if (!mainWindow.isFullScreen()) {
-            mainWindow.setFullScreen(true);
+      // 🔒 HARD BLOCK ESCAPE AT OS LEVEL (PREVENT TASKBAR FLASH)
+      try {
+        const ok = globalShortcut.register('Escape', () => {
+          if (isKioskLocked) {
+            console.log('🚫 BLOCKED Escape at OS level (globalShortcut)');
+            return; // Swallow Escape completely
           }
-          if (!mainWindow.isKiosk()) {
-            mainWindow.setKiosk(true);
-          }
-          // Re-set bounds to ensure complete coverage
-          mainWindow.setBounds({ x: 0, y: 0, width, height });
+        });
+
+        if (ok) {
+          console.log('✅ OS-level Escape blocked via globalShortcut');
         }
-      }, 1000);
+      } catch (e) {
+        console.error('❌ Failed to register Escape:', e);
+      }
+      
+      // CRITICAL: Keep enforcing fullscreen to prevent taskbar from appearing
+      // Check every 100ms (10x per second) for instant re-lock
+      setInterval(() => {
+        if (isKioskLocked) {
+          forceKioskLock();
+        }
+      }, 100); // ⚡ 100ms interval = 10 checks per second for instant re-lock
       
       // Double-check visibility
       if (!mainWindow.isVisible()) {
@@ -379,32 +389,25 @@ function createWindow() {
   });
 
   // 🔒 PREVENT ESCAPE FROM EXITING FULLSCREEN/KIOSK (only when locked)
-  // 🔒 PREVENT ESCAPE FROM FULLSCREEN/KIOSK (only when locked)
+  // 🔒 INSTANT RE-LOCK: No delay, immediate enforcement
   mainWindow.on('leave-full-screen', () => {
     if (KIOSK_MODE && isKioskLocked) {
       console.log('🚫 Blocked attempt to exit fullscreen - re-enforcing lock');
-      setTimeout(() => {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.setKiosk(true);
-          mainWindow.setFullScreen(true);
-          mainWindow.setAlwaysOnTop(true, 'screen-saver');
-          mainWindow.setSkipTaskbar(true);
-          mainWindow.focus();
-        }
-      }, 10);
+      forceKioskLock();
     }
   });
 
   mainWindow.on('leave-html-full-screen', () => {
     if (KIOSK_MODE && isKioskLocked) {
       console.log('🚫 Blocked HTML fullscreen exit - re-enforcing lock');
-      setTimeout(() => {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.setFullScreen(true);
-          mainWindow.setKiosk(true);
-          mainWindow.focus();
-        }
-      }, 10);
+      forceKioskLock();
+    }
+  });
+
+  mainWindow.on('blur', () => {
+    if (KIOSK_MODE && isKioskLocked) {
+      console.log('🚫 Window lost focus - re-enforcing lock');
+      forceKioskLock();
     }
   });
   
