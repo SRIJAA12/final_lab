@@ -204,6 +204,7 @@
                                 <li class="list-group-item"><strong>email</strong> - Email address</li>
                                 <li class="list-group-item"><strong>dateOfBirth</strong> - Date of birth (YYYY-MM-DD)</li>
                                 <li class="list-group-item"><strong>department</strong> - Department name</li>
+                                <li class="list-group-item"><strong>section</strong> - Section (A, B, C, D) - optional</li>
                                 <li class="list-group-item"><strong>year</strong> - Academic year (1, 2, 3, 4)</li>
                             </ul>
                             <div class="alert alert-info mt-3">
@@ -532,34 +533,47 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
             }
 
             const formData = new FormData();
+<<<<<<< HEAD
             formData.append('studentFile', uploadedFile);  // ✅ FIXED: Changed from 'file' to 'studentFile'
+=======
+            formData.append('studentFile', uploadedFile);
+>>>>>>> c8c7b36dfe9d59342bf0d825b66ec2c011ed5495
 
             document.getElementById('uploadProgress').style.display = 'block';
             updateProgress(10, 'Reading file...');
 
             try {
                 console.log('📤 Uploading file to:', `${SERVER_URL}/api/import-students`);
+                console.log('📎 FormData contents:', uploadedFile.name, uploadedFile.type, uploadedFile.size);
                 
                 const response = await fetch(`${SERVER_URL}/api/import-students`, {
                     method: 'POST',
                     body: formData
                 });
 
+                const result = await response.json();
+                console.log('📥 Server response:', result);
+
                 if (!response.ok) {
+<<<<<<< HEAD
                     const errorText = await response.text();
                     console.error('❌ Server error response:', errorText);
                     throw new Error(`Server error: ${response.status} ${response.statusText}`);
+=======
+                    throw new Error(result.error || `Server error: ${response.status} ${response.statusText}`);
+>>>>>>> c8c7b36dfe9d59342bf0d825b66ec2c011ed5495
                 }
 
                 updateProgress(50, 'Processing students...');
 
-                const result = await response.json();
-                console.log('✅ Import response:', result);
-
                 updateProgress(100, 'Import completed!');
 
                 if (result.success) {
+<<<<<<< HEAD
                     const stats = result.stats || result;
+=======
+                    const stats = result.stats || {};
+>>>>>>> c8c7b36dfe9d59342bf0d825b66ec2c011ed5495
                     showMessage('importResults', 
                         `✅ Import successful!<br>
                         📊 Total processed: ${stats.totalProcessed || 0}<br>
