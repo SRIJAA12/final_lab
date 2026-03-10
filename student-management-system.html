@@ -524,9 +524,7 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
             a.download = 'student_template.csv';
             a.click();
             window.URL.revokeObjectURL(url);
-        }
-
-        // Process file upload
+        }        // Process file upload
         async function processUpload() {
             if (!uploadedFile) {
                 showMessage('importResults', 'Please select a file first', 'error');
@@ -534,7 +532,7 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
             }
 
             const formData = new FormData();
-            formData.append('file', uploadedFile);
+            formData.append('studentFile', uploadedFile);  // ✅ FIXED: Changed from 'file' to 'studentFile'
 
             document.getElementById('uploadProgress').style.display = 'block';
             updateProgress(10, 'Reading file...');
@@ -548,6 +546,8 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                 });
 
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Server error response:', errorText);
                     throw new Error(`Server error: ${response.status} ${response.statusText}`);
                 }
 
@@ -559,12 +559,13 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
                 updateProgress(100, 'Import completed!');
 
                 if (result.success) {
+                    const stats = result.stats || result;
                     showMessage('importResults', 
                         `✅ Import successful!<br>
-                        📊 Total processed: ${result.totalProcessed}<br>
-                        ✅ Successfully imported: ${result.successful}<br>
-                        ❌ Failed: ${result.failed}<br>
-                        ${result.errors.length > 0 ? '<br><strong>Errors:</strong><br>' + result.errors.join('<br>') : ''}`, 
+                        📊 Total processed: ${stats.totalProcessed || 0}<br>
+                        ✅ Successfully imported: ${stats.successful || 0}<br>
+                        ❌ Failed: ${stats.failed || 0}<br>
+                        ${stats.errors && stats.errors.length > 0 ? '<br><strong>Errors:</strong><br>' + stats.errors.join('<br>') : ''}`, 
                         'success');
                     
                     refreshStudentList();
