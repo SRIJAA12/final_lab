@@ -82,19 +82,10 @@ function startKeyBlocker() {
       keyBlockerProcess = null;
     });
 
-    console.log('🔒 Key blocker STARTED - Windows key, Alt+Tab, Taskbar BLOCKED');
+    console.log('🔒 Key blocker STARTED - Windows key, Alt+Tab BLOCKED');
   } catch (err) {
     console.log('⚠️ Could not start key blocker:', err.message);
     keyBlockerProcess = null;
-  }
-
-  // BACKUP: Also disable Windows key via registry policy
-  try {
-    const { execSync } = require('child_process');
-    execSync('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v NoWinKeys /t REG_DWORD /d 1 /f', { windowsHide: true, timeout: 3000 });
-    console.log('🔒 Registry NoWinKeys policy SET (backup)');
-  } catch (err) {
-    console.log('⚠️ Registry NoWinKeys failed:', err.message);
   }
 }
 
@@ -116,24 +107,6 @@ function stopKeyBlocker() {
     console.log('🔓 kiosk_blocker.exe killed');
   } catch (err) {
     // Ignore - may not be running
-  }
-
-  // Remove registry Windows key block
-  try {
-    const { execSync: execSyncReg } = require('child_process');
-    execSyncReg('reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v NoWinKeys /f', { windowsHide: true, timeout: 3000 });
-    console.log('🔓 Registry NoWinKeys policy REMOVED');
-  } catch (err) {
-    // Ignore - key may not exist
-  }
-
-  // Show taskbar again
-  try {
-    const { execSync: execSyncTB } = require('child_process');
-    execSyncTB('powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -Name TBR -Namespace KR -MemberDefinition \'[DllImport(\\\"user32.dll\\\")] public static extern IntPtr FindWindow(string c, string w); [DllImport(\\\"user32.dll\\\")] public static extern bool ShowWindow(IntPtr h, int s);\'; [KR.TBR]::ShowWindow([KR.TBR]::FindWindow(\'Shell_TrayWnd\',$null), 5); [KR.TBR]::ShowWindow([KR.TBR]::FindWindow(\'Button\',\'Start\'), 5)"', { windowsHide: true, timeout: 5000 });
-    console.log('🔓 Taskbar RESTORED');
-  } catch (err) {
-    console.log('⚠️ Taskbar restore failed:', err.message);
   }
 }
 
