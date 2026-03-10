@@ -1118,8 +1118,7 @@
                         
                         // 🛡️ IMPROVED: Restart if failed, disconnected 10+ seconds, OR DTLS stuck
                         const shouldRestart = isFailed || (isDisconnected && disconnectDuration >= 10) || isDtlsStuck;
-                        
-                        if (shouldRestart) {
+                          if (shouldRestart) {
                             if (isDtlsStuck) {
                                 console.error(`  ❌ ❌ HEALTH CHECK DETECTED DTLS STUCK for session: ${sessionId}`);
                                 console.error(`     ICE connected but connection state stuck at "connecting" for ${connectingDuration.toFixed(1)}s`);
@@ -1131,7 +1130,11 @@
                             monitoringConnections.delete(sessionId);
                             connectionStartTime.delete(sessionId);
                             connectionDisconnectTime.delete(sessionId);
-                            setTimeout(() => startMonitoring(sessionId), 500); // Fast restart
+                            // 🔥 FIX: Stagger restarts to prevent flooding signaling server
+                            // Each failed session gets a different delay (0.5s, 1.5s, 2.5s, ...)
+                            const restartIndex = failedCount + disconnectedCount;
+                            const staggerDelay = 500 + (restartIndex * 1000);
+                            setTimeout(() => startMonitoring(sessionId), staggerDelay);
                         } else if (state === 'connecting' || state === 'new') {
                             console.log(`  ⏳ Connection still establishing for session: ${sessionId} (${connectingDuration.toFixed(1)}s) - leaving it alone`);
                         } else if (isDisconnected && disconnectDuration < 10) {
@@ -1957,41 +1960,31 @@
                 video = document.createElement('video');
                 video.autoplay = true;
                 video.muted = true;
+                video.playsInline = true;
+                video.setAttribute('playsinline', '');
                 video.style.width = '100%';
                 video.style.height = '100%';
                 video.style.objectFit = 'cover';
+                video.style.backgroundColor = '#1a1a2e'; // Dark background instead of black
                 
                 videoContainer.innerHTML = '';
                 videoContainer.appendChild(video);
                 console.log('✅ Created fresh video element for session:', sessionId);
                 
-                // ✅ FIX: Create WebRTC peer connection with unique configuration per session
+                // ✅ FIX: LAN-OPTIMIZED WebRTC - No external STUN/TURN needed on same network
+                // DTLS failures were caused by overloaded public TURN servers
+                // On same LAN (10.10.46.x), host candidates connect directly
                 const peerConnection = new RTCPeerConnection({
                     iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' },
-                        { urls: 'stun:stun2.l.google.com:19302' },
-                        { urls: 'stun:stun3.l.google.com:19302' },
-                        { urls: 'stun:stun4.l.google.com:19302' },
-                        // TURN server for NAT traversal (fallback relay)
-                        {
-                            urls: 'turn:openrelay.metered.ca:80',
-                            username: 'openrelayproject',
-                            credential: 'openrelayproject'
-                        },
-                        {
-                            urls: 'turn:openrelay.metered.ca:443',
-                            username: 'openrelayproject',
-                            credential: 'openrelayproject'
-                        }
+                        { urls: 'stun:stun.l.google.com:19302' }
                     ],
-                    iceCandidatePoolSize: 10,
-                    iceTransportPolicy: 'all', // Try all candidates (host, srflx, relay)
+                    iceCandidatePoolSize: 2,
+                    iceTransportPolicy: 'all',
                     bundlePolicy: 'max-bundle',
                     rtcpMuxPolicy: 'require'
                 });
                 
-                console.log('🔗 Created peer connection with enhanced ICE configuration for session:', sessionId);
+                console.log('🔗 Created LAN-optimized peer connection for session:', sessionId);
                 
                 // 🔥 CRITICAL: Store connection IMMEDIATELY to prevent duplicates
                 monitoringConnections.set(sessionId, peerConnection);
