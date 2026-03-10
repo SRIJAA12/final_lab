@@ -2,11 +2,84 @@ const { app, BrowserWindow, ipcMain, screen, dialog, globalShortcut, desktopCapt
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // Enable screen capturing - will be set when app is ready
 console.log('🎬 Kiosk application starting...');
+
+// ============================================================
+// Python Key Blocker Integration
+// Blocks Windows key, taskbar, Start button ONLY during login
+// ============================================================
+let keyBlockerProcess = null;
+
+function startKeyBlocker() {
+  if (keyBlockerProcess) {
+    console.log('ℹ️ Key blocker already running');
+    return;
+  }
+  
+  // Look for kiosk_key_blocker.py in current directory or parent
+  const blockerPaths = [
+    path.join(__dirname, 'kiosk_key_blocker.py'),
+    path.join(__dirname, '..', 'kiosk_key_blocker.py'),
+    'C:\\StudentKiosk\\kiosk_key_blocker.py',
+    path.join(process.cwd(), 'kiosk_key_blocker.py')
+  ];
+  
+  let blockerPath = null;
+  for (const p of blockerPaths) {
+    if (fs.existsSync(p)) {
+      blockerPath = p;
+      break;
+    }
+  }
+  
+  if (!blockerPath) {
+    console.log('⚠️ kiosk_key_blocker.py not found - Windows key blocking unavailable');
+    console.log('   Searched:', blockerPaths.join(', '));
+    return;
+  }
+  
+  try {
+    keyBlockerProcess = spawn('python', [blockerPath], {
+      stdio: 'ignore',
+      detached: false,
+      windowsHide: true
+    });
+    
+    keyBlockerProcess.on('error', (err) => {
+      console.log('⚠️ Key blocker failed to start:', err.message);
+      keyBlockerProcess = null;
+    });
+    
+    keyBlockerProcess.on('exit', (code) => {
+      console.log('ℹ️ Key blocker exited with code:', code);
+      keyBlockerProcess = null;
+    });
+    
+    console.log('🔒 Python key blocker STARTED - Windows key, taskbar, Start button BLOCKED');
+  } catch (err) {
+    console.log('⚠️ Could not start key blocker:', err.message);
+    keyBlockerProcess = null;
+  }
+}
+
+function stopKeyBlocker() {
+  if (!keyBlockerProcess) {
+    return;
+  }
+  
+  try {
+    keyBlockerProcess.kill();
+    console.log('🔓 Python key blocker STOPPED - Windows key, taskbar RESTORED');
+  } catch (err) {
+    console.log('⚠️ Error stopping key blocker:', err.message);
+  }
+  keyBlockerProcess = null;
+}
 
 // ✅ INSTANT LAUNCH: Disable GPU acceleration and other delays for faster startup
 app.commandLine.appendSwitch('disable-gpu');
@@ -369,6 +442,9 @@ function createWindow() {
       console.log('🔒 EVERYTHING BLOCKED - Taskbar covered, no shortcuts, no escape');
       console.log(`📊 Window: ${width}x${height} at (0,0)`);
       console.log('⚠️ Only way out: Login → Logout → Shutdown via UI');
+      
+      // ✅ Start Python key blocker to block Windows key during login
+      startKeyBlocker();
     } else {
       mainWindow.show();
       mainWindow.focus();
@@ -718,6 +794,9 @@ async function handleLogoutProcess() {
     
     console.log('🔒 System fully locked after logout - kiosk mode active');
     
+    // ✅ RESTART Python key blocker - block Windows key again for login screen
+    startKeyBlocker();
+    
     // ✅ CRITICAL FIX: Return to kiosk login screen (DO NOT SHUTDOWN SYSTEM)
     console.log('🔄 Returning to kiosk login screen - System stays running...');
 
@@ -839,6 +918,9 @@ function setupIPCHandlers() {
       sessionActive = true;
       isKioskLocked = false; // Unlock the system
 
+      // ✅ STOP Python key blocker - restore Windows key, taskbar for student
+      stopKeyBlocker();
+
       // After login, minimize the kiosk window so student can work normally
       mainWindow.setClosable(false);
       mainWindow.setMinimizable(true);          // Allow minimize
@@ -937,6 +1019,9 @@ function setupIPCHandlers() {
       };
       sessionActive = true;
       isKioskLocked = false;
+
+      // ✅ STOP Python key blocker - restore Windows key, taskbar for guest
+      stopKeyBlocker();
 
       // Unlock system for guest
       mainWindow.setClosable(false);
@@ -1139,6 +1224,9 @@ function setupIPCHandlers() {
       currentSession = { id: sessionData.sessionId, student: authData.student, isGuest: true };
       sessionActive = true;
       isKioskLocked = false; // Unlock the system
+
+      // ✅ STOP Python key blocker - restore Windows key, taskbar for guest
+      stopKeyBlocker();
 
       // After guest login, allow normal window behavior
       mainWindow.setClosable(false);
@@ -1412,6 +1500,7 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  stopKeyBlocker(); // Restore Windows key, taskbar when kiosk exits
 });
 
 // Block keyboard shortcuts to prevent DevTools and window switching
