@@ -1050,9 +1050,7 @@
                 console.error('❌ Error activating guest access:', error);
                 showError('❌ Failed to activate guest access', 'error');
             }
-        }
-
-        // Listen for session-created event from main process
+        }        // Listen for session-created event from main process
         if (window.electronAPI && window.electronAPI.onSessionCreated) {
             window.electronAPI.onSessionCreated((data) => {
                 console.log('📹 Session created event received from main process:', data);
@@ -1065,6 +1063,22 @@
                         systemNumber: data.studentInfo.systemNumber,
                         labId: 'CC1'
                     });
+                    
+                    // ✅ FIX: Also emit kiosk-screen-ready so admin knows to start monitoring
+                    // Without this, admin dashboard never gets the signal to send WebRTC offer
+                    setTimeout(() => {
+                        if (socket && socket.connected) {
+                            socket.emit('kiosk-screen-ready', {
+                                sessionId: data.sessionId,
+                                hasVideo: true,
+                                timestamp: new Date().toISOString()
+                            });
+                            console.log('📺 KIOSK: Screen ready signal sent after session-created IPC');
+                        }
+                    }, 1500);
+                } else {
+                    console.warn('⚠️ Cannot re-register kiosk: socket not connected or no sessionId');
+                    console.warn('   sessionId:', data.sessionId, 'socket:', !!socket, 'connected:', socket?.connected);
                 }
                 
                 // Note: Screen mirroring is handled in background for admin monitoring

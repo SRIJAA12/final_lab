@@ -4,7 +4,31 @@ const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+// ✅ FIX: Pre-load node-fetch at startup to prevent cold-start failures
+// Dynamic import() was causing intermittent "Invalid ID" errors because
+// the first fetch call would sometimes fail while the module was still loading
+let _fetch = null;
+import('node-fetch').then(mod => {
+  _fetch = mod.default;
+  console.log('✅ node-fetch pre-loaded successfully');
+}).catch(err => {
+  console.error('❌ Failed to pre-load node-fetch:', err.message);
+});
+
+const fetch = async (...args) => {
+  // Wait for node-fetch to be loaded (max 5 seconds)
+  if (!_fetch) {
+    for (let i = 0; i < 50; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (_fetch) break;
+    }
+    if (!_fetch) {
+      const mod = await import('node-fetch');
+      _fetch = mod.default;
+    }
+  }
+  return _fetch(...args);
+};
 
 // Enable screen capturing - will be set when app is ready
 console.log('🎬 Kiosk application starting...');
@@ -874,20 +898,56 @@ function setupIPCHandlers() {
           studentId: credentials.studentId,
           password: credentials.password,
           labId: LAB_ID,
-        };
+        };        console.log('🔐 Attempting authentication for:', creds.studentId);        // ✅ FIX: Add timeout + retry for authentication to prevent false "Invalid ID"
+        // On cold start, the first fetch can fail due to node-fetch loading or network delay
+        let lastAuthError = null;
+        
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+            
+            const authRes = await fetch(`${SERVER_URL}/api/authenticate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(creds),
+              signal: controller.signal
+            });
+            clearTimeout(timeout);
+            
+            authData = await authRes.json();
+            
+            if (authData.success) {
+              break; // Success, stop retrying
+            } else {
+              // Server responded with an actual auth error (wrong password etc.)
+              // Don't retry - this is a real failure
+              lastAuthError = authData.error;
+              break;
+            }
+          } catch (fetchErr) {
+            lastAuthError = fetchErr.message;
+            console.warn(`⚠️ Auth attempt ${attempt} failed:`, fetchErr.message);
+            if (attempt < 2) {
+              console.log('🔄 Retrying authentication in 1 second...');
+              await new Promise(r => setTimeout(r, 1000));
+            }
+          }
+        }
 
-        console.log('🔐 Attempting authentication for:', creds.studentId);
-
-        const authRes = await fetch(`${SERVER_URL}/api/authenticate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(creds),
-        });
-        authData = await authRes.json();
-
-        if (!authData.success) {
-          console.error('❌ Authentication failed:', authData.error);
-          return { success: false, error: authData.error || 'Authentication failed' };
+        if (!authData || !authData.success) {
+          const errorMsg = lastAuthError || 'Authentication failed';
+          // Distinguish between network errors and actual auth failures
+          const isNetworkError = errorMsg.includes('abort') || errorMsg.includes('ECONNREFUSED') || 
+                                  errorMsg.includes('timeout') || errorMsg.includes('network') ||
+                                  errorMsg.includes('fetch');
+          console.error('❌ Authentication failed:', errorMsg);
+          return { 
+            success: false, 
+            error: isNetworkError 
+              ? 'Cannot reach server. Please wait a moment and try again.' 
+              : (errorMsg || 'Invalid student ID or password')
+          };
         }
 
         console.log('✅ Authentication successful for:', authData.student.name);
@@ -1562,8 +1622,7 @@ function blockKioskShortcuts() {
     'F5',                        // 🔒 Block F5 refresh
     'CommandOrControl+F5',       // 🔒 Block force refresh
     'CommandOrControl+Shift+R',  // 🔒 Block hard refresh
-    
-    // 🚫 BROWSER/WINDOW CONTROLS
+      // 🚫 BROWSER/WINDOW CONTROLS (only block navigation, NOT text editing)
     'CommandOrControl+N',        // 🔒 Block new window
     'CommandOrControl+T',        // 🔒 Block new tab
     'CommandOrControl+Shift+N',  // 🔒 Block incognito
@@ -1574,18 +1633,18 @@ function blockKioskShortcuts() {
     'CommandOrControl+U',        // 🔒 Block view source
     'CommandOrControl+P',        // 🔒 Block print
     'CommandOrControl+S',        // 🔒 Block save
-    'CommandOrControl+O',        // 🔒 Block open file
-    'CommandOrControl+A',        // 🔒 Block select all
-    'CommandOrControl+F',        // 🔒 Block find
-    'CommandOrControl+G',        // 🔒 Block find next
-    'CommandOrControl+Z',        // 🔒 Block undo
-    'CommandOrControl+Y',        // 🔒 Block redo
-    'CommandOrControl+X',        // 🔒 Block cut
-    'CommandOrControl+C',        // 🔒 Block copy
-    'CommandOrControl+V'         // 🔒 Block paste
+    'CommandOrControl+O'         // 🔒 Block open file
+    // ✅ DO NOT BLOCK: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z, Ctrl+Y, Ctrl+F
+    // These are needed for typing in the login form (select all, copy, paste, undo, etc.)
   ];
+    const allShortcuts = [...devToolsShortcuts, ...windowShortcuts, ...systemShortcuts];
   
-  const allShortcuts = [...devToolsShortcuts, ...windowShortcuts, ...systemShortcuts];
+  // ✅ FIX: Unregister all first to prevent "already registered" failures
+  try {
+    globalShortcut.unregisterAll();
+  } catch (e) {
+    console.warn('⚠️ Error unregistering existing shortcuts:', e.message);
+  }
   
   allShortcuts.forEach(shortcut => {
     try {
