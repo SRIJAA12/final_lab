@@ -10,57 +10,172 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 console.log('🎬 Kiosk application starting...');
 
 // ============================================================
-// Python Key Blocker Integration
-// Blocks Windows key, taskbar, Start button ONLY during login
+// Windows Key Blocker (PowerShell-based, no Python needed)
+// Blocks Windows key & hides taskbar ONLY during login screen
+// After student logs in → Windows key works normally
+// After logout → Windows key blocked again
 // ============================================================
 let keyBlockerProcess = null;
+
+// PowerShell script that installs a low-level keyboard hook to block Windows key
+const WIN_KEY_BLOCKER_PS1 = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+public class KioskKeyBlocker {
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr FindWindow(string className, string windowName);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_SYSKEYDOWN = 0x0104;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
+    private const int VK_ESCAPE = 0x1B;
+    private const int VK_TAB = 0x09;
+    private const int VK_CONTROL = 0x11;
+    private const int VK_D = 0x44;
+    private const int VK_E = 0x45;
+    private const int VK_R = 0x52;
+    private const int VK_L = 0x4C;
+
+    private static IntPtr hookId = IntPtr.Zero;
+    private static LowLevelKeyboardProc proc = HookCallback;
+    private static bool winKeyDown = false;
+
+    public static void HideTaskbar() {
+        IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
+        if (taskbar != IntPtr.Zero) ShowWindow(taskbar, 0);
+    }
+
+    public static void ShowTaskbar() {
+        IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
+        if (taskbar != IntPtr.Zero) ShowWindow(taskbar, 5);
+    }
+
+    public static void InstallHook() {
+        using (Process curProcess = Process.GetCurrentProcess())
+        using (ProcessModule curModule = curProcess.MainModule) {
+            hookId = SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
+        }
+    }
+
+    public static void RemoveHook() {
+        if (hookId != IntPtr.Zero) {
+            UnhookWindowsHookEx(hookId);
+            hookId = IntPtr.Zero;
+        }
+    }
+
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+        if (nCode >= 0) {
+            int vkCode = Marshal.ReadInt32(lParam);
+            bool isKeyDown = (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN);
+
+            // Track Windows key state
+            if (vkCode == VK_LWIN || vkCode == VK_RWIN) {
+                if (isKeyDown) winKeyDown = true;
+                else winKeyDown = false;
+                return (IntPtr)1; // Block Windows key
+            }
+
+            // Block Win+D, Win+E, Win+R, Win+L, Win+Tab
+            if (winKeyDown && isKeyDown) {
+                if (vkCode == VK_D || vkCode == VK_E || vkCode == VK_R || 
+                    vkCode == VK_L || vkCode == VK_TAB) {
+                    return (IntPtr)1;
+                }
+            }
+
+            // Block Ctrl+Esc (Start menu alternative)
+            if (isKeyDown && vkCode == VK_ESCAPE && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) {
+                return (IntPtr)1;
+            }
+        }
+        return CallNextHookEx(hookId, nCode, wParam, lParam);
+    }
+}
+"@
+
+[KioskKeyBlocker]::HideTaskbar()
+[KioskKeyBlocker]::InstallHook()
+Write-Host "BLOCKER_READY"
+
+# Keep running until this process is killed
+try {
+    while ($$true) { Start-Sleep -Seconds 1 }
+} finally {
+    [KioskKeyBlocker]::RemoveHook()
+    [KioskKeyBlocker]::ShowTaskbar()
+}
+`;
 
 function startKeyBlocker() {
   if (keyBlockerProcess) {
     console.log('ℹ️ Key blocker already running');
     return;
   }
-  
-  // Look for kiosk_key_blocker.py in current directory or parent
-  const blockerPaths = [
-    path.join(__dirname, 'kiosk_key_blocker.py'),
-    path.join(__dirname, '..', 'kiosk_key_blocker.py'),
-    'C:\\StudentKiosk\\kiosk_key_blocker.py',
-    path.join(process.cwd(), 'kiosk_key_blocker.py')
-  ];
-  
-  let blockerPath = null;
-  for (const p of blockerPaths) {
-    if (fs.existsSync(p)) {
-      blockerPath = p;
-      break;
-    }
-  }
-  
-  if (!blockerPath) {
-    console.log('⚠️ kiosk_key_blocker.py not found - Windows key blocking unavailable');
-    console.log('   Searched:', blockerPaths.join(', '));
-    return;
-  }
-  
+
   try {
-    keyBlockerProcess = spawn('python', [blockerPath], {
-      stdio: 'ignore',
+    // Write the PowerShell script to a temp file
+    const scriptPath = path.join(os.tmpdir(), 'kiosk_key_blocker.ps1');
+    fs.writeFileSync(scriptPath, WIN_KEY_BLOCKER_PS1.replace('$$true', '$true'), 'utf8');
+
+    keyBlockerProcess = spawn('powershell.exe', [
+      '-ExecutionPolicy', 'Bypass',
+      '-WindowStyle', 'Hidden',
+      '-File', scriptPath
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
       windowsHide: true
     });
-    
+
+    keyBlockerProcess.stdout.on('data', (data) => {
+      const msg = data.toString().trim();
+      if (msg.includes('BLOCKER_READY')) {
+        console.log('🔒 Windows key blocker ACTIVE - login screen locked');
+      }
+    });
+
+    keyBlockerProcess.stderr.on('data', (data) => {
+      console.log('⚠️ Key blocker error:', data.toString().trim());
+    });
+
     keyBlockerProcess.on('error', (err) => {
       console.log('⚠️ Key blocker failed to start:', err.message);
       keyBlockerProcess = null;
     });
-    
+
     keyBlockerProcess.on('exit', (code) => {
       console.log('ℹ️ Key blocker exited with code:', code);
       keyBlockerProcess = null;
     });
-    
-    console.log('🔒 Python key blocker STARTED - Windows key, taskbar, Start button BLOCKED');
+
+    console.log('🔒 Key blocker STARTING - Windows key will be blocked on login screen');
   } catch (err) {
     console.log('⚠️ Could not start key blocker:', err.message);
     keyBlockerProcess = null;
@@ -71,14 +186,26 @@ function stopKeyBlocker() {
   if (!keyBlockerProcess) {
     return;
   }
-  
+
   try {
+    // Kill the PowerShell process - its finally block will restore taskbar & unhook
     keyBlockerProcess.kill();
-    console.log('🔓 Python key blocker STOPPED - Windows key, taskbar RESTORED');
+    console.log('🔓 Key blocker STOPPED - Windows key RESTORED for student use');
   } catch (err) {
     console.log('⚠️ Error stopping key blocker:', err.message);
   }
   keyBlockerProcess = null;
+
+  // Also ensure taskbar is visible after login
+  try {
+    spawn('powershell.exe', [
+      '-ExecutionPolicy', 'Bypass',
+      '-Command',
+      '(Add-Type -MemberDefinition \'[DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string w); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int s);\' -Name W -Namespace W -PassThru)::ShowWindow([W.W]::FindWindow("Shell_TrayWnd",$null), 5)'
+    ], { stdio: 'ignore', windowsHide: true });
+  } catch (e) {
+    // ignore
+  }
 }
 
 // ✅ INSTANT LAUNCH: Disable GPU acceleration and other delays for faster startup
