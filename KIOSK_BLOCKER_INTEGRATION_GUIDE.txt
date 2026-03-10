@@ -1,0 +1,138 @@
+"""
+HOW TO USE KIOSK KEY BLOCKER WITH YOUR ELECTRON KIOSK
+======================================================
+
+OPTION 1: Run Python Blocker Alongside Electron Kiosk
+------------------------------------------------------
+The Python script blocks keys at TWO levels:
+  1. OS-level registry block (permanent while running)
+  2. Keyboard hook block (captures keys in real-time)
+
+Steps:
+  1. Start Python blocker FIRST:
+     - Double-click: START_KEY_BLOCKER.bat
+     - Click "Yes" for admin privileges
+     - Leave it running in background
+
+  2. Start Electron kiosk SECOND:
+     - Use LAUNCH_KIOSK_HIDDEN.vbs (from previous solution)
+     - Kiosk will have MAXIMUM security
+
+  3. When done:
+     - Close Electron kiosk
+     - Press Ctrl+C in Python window
+     - Everything auto-restores to normal
+
+
+OPTION 2: Call Python Blocker from Electron Kiosk
+--------------------------------------------------
+Modify your main-simple.js to launch Python blocker automatically:
+
+    const { spawn } = require('child_process');
+    let keyBlocker = null;
+
+    // When kiosk starts:
+    function startKeyBlocker() {
+      keyBlocker = spawn('python', ['C:\\Path\\To\\kiosk_key_blocker.py'], {
+        detached: false,
+        stdio: 'ignore'
+      });
+      console.log('✅ Key blocker started');
+    }
+
+    // When kiosk closes:
+    function stopKeyBlocker() {
+      if (keyBlocker) {
+        keyBlocker.kill();
+        console.log('✅ Key blocker stopped');
+      }
+    }
+
+    app.on('ready', () => {
+      startKeyBlocker();  // Start blocker BEFORE creating window
+      createWindow();
+    });
+
+    app.on('will-quit', () => {
+      stopKeyBlocker();  // Stop blocker when app quits
+    });
+
+
+OPTION 3: Deploy Python Blocker to Student Systems
+---------------------------------------------------
+For all 69 systems:
+
+  1. Copy these files to each system:
+     - kiosk_key_blocker.py → C:\\StudentKiosk\\
+     - START_KEY_BLOCKER.bat → C:\\StudentKiosk\\
+
+  2. Add to Windows startup (optional):
+     - Press Win+R, type: shell:startup
+     - Create shortcut to START_KEY_BLOCKER.bat
+     - Blocker auto-starts when system boots
+
+  3. Integration with kiosk:
+     - Modify package.json scripts:
+       "start": "python kiosk_key_blocker.py & electron ."
+
+
+COMPARISON: Batch vs Python Approach
+-------------------------------------
+| Feature | APPLY_WINKEY_DISABLE.bat | kiosk_key_blocker.py |
+|---------|-------------------------|---------------------|
+| Windows Key Block | ✅ Permanent (until restart) | ✅ While running |
+| Escape Key Block | ❌ No | ✅ Yes |
+| Start Button Block | ❌ No | ✅ Yes |
+| Taskbar Hide | ❌ No | ✅ Yes |
+| Auto Restore | ❌ No (needs restart) | ✅ Yes (automatic) |
+| Requires Admin | ✅ Yes | ✅ Yes (for registry) |
+| Restart Needed | ✅ Yes | ❌ No |
+
+
+RECOMMENDED SETUP FOR PRODUCTION
+---------------------------------
+Use BOTH methods for maximum security:
+
+  1. Run Python blocker: START_KEY_BLOCKER.bat
+     → Blocks Windows key, Escape, hides taskbar, blocks Start button
+
+  2. Run Electron kiosk: LAUNCH_KIOSK_HIDDEN.vbs  
+     → Kiosk runs without CMD window interference
+
+  3. Result:
+     ✅ Triple-layer defense:
+        - OS-level registry block (Windows key)
+        - Python keyboard hooks (all keys)
+        - Electron globalShortcut (app-level)
+
+
+TROUBLESHOOTING
+---------------
+If Windows key still works:
+  1. Check if blocker is running as Administrator
+  2. Look for "✅ Windows key DISABLED in registry" message
+  3. Try manually: python kiosk_key_blocker.py
+  4. Check registry: HKLM\\SYSTEM\\CurrentControlSet\\Control\\Keyboard Layout
+
+If Escape key still works:
+  1. Make sure hooks installed: "✅ Keyboard hook installed"
+  2. Check for conflicting software (antivirus, other key blockers)
+  3. Run as Administrator
+
+If taskbar shows:
+  1. Verify "✅ Taskbar hidden" message appears
+  2. Try hiding manually: user32.ShowWindow(hwnd, 0)
+
+
+DEPLOYMENT CHECKLIST
+--------------------
+For each of 69 student systems:
+  [ ] Copy kiosk_key_blocker.py to C:\\StudentKiosk\\
+  [ ] Copy START_KEY_BLOCKER.bat to C:\\StudentKiosk\\
+  [ ] Test blocker runs as admin
+  [ ] Test Windows key is blocked
+  [ ] Test taskbar is hidden
+  [ ] Test Escape key is blocked
+  [ ] Integrate with kiosk auto-start
+  [ ] Test cleanup when kiosk closes
+"""
