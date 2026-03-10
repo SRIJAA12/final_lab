@@ -557,11 +557,12 @@ function validateStudentData(rawData) {
     try {
       const student = {
         name: cleanString(row.name || row.Name || row.student_name || row['Student Name'] || row['Full Name']),
-        studentId: cleanString(row.student_id || row.StudentID || row.id || row.ID || row['Student ID'] || row['Roll No']),
+        studentId: cleanString(row.studentId || row.student_id || row.student_Id || row.StudentID || row.id || row.ID || row['Student ID'] || row['Roll No']),
         email: cleanString(row.email || row.Email || row.email_address || row['Email Address']),
         dateOfBirth: parseDate(row.dob || row.date_of_birth || row.dateOfBirth || row['Date of Birth'] || row.DOB),
         department: cleanString(row.department || row.Department || row.dept || row.Dept || row['Department Name']),
         year: parseInt(row.year || row.Year || row.class_year || row['Year'] || row['Academic Year'] || 1),
+        section: cleanString(row.section || row.Section || 'A'),
         labId: cleanString(row.lab_id || row.labId || row.lab || row.Lab || row['Lab ID'] || 'LAB-01'),
         isPasswordSet: false,
         registeredAt: new Date(),
@@ -570,22 +571,22 @@ function validateStudentData(rawData) {
       
       // Validate required fields
       if (!student.name || student.name.length < 2) {
-        console.warn(`⚠️ Row ${i + 1}: Invalid or missing name`);
+        console.warn(`⚠️ Row ${i + 1}: Invalid or missing name - got: "${student.name}"`);
         continue;
       }
       
       if (!student.studentId || student.studentId.length < 3) {
-        console.warn(`⚠️ Row ${i + 1}: Invalid or missing student ID`);
+        console.warn(`⚠️ Row ${i + 1}: Invalid or missing student ID - got: "${student.studentId}"`);
         continue;
       }
       
       if (!student.dateOfBirth || student.dateOfBirth.getFullYear() < 1980) {
-        console.warn(`⚠️ Row ${i + 1}: Invalid date of birth`);
+        console.warn(`⚠️ Row ${i + 1}: Invalid date of birth - got: ${student.dateOfBirth}`);
         continue;
       }
       
       if (!student.department || student.department.length < 2) {
-        console.warn(`⚠️ Row ${i + 1}: Invalid or missing department`);
+        console.warn(`⚠️ Row ${i + 1}: Invalid or missing department - got: "${student.department}"`);
         continue;
       }
       
@@ -657,7 +658,7 @@ function parseDate(dateString) {
     const parsed = new Date(format);
     if (!isNaN(parsed.getTime()) && 
         parsed.getFullYear() > 1980 && 
-        parsed.getFullYear() < 2015) {
+        parsed.getFullYear() < 2020) {  // Changed from 2015 to 2020 to accept students born 2000-2019
       return parsed;
     }
   }
@@ -1810,6 +1811,9 @@ app.post('/api/import-students', upload.single('studentFile'), async (req, res) 
     }
     
     console.log(`📊 Raw data extracted: ${studentsData.length} rows`);
+    if (studentsData.length > 0) {
+      console.log('📋 First row sample:', JSON.stringify(studentsData[0], null, 2));
+    }
     
     const validatedStudents = validateStudentData(studentsData);
     

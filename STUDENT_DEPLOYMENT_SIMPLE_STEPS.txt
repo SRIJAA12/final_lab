@@ -1,0 +1,120 @@
+================================================================================
+  STUDENT KIOSK DEPLOYMENT - SIMPLEST METHOD (3 STEPS ONLY!)
+================================================================================
+
+✅ WHAT THIS DOES:
+   - Login → Password → KIOSK APPEARS (NO CMD WINDOW)
+   - Complete lockdown - students can't access Windows
+   - Auto-connects to admin server at 10.10.46.103
+
+================================================================================
+STEP 1: INSTALL NODE.JS (ONE TIME ONLY)
+================================================================================
+
+1. Download Node.js from: https://nodejs.org/
+2. Run the installer (node-vXX.X.X-x64.msi)
+3. Click Next → Next → Install → Finish
+4. Close and reopen any Command Prompts
+
+TO VERIFY: Open Command Prompt and type: node --version
+           Should show: v18.x.x or higher
+
+================================================================================
+STEP 2: COPY THE DEPLOYMENT SCRIPT TO STUDENT SYSTEM
+================================================================================
+
+METHOD A: Using USB Drive
+--------------------------
+1. Insert USB drive on YOUR laptop
+2. Copy this file to USB:
+   D:\SDC_Lab_monitoing_system\DEPLOY_STUDENT_KIOSK_COMPLETE.bat
+
+3. Also copy this entire folder to USB:
+   D:\SDC_Lab_monitoing_system\student-kiosk\
+
+4. On student system, copy both to Desktop
+
+METHOD B: Using Network (EASIER!)
+----------------------------------
+1. On YOUR LAPTOP (10.10.192.97), share the folder:
+   - Right-click D:\SDC_Lab_monitoing_system
+   - Properties → Sharing → Advanced Sharing
+   - Check "Share this folder"
+   - Name: SDC
+   - Permissions: Everyone = Read
+
+2. On STUDENT SYSTEM, open File Explorer and go to:
+   \\10.10.192.97\SDC
+
+3. Copy to Desktop:
+   - DEPLOY_STUDENT_KIOSK_COMPLETE.bat
+   - student-kiosk folder
+
+================================================================================
+STEP 3: RUN THE INSTALLER
+================================================================================
+
+1. On STUDENT SYSTEM:
+   - Right-click DEPLOY_STUDENT_KIOSK_COMPLETE.bat
+   - Select "Run as administrator"
+
+2. Follow the prompts:
+   - Press any key to start
+   - Enter system number (PC-01, PC-02, etc.)
+   - Wait for npm install (5-10 minutes)
+   - Computer will restart automatically
+
+3. AFTER RESTART:
+   - Login with Windows password
+   - Kiosk appears INSTANTLY
+   - NO CMD window visible
+   - NO Windows desktop
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+❌ "Node.js is not installed"
+   → Install Node.js first (see STEP 1)
+   → Restart Command Prompt after installing
+
+❌ "npm install failed"
+   → Check internet connection
+   → Make sure firewall allows npm
+   → Try: cd C:\StudentKiosk && npm install
+
+❌ Files not found
+   → Make sure you copied BOTH:
+     - DEPLOY_STUDENT_KIOSK_COMPLETE.bat
+     - student-kiosk folder (entire folder, not just files)
+
+❌ Kiosk doesn't start after login
+   → Boot to Safe Mode (F8)
+   → Check: C:\StudentKiosk\server-config.json exists
+   → Run manually: cd C:\StudentKiosk && npm start
+   → Check error messages
+
+❌ Can't connect to admin server
+   → Make sure admin server is running
+   → Test: ping 10.10.46.103
+   → Check firewall on admin server (port 7401)
+
+❌ Need to restore Windows
+   → Boot to Safe Mode (F8)
+   → Run: C:\StudentKiosk\RESTORE_EXPLORER_SHELL.bat
+   → Restart
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+📁 Installation Location: C:\StudentKiosk
+🌐 Admin Server: 10.10.46.103:7401
+🔐 Security Level: MAXIMUM (Shell Replacement)
+🚀 Auto-Start: YES (launches immediately after login)
+👁️ CMD Window: NO (completely hidden)
+
+Restore Windows: C:\StudentKiosk\RESTORE_EXPLORER_SHELL.bat (run in Safe Mode)
+Registry Backup: C:\StudentKiosk\SHELL_BACKUP.reg
+
+================================================================================

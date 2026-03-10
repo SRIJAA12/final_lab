@@ -204,6 +204,7 @@
                                 <li class="list-group-item"><strong>email</strong> - Email address</li>
                                 <li class="list-group-item"><strong>dateOfBirth</strong> - Date of birth (YYYY-MM-DD)</li>
                                 <li class="list-group-item"><strong>department</strong> - Department name</li>
+                                <li class="list-group-item"><strong>section</strong> - Section (A, B, C, D) - optional</li>
                                 <li class="list-group-item"><strong>year</strong> - Academic year (1, 2, 3, 4)</li>
                             </ul>
                             <div class="alert alert-info mt-3">
@@ -534,37 +535,39 @@ ECE2025001,Bob Johnson,bob.johnson@college.edu,1999-12-10,Electronics and Commun
             }
 
             const formData = new FormData();
-            formData.append('file', uploadedFile);
+            formData.append('studentFile', uploadedFile);
 
             document.getElementById('uploadProgress').style.display = 'block';
             updateProgress(10, 'Reading file...');
 
             try {
                 console.log('📤 Uploading file to:', `${SERVER_URL}/api/import-students`);
+                console.log('📎 FormData contents:', uploadedFile.name, uploadedFile.type, uploadedFile.size);
                 
                 const response = await fetch(`${SERVER_URL}/api/import-students`, {
                     method: 'POST',
                     body: formData
                 });
 
+                const result = await response.json();
+                console.log('📥 Server response:', result);
+
                 if (!response.ok) {
-                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                    throw new Error(result.error || `Server error: ${response.status} ${response.statusText}`);
                 }
 
                 updateProgress(50, 'Processing students...');
 
-                const result = await response.json();
-                console.log('✅ Import response:', result);
-
                 updateProgress(100, 'Import completed!');
 
                 if (result.success) {
+                    const stats = result.stats || {};
                     showMessage('importResults', 
                         `✅ Import successful!<br>
-                        📊 Total processed: ${result.totalProcessed}<br>
-                        ✅ Successfully imported: ${result.successful}<br>
-                        ❌ Failed: ${result.failed}<br>
-                        ${result.errors.length > 0 ? '<br><strong>Errors:</strong><br>' + result.errors.join('<br>') : ''}`, 
+                        📊 Total processed: ${stats.totalProcessed || 0}<br>
+                        ✅ Successfully imported: ${stats.successful || 0}<br>
+                        ❌ Failed: ${stats.failed || 0}<br>
+                        ${stats.errors && stats.errors.length > 0 ? '<br><strong>Errors:</strong><br>' + stats.errors.join('<br>') : ''}`, 
                         'success');
                     
                     refreshStudentList();
