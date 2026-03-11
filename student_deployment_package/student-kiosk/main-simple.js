@@ -4,38 +4,15 @@ const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-// ✅ FIX: Pre-load node-fetch at startup to prevent cold-start failures
-// Dynamic import() was causing intermittent "Invalid ID" errors because
-// the first fetch call would sometimes fail while the module was still loading
-let _fetch = null;
-import('node-fetch').then(mod => {
-  _fetch = mod.default;
-  console.log('✅ node-fetch pre-loaded successfully');
-}).catch(err => {
-  console.error('❌ Failed to pre-load node-fetch:', err.message);
-});
-
-const fetch = async (...args) => {
-  // Wait for node-fetch to be loaded (max 5 seconds)
-  if (!_fetch) {
-    for (let i = 0; i < 50; i++) {
-      await new Promise(r => setTimeout(r, 100));
-      if (_fetch) break;
-    }
-    if (!_fetch) {
-      const mod = await import('node-fetch');
-      _fetch = mod.default;
-    }
-  }
-  return _fetch(...args);
-};
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // Enable screen capturing - will be set when app is ready
 console.log('🎬 Kiosk application starting...');
 
 // ============================================================
-// Python Key Blocker Integration
-// Blocks Windows key, taskbar, Start button ONLY during login
+// Kiosk Key Blocker - Runs pre-compiled kiosk_blocker.exe
+// Blocks Windows key, Alt+Tab, taskbar ONLY during login screen
+// The exe uses low-level keyboard hook (SetWindowsHookEx)
 // ============================================================
 let keyBlockerProcess = null;
 
@@ -44,15 +21,18 @@ function startKeyBlocker() {
     console.log('ℹ️ Key blocker already running');
     return;
   }
-  
-  // Look for kiosk_key_blocker.py in current directory or parent
+
+  if (process.platform !== 'win32') return;
+
+  // Find kiosk_blocker.exe in known locations
   const blockerPaths = [
-    path.join(__dirname, 'kiosk_key_blocker.py'),
-    path.join(__dirname, '..', 'kiosk_key_blocker.py'),
-    'C:\\StudentKiosk\\kiosk_key_blocker.py',
-    path.join(process.cwd(), 'kiosk_key_blocker.py')
+    path.join(__dirname, 'kiosk_blocker.exe'),
+    path.join(__dirname, '..', 'kiosk_blocker.exe'),
+    'C:\\StudentKiosk\\kiosk_blocker.exe',
+    'C:\\StudentKiosk\\student-kiosk\\kiosk_blocker.exe',
+    path.join(process.cwd(), 'kiosk_blocker.exe')
   ];
-  
+
   let blockerPath = null;
   for (const p of blockerPaths) {
     if (fs.existsSync(p)) {
@@ -60,31 +40,49 @@ function startKeyBlocker() {
       break;
     }
   }
-  
+
   if (!blockerPath) {
-    console.log('⚠️ kiosk_key_blocker.py not found - Windows key blocking unavailable');
+    console.log('⚠️ kiosk_blocker.exe NOT FOUND - Windows key blocking UNAVAILABLE');
     console.log('   Searched:', blockerPaths.join(', '));
     return;
   }
-  
+
+  console.log('📁 Found kiosk_blocker.exe at:', blockerPath);
+
+  // Kill any leftover instance from a previous crash
   try {
-    keyBlockerProcess = spawn('python', [blockerPath], {
-      stdio: 'ignore',
+    const { execSync } = require('child_process');
+    execSync('taskkill /f /im kiosk_blocker.exe', { windowsHide: true, timeout: 3000 });
+  } catch (err) {
+    // Ignore - not running
+  }
+
+  try {
+    keyBlockerProcess = spawn(blockerPath, [], {
+      stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
       windowsHide: true
     });
-    
+
+    keyBlockerProcess.stdout.on('data', (data) => {
+      console.log('🔒 KeyBlocker:', data.toString().trim());
+    });
+
+    keyBlockerProcess.stderr.on('data', (data) => {
+      console.log('❌ KeyBlocker ERROR:', data.toString().trim());
+    });
+
     keyBlockerProcess.on('error', (err) => {
-      console.log('⚠️ Key blocker failed to start:', err.message);
+      console.log('⚠️ Key blocker failed:', err.message);
       keyBlockerProcess = null;
     });
-    
+
     keyBlockerProcess.on('exit', (code) => {
       console.log('ℹ️ Key blocker exited with code:', code);
       keyBlockerProcess = null;
     });
-    
-    console.log('🔒 Python key blocker STARTED - Windows key, taskbar, Start button BLOCKED');
+
+    console.log('🔒 Key blocker STARTED - Windows key, Alt+Tab BLOCKED');
   } catch (err) {
     console.log('⚠️ Could not start key blocker:', err.message);
     keyBlockerProcess = null;
@@ -92,17 +90,24 @@ function startKeyBlocker() {
 }
 
 function stopKeyBlocker() {
-  if (!keyBlockerProcess) {
-    return;
+  if (keyBlockerProcess) {
+    try {
+      keyBlockerProcess.kill();
+      console.log('🔓 Key blocker process killed');
+    } catch (err) {
+      console.log('⚠️ Error stopping key blocker:', err.message);
+    }
+    keyBlockerProcess = null;
   }
-  
+
+  // Force kill kiosk_blocker.exe (covers detached/leftover instances)
   try {
-    keyBlockerProcess.kill();
-    console.log('🔓 Python key blocker STOPPED - Windows key, taskbar RESTORED');
+    const { execSync } = require('child_process');
+    execSync('taskkill /f /im kiosk_blocker.exe', { windowsHide: true, timeout: 3000 });
+    console.log('🔓 kiosk_blocker.exe killed');
   } catch (err) {
-    console.log('⚠️ Error stopping key blocker:', err.message);
+    // Ignore - may not be running
   }
-  keyBlockerProcess = null;
 }
 
 // ✅ INSTANT LAUNCH: Disable GPU acceleration and other delays for faster startup
@@ -898,56 +903,20 @@ function setupIPCHandlers() {
           studentId: credentials.studentId,
           password: credentials.password,
           labId: LAB_ID,
-        };        console.log('🔐 Attempting authentication for:', creds.studentId);        // ✅ FIX: Add timeout + retry for authentication to prevent false "Invalid ID"
-        // On cold start, the first fetch can fail due to node-fetch loading or network delay
-        let lastAuthError = null;
-        
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
-            
-            const authRes = await fetch(`${SERVER_URL}/api/authenticate`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(creds),
-              signal: controller.signal
-            });
-            clearTimeout(timeout);
-            
-            authData = await authRes.json();
-            
-            if (authData.success) {
-              break; // Success, stop retrying
-            } else {
-              // Server responded with an actual auth error (wrong password etc.)
-              // Don't retry - this is a real failure
-              lastAuthError = authData.error;
-              break;
-            }
-          } catch (fetchErr) {
-            lastAuthError = fetchErr.message;
-            console.warn(`⚠️ Auth attempt ${attempt} failed:`, fetchErr.message);
-            if (attempt < 2) {
-              console.log('🔄 Retrying authentication in 1 second...');
-              await new Promise(r => setTimeout(r, 1000));
-            }
-          }
-        }
+        };
 
-        if (!authData || !authData.success) {
-          const errorMsg = lastAuthError || 'Authentication failed';
-          // Distinguish between network errors and actual auth failures
-          const isNetworkError = errorMsg.includes('abort') || errorMsg.includes('ECONNREFUSED') || 
-                                  errorMsg.includes('timeout') || errorMsg.includes('network') ||
-                                  errorMsg.includes('fetch');
-          console.error('❌ Authentication failed:', errorMsg);
-          return { 
-            success: false, 
-            error: isNetworkError 
-              ? 'Cannot reach server. Please wait a moment and try again.' 
-              : (errorMsg || 'Invalid student ID or password')
-          };
+        console.log('🔐 Attempting authentication for:', creds.studentId);
+
+        const authRes = await fetch(`${SERVER_URL}/api/authenticate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(creds),
+        });
+        authData = await authRes.json();
+
+        if (!authData.success) {
+          console.error('❌ Authentication failed:', authData.error);
+          return { success: false, error: authData.error || 'Authentication failed' };
         }
 
         console.log('✅ Authentication successful for:', authData.student.name);
@@ -1622,7 +1591,8 @@ function blockKioskShortcuts() {
     'F5',                        // 🔒 Block F5 refresh
     'CommandOrControl+F5',       // 🔒 Block force refresh
     'CommandOrControl+Shift+R',  // 🔒 Block hard refresh
-      // 🚫 BROWSER/WINDOW CONTROLS (only block navigation, NOT text editing)
+    
+    // 🚫 BROWSER/WINDOW CONTROLS
     'CommandOrControl+N',        // 🔒 Block new window
     'CommandOrControl+T',        // 🔒 Block new tab
     'CommandOrControl+Shift+N',  // 🔒 Block incognito
@@ -1633,18 +1603,18 @@ function blockKioskShortcuts() {
     'CommandOrControl+U',        // 🔒 Block view source
     'CommandOrControl+P',        // 🔒 Block print
     'CommandOrControl+S',        // 🔒 Block save
-    'CommandOrControl+O'         // 🔒 Block open file
-    // ✅ DO NOT BLOCK: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z, Ctrl+Y, Ctrl+F
-    // These are needed for typing in the login form (select all, copy, paste, undo, etc.)
+    'CommandOrControl+O',        // 🔒 Block open file
+    'CommandOrControl+A',        // 🔒 Block select all
+    'CommandOrControl+F',        // 🔒 Block find
+    'CommandOrControl+G',        // 🔒 Block find next
+    'CommandOrControl+Z',        // 🔒 Block undo
+    'CommandOrControl+Y',        // 🔒 Block redo
+    'CommandOrControl+X',        // 🔒 Block cut
+    'CommandOrControl+C',        // 🔒 Block copy
+    'CommandOrControl+V'         // 🔒 Block paste
   ];
-    const allShortcuts = [...devToolsShortcuts, ...windowShortcuts, ...systemShortcuts];
   
-  // ✅ FIX: Unregister all first to prevent "already registered" failures
-  try {
-    globalShortcut.unregisterAll();
-  } catch (e) {
-    console.warn('⚠️ Error unregistering existing shortcuts:', e.message);
-  }
+  const allShortcuts = [...devToolsShortcuts, ...windowShortcuts, ...systemShortcuts];
   
   allShortcuts.forEach(shortcut => {
     try {
