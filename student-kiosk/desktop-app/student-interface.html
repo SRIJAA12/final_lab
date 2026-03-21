@@ -325,6 +325,11 @@
         let preWarmedStream = null;
         let isScreenReady = false;
         
+        // 🔥 FIX: Kiosk-side ICE candidate queue
+        // ICE candidates can arrive before setRemoteDescription completes.
+        // Without this queue they are silently dropped, breaking ICE negotiation.
+        let pendingKioskICE = [];
+        
         // System heartbeat to stay visible in admin dashboard
         let heartbeatInterval = null;
         
@@ -548,9 +553,14 @@
 
                     // ICE candidates for WebRTC
                     socket.on('webrtc-ice-candidate', (data) => {
-                        if (pc && data.candidate) {
+                        if (!data.candidate) return;
+                        // 🔥 FIX: Queue candidates if remote description is not set yet
+                        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                             pc.addIceCandidate(new RTCIceCandidate(data.candidate))
                                 .catch(e => console.error('❌ Error adding ICE candidate:', e));
+                        } else {
+                            pendingKioskICE.push(data.candidate);
+                            console.log('🧊 KIOSK: Queued ICE candidate (remote desc not ready yet). Queue size:', pendingKioskICE.length);
                         }
                     });
 
@@ -728,43 +738,37 @@
             console.log('🚀 ========================================');
             
             try {
-                // Try getDisplayMedia first
+                // 🔑 Try getUserMedia with chromeMediaSource FIRST (no dialog, works in kiosk mode)
                 try {
-                    preWarmedStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: {
-                            cursor: 'always',
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 },
-                            frameRate: { ideal: 30 }
-                        },
-                        audio: false
-                    });
-                    console.log('✅ Pre-warm: getDisplayMedia() succeeded');
-                } catch (error1) {
-                    console.log('⚠️ Pre-warm: getDisplayMedia failed, trying getUserMedia...');
-                    
-                    // Fallback to getUserMedia with chromeMediaSource
                     const sources = await window.electronAPI.getScreenSources();
-                    if (sources.length === 0) {
-                        throw new Error('No screen sources available');
-                    }
-                    
-                    const screenSource = sources[0];
+                    if (sources.length === 0) throw new Error('No screen sources available');
+                    const screenSource = sources.find(s => s.id.startsWith('screen')) || sources[0];
                     preWarmedStream = await navigator.mediaDevices.getUserMedia({
                         audio: false,
                         video: {
                             mandatory: {
                                 chromeMediaSource: 'desktop',
                                 chromeMediaSourceId: screenSource.id,
-                                minWidth: 1280,
-                                maxWidth: 1920,
-                                minHeight: 720,
-                                maxHeight: 1080,
-                                maxFrameRate: 30
+                                minWidth: 640, maxWidth: 800,
+                                minHeight: 480, maxHeight: 600,
+                                maxFrameRate: 10
                             }
                         }
                     });
-                    console.log('✅ Pre-warm: getUserMedia succeeded');
+                    console.log('✅ Pre-warm: getUserMedia succeeded (no dialog)');
+                } catch (error1) {
+                    console.log('⚠️ Pre-warm: getUserMedia failed, trying getDisplayMedia...', error1.message);
+                    // Fallback: getDisplayMedia (setDisplayMediaRequestHandler auto-selects in main-simple.js)
+                    preWarmedStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            cursor: 'always',
+                            width: { ideal: 800 },
+                            height: { ideal: 600 },
+                            frameRate: { ideal: 10 }
+                        },
+                        audio: false
+                    });
+                    console.log('✅ Pre-warm: getDisplayMedia fallback succeeded');
                 }
                 
                 console.log('✅✅✅ Screen pre-warmed successfully!');
@@ -791,9 +795,45 @@
             // Set processing flag
             isProcessingOffer = true;
             
+            // 🔥 FIX: Safety timeout — if handleAdminOffer hangs or throws before finally{},
+            // isProcessingOffer would stay true forever, silently blocking all future offers.
+            const offerSafetyTimer = setTimeout(() => {
+                if (isProcessingOffer) {
+                    console.warn('⚠️ KIOSK: isProcessingOffer safety reset — stuck for 30s, force-clearing');
+                    isProcessingOffer = false;
+                }
+            }, 30000);
+            
+            // 🔥 FIX: Clear stale ICE candidates from any previous failed attempt
+            // Without this, old candidates get applied to the new RTCPeerConnection and cause errors
+            if (pendingKioskICE.length > 0) {
+                console.log('🧊 KIOSK: Clearing', pendingKioskICE.length, 'stale queued ICE candidates from previous attempt');
+                pendingKioskICE = [];
+            }
+            
             // Add timestamp to track how long this takes
             const startTime = Date.now();
             
+            // 🔥 STABILITY FIX: Don't process new offer if already connected OR actively negotiating
+            if (pc) {
+                const connOk = pc.connectionState === 'connected' || pc.iceConnectionState === 'connected';
+                // Only block when negotiation is genuinely in-progress (not after a failed attempt)
+                // signalingState=stable alone is NOT enough — it also happens after failed connections!
+                const isNegotiating = pc.signalingState === 'have-local-pranswer' ||
+                                      (pc.signalingState === 'stable' && 
+                                       (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'completed'));
+                if (connOk) {
+                    console.log('✅ KIOSK: Already connected - ignoring new offer');
+                    isProcessingOffer = false;
+                    return;
+                }
+                if (isNegotiating && !isProcessingOffer) {
+                    console.log(`⏳ KIOSK: Actively negotiating (signalingState=${pc.signalingState}, ICE=${pc.iceConnectionState}) - ignoring duplicate offer`);
+                    isProcessingOffer = false;
+                    return;
+                }
+            }
+
             try {
                 // Cleanup existing display stream if any
                 if (currentDisplayStream) {
@@ -815,13 +855,11 @@
                     }
                     pc = null;
                 }
-                  // Create new peer connection
-                console.log('🔗 KIOSK: Creating new peer connection (LAN-optimized)');
+                  // Create new peer connection (LAN-only: STUN blocked by college firewall)
+                console.log('🔗 KIOSK: Creating new peer connection (LAN-only, no STUN)');
                 pc = new RTCPeerConnection({
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' }
-                    ],
-                    iceCandidatePoolSize: 2,
+                    iceServers: [],            // LAN-only: no STUN needed on same 10.10.46.x subnet
+                    iceCandidatePoolSize: 0,
                     iceTransportPolicy: 'all',
                     bundlePolicy: 'max-bundle',
                     rtcpMuxPolicy: 'require'
@@ -897,6 +935,17 @@
                 console.log('🎬 KIOSK: Setting remote description...');
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 console.log('✅ KIOSK: Remote description set successfully');
+                
+                // 🔥 FIX: Flush any ICE candidates that arrived before remote description was ready
+                if (pendingKioskICE.length > 0) {
+                    console.log(`🧊 KIOSK: Flushing ${pendingKioskICE.length} queued ICE candidates`);
+                    for (const c of pendingKioskICE) {
+                        await pc.addIceCandidate(new RTCIceCandidate(c))
+                            .catch(e => console.error('❌ KIOSK: Error adding queued ICE candidate:', e));
+                    }
+                    pendingKioskICE = [];
+                    console.log('✅ KIOSK: Queued ICE candidates flushed');
+                }
 
                 // 🎥 CAPTURE DESKTOP SCREEN - Use pre-warmed stream if available
                 console.log('🎥 ========================================');
@@ -925,9 +974,9 @@
                         displayStream = await navigator.mediaDevices.getDisplayMedia({
                             video: {
                                 cursor: 'always',
-                                width: { ideal: 1920 },
-                                height: { ideal: 1080 },
-                                frameRate: { ideal: 30 }
+                                width: { ideal: 800 },
+                                height: { ideal: 600 },
+                                frameRate: { ideal: 10 }
                             },
                             audio: false
                         });
@@ -957,11 +1006,11 @@
                                     mandatory: {
                                         chromeMediaSource: 'desktop',
                                         chromeMediaSourceId: screenSource.id,
-                                        minWidth: 1280,
-                                        maxWidth: 1920,
-                                        minHeight: 720,
-                                        maxHeight: 1080,
-                                        maxFrameRate: 30
+                                        minWidth: 640,
+                                        maxWidth: 800,
+                                        minHeight: 480,
+                                        maxHeight: 600,
+                                        maxFrameRate: 10
                                     }
                                 }
                             });
@@ -1045,7 +1094,8 @@
                     });
                 }
             } finally {
-                // Clear processing flag
+                // Clear processing flag and safety timer
+                clearTimeout(offerSafetyTimer);
                 isProcessingOffer = false;
                 console.log('✅ KIOSK: Offer processing complete, ready for next offer');
             }

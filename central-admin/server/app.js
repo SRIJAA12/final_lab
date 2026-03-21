@@ -39,7 +39,11 @@ const crypto = require('crypto');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: "*" }
+  cors: { origin: "*" },
+  maxHttpBufferSize: 1e7,        // ✅ FIX: 10MB buffer for large SDP offer/answer messages
+  pingTimeout: 60000,            // ✅ FIX: 60s timeout (default 20s too short for 70+ systems)
+  pingInterval: 25000,           // Keep-alive every 25s
+  transports: ['websocket', 'polling']  // Prefer WebSocket for low-latency signaling
 });
 
 app.use(cors());
@@ -78,7 +82,7 @@ const BCRYPT_SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 10;
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  maxPoolSize: 10,
+  maxPoolSize: 50,  // ✅ FIX: Increased from 10 → 50 to handle 70+ concurrent student logins without DB queuing
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000,
   family: 4
@@ -296,6 +300,7 @@ const HardwareAlert = mongoose.model('HardwareAlert', hardwareAlertSchema);
 // System Registry Schema (tracks all powered-on systems, even before student login)
 const systemRegistrySchema = new mongoose.Schema({
   systemNumber: { type: String, required: true, unique: true }, // e.g., 'CC1-05'
+  computerName: { type: String }, // e.g., 'cse-cclab-70'
   labId: { type: String, required: true }, // e.g., 'CC1'
   ipAddress: { type: String, required: true }, // e.g., '192.168.29.101'
   status: { type: String, enum: ['available', 'logged-in', 'guest', 'offline'], default: 'available' },
@@ -691,7 +696,10 @@ function normalizeDepartment(dept) {
     'ai': 'Artificial Intelligence',
     'ml': 'Machine Learning',
     'ds': 'Data Science',
-    'data': 'Data Science'
+    'data': 'Data Science',
+    'csbs': 'CSBS',
+    'computer science and business systems': 'CSBS',
+    'cs&bs': 'CSBS'
   };
   
   const normalized = dept.toLowerCase().trim();
@@ -2475,6 +2483,7 @@ app.post('/api/student-login', async (req, res) => {
         { systemNumber },
         {
           systemNumber,
+          computerName,
           labId,
           ipAddress: clientIP, // Use cleaned IP address
           status: isGuest ? 'guest' : 'logged-in',
@@ -2589,6 +2598,7 @@ app.post('/api/student-logout', async (req, res) => {
             currentStudentName: null,
             isGuest: false,
             lastSeen: new Date()
+            // computerName is not changed on logout
           }
         );
         console.log(`✅ System ${session.systemNumber} marked as available`);
@@ -2816,6 +2826,7 @@ app.get('/api/systems/:labId', async (req, res) => {
     // Create list with only logged-in/guest systems
     const systemList = systems.map(system => ({
       systemNumber: system.systemNumber,
+      computerName: system.computerName || null,
       labId: system.labId,
       status: system.status,
       ipAddress: system.ipAddress || null,
@@ -3596,6 +3607,7 @@ app.get('/api/export-session-data/:sessionId', async (req, res) => {
 const kioskSockets = new Map(); // sessionId -> socket.id (for logged-in kiosks)
 const kioskSystemSockets = new Map(); // systemNumber -> socket.id (for pre-login kiosks)
 const adminSockets = new Map();
+const pendingOffers = new Map(); // sessionId -> { offer, adminSocketId } — queued until kiosk registers
 
 io.on('connection', (socket) => {
   console.log("✅ Socket connected:", socket.id);
@@ -3615,7 +3627,7 @@ io.on('connection', (socket) => {
   // ========================================================================
   // SYSTEM REGISTRY - Track all powered-on systems (even before login)
   // ========================================================================
-  socket.on('register-kiosk', async ({ sessionId, systemNumber, labId, ipAddress }) => {
+  socket.on('register-kiosk', async ({ sessionId, systemNumber, computerName, labId, ipAddress }) => {
     try {
       // Detect lab from IP if not provided
       const detectedLabId = labId || detectLabFromIP(ipAddress || clientIP);
@@ -3631,6 +3643,14 @@ io.on('connection', (socket) => {
       if (sessionId) {
         kioskSockets.set(sessionId, socket.id);
         socket.join(`session-${sessionId}`);
+        
+        // ✅ TIMING FIX: Flush any pending offer that arrived before kiosk registered
+        if (pendingOffers.has(sessionId)) {
+          const pending = pendingOffers.get(sessionId);
+          pendingOffers.delete(sessionId);
+          console.log(`📤 FLUSHING pending offer for session ${sessionId} to newly-registered kiosk ${socket.id}`);
+          socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId });
+        }
       }
       
       // Always register by system number (works before and after login)
@@ -3643,6 +3663,7 @@ io.on('connection', (socket) => {
           { systemNumber },
           {
             systemNumber,
+            computerName,
             labId: detectedLabId,
             ipAddress: ipAddress || clientIP,
             status: sessionId ? 'logged-in' : 'available',
@@ -3686,7 +3707,7 @@ io.on('connection', (socket) => {
   });
   
   // Handle system heartbeat via Socket.IO (real-time socketId updates)
-  socket.on('system-heartbeat', async ({ systemNumber, labId, ipAddress, timestamp, status }) => {
+  socket.on('system-heartbeat', async ({ systemNumber, computerName, labId, ipAddress, timestamp, status }) => {
     try {
       if (!systemNumber || !labId) {
         console.warn('⚠️ Invalid heartbeat: missing systemNumber or labId');
@@ -3698,6 +3719,7 @@ io.on('connection', (socket) => {
         { systemNumber, labId },
         {
           systemNumber,
+          computerName,
           labId,
           ipAddress: ipAddress || socket.handshake.address,
           socketId: socket.id, // Update with current socket ID
@@ -3729,13 +3751,11 @@ io.on('connection', (socket) => {
     console.log('📹 Admin offer for session:', sessionId || 'PRE-LOGIN', 'System:', systemNumber, '-> Kiosk:', kioskSocketId, 'Modal:', isModal);
     
     // Track admin for this session/system
+    // 🔥 FIX: Replace the admin list entirely on each new offer so stale IDs don't accumulate.
+    // Old IDs from previous failed attempts would route answers/ICE to disconnected sockets.
     const trackingKey = sessionId || systemNumber;
-    if (!adminSockets.has(trackingKey)) {
-      adminSockets.set(trackingKey, []);
-    }
-    if (!adminSockets.get(trackingKey).includes(adminSocketId)) {
-      adminSockets.get(trackingKey).push(adminSocketId);
-    }
+    adminSockets.set(trackingKey, adminSocketId ? [adminSocketId] : []);
+    console.log(`📹 Admin registered for key "${trackingKey}": ${adminSocketId}`);
     
     if (kioskSocketId) {
       console.log('📤 Forwarding offer to kiosk:', kioskSocketId);
@@ -3747,18 +3767,27 @@ io.on('connection', (socket) => {
       });
       io.to(kioskSocketId).emit('admin-offer', { offer, sessionId: sessionId || null, adminSocketId });
       console.log('✅ Offer emitted to kiosk');
-    } else {
-      console.warn('⚠️ Kiosk not found for session:', sessionId, 'or system:', systemNumber);
-      // Send error back to admin (safely handle undefined adminSocketId)
-      if (adminSocketId) {
-        const targetSocketId = adminSocketId.replace('-modal', '');
-        io.to(targetSocketId).emit('webrtc-error', { 
-          sessionId, 
-          error: 'Student not connected' 
-        });
+      } else {
+        // ✅ TIMING FIX: Queue the offer if kiosk hasn't registered with sessionId yet
+        if (sessionId) {
+          console.log(`⏳ Kiosk not found yet for session ${sessionId} — queuing offer for when kiosk registers`);
+          pendingOffers.set(sessionId, { offer, adminSocketId });
+          // ✅ FIX: Extended from 30s → 120s to survive DB pool queue delays for students 11–70
+          setTimeout(() => { if (pendingOffers.get(sessionId)?.offer === offer) pendingOffers.delete(sessionId); }, 120000);
+        } else {
+          console.warn('⚠️ Kiosk not found for system:', systemNumber, '(no sessionId to queue)');
+          // Send error back to admin
+          if (adminSocketId) {
+            const targetSocketId = adminSocketId.replace('-modal', '');
+            io.to(targetSocketId).emit('webrtc-error', {
+              sessionId,
+              error: 'Student not connected'
+            });
+          }
+        }
       }
-    }
   });
+
 
   socket.on('webrtc-answer', ({ answer, adminSocketId, sessionId }) => {
     console.log('📹 ✅✅✅ SERVER RECEIVED WebRTC answer from kiosk!');
@@ -3770,33 +3799,96 @@ io.on('connection', (socket) => {
       kioskSocketId: socket.id
     });
     
-    // Handle both regular and modal admin socket IDs
-    let targetSocketId = adminSocketId;
-    if (adminSocketId && adminSocketId.includes('-modal')) {
-      // Extract the base socket ID for modal connections
-      targetSocketId = adminSocketId.replace('-modal', '');
+    // Use adminSockets registry (same as ICE candidate routing) — more reliable than raw socket ID
+    // The raw adminSocketId can be stale if admin browser reconnected since the offer was sent
+    // admin-offer registers admins using key = sessionId || systemNumber, so check both
+    // Reverse-lookup: find which systemNumber this kiosk socket corresponds to
+    let kioskSystemNum = null;
+    for (const [sysNum, sockId] of kioskSystemSockets.entries()) {
+      if (sockId === socket.id) { kioskSystemNum = sysNum; break; }
+    }
+    let registeredAdmins = adminSockets.get(sessionId) || [];
+    if (registeredAdmins.length === 0 && kioskSystemNum) {
+      registeredAdmins = adminSockets.get(kioskSystemNum) || [];
+      console.log(`📹 Falling back to systemNumber key "${kioskSystemNum}": ${registeredAdmins.length} admin(s)`);
     }
     
-    console.log('📹 Forwarding answer to admin socket:', targetSocketId);
-    io.to(targetSocketId).emit('webrtc-answer', { answer, sessionId, adminSocketId });
-    console.log('📹 ✅ Answer forwarded to admin');
+    if (registeredAdmins.length > 0) {
+      console.log(`📹 Forwarding answer to ${registeredAdmins.length} registered admin(s) for session: ${sessionId}`);
+      registeredAdmins.forEach(registeredAdminId => {
+        io.to(registeredAdminId).emit('webrtc-answer', { answer, sessionId, adminSocketId });
+      });
+    } else {
+      // Fallback: use raw adminSocketId from the offer
+      let targetSocketId = adminSocketId;
+      if (adminSocketId && adminSocketId.includes('-modal')) {
+        targetSocketId = adminSocketId.replace('-modal', '');
+      }
+      console.log('📹 No registered admins in registry, falling back to raw adminSocketId:', targetSocketId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('webrtc-answer', { answer, sessionId, adminSocketId });
+      } else {
+        console.error('❌ SERVER: Cannot route webrtc-answer — no adminSocketId and no registered admins for session:', sessionId);
+      }
+    }
+    console.log('📹 ✅ Answer forwarded to admin(s)');
   });
 
-  socket.on('webrtc-ice-candidate', ({ candidate, sessionId }) => {
+
+  socket.on('webrtc-ice-candidate', ({ candidate, sessionId, adminSocketId }) => {
     console.log('🧊 SERVER: ICE candidate for session:', sessionId, 'from:', socket.id);
-    
-    const kioskSocketId = kioskSockets.get(sessionId);
-    const admins = adminSockets.get(sessionId) || [];
-    
-    if (socket.id === kioskSocketId) {
-      console.log('🧊 SERVER: ICE from KIOSK -> sending to', admins.length, 'admin(s)');
+
+    // 🔥 FIX: Determine direction (kiosk→admin or admin→kiosk) using MULTIPLE methods.
+    // Old code: only compared socket.id === kioskSockets.get(sessionId), which fails if kiosk
+    // hasn't re-registered its new socket ID after a reconnect → all kiosk ICE was misrouted.
+
+    // Method 1: Check kioskSockets map (reliable after login + register-kiosk with sessionId)
+    const registeredKioskId = kioskSockets.get(sessionId);
+
+    // Method 2: Reverse-lookup kioskSystemSockets to see if this socket is ANY known kiosk
+    let kioskSystemNum = null;
+    for (const [sysNum, sockId] of kioskSystemSockets.entries()) {
+      if (sockId === socket.id) { kioskSystemNum = sysNum; break; }
+    }
+
+    const isFromKiosk = socket.id === registeredKioskId || kioskSystemNum !== null;
+
+    if (isFromKiosk) {
+      // --- Kiosk → Admin ---
+      let admins = adminSockets.get(sessionId) || [];
+      // Fallback 1: look up by system number key
+      if (admins.length === 0 && kioskSystemNum) {
+        admins = adminSockets.get(kioskSystemNum) || [];
+        console.log(`🧊 ICE fallback: found ${admins.length} admin(s) via systemNumber key "${kioskSystemNum}"`);
+      }
+      // Fallback 2: use adminSocketId that the kiosk echoed from the original offer
+      if (admins.length === 0 && adminSocketId) {
+        admins = [adminSocketId];
+        console.log(`🧊 ICE direct fallback: routing to adminSocketId ${adminSocketId}`);
+      }
+      console.log('🧊 SERVER: ICE from KIOSK → sending to', admins.length, 'admin(s)', admins);
       admins.forEach(adminId => {
         io.to(adminId).emit('webrtc-ice-candidate', { candidate, sessionId });
       });
     } else {
-      console.log('🧊 SERVER: ICE from ADMIN -> sending to kiosk:', kioskSocketId);
-      if (kioskSocketId) {
-        io.to(kioskSocketId).emit('webrtc-ice-candidate', { candidate, sessionId });
+      // --- Admin → Kiosk ---
+      // Use registeredKioskId first, then fall back to kioskSystemSockets
+      let targetKioskId = registeredKioskId;
+      if (!targetKioskId && sessionId) {
+        // Try to find kiosk by system number derived from adminSockets tracking key
+        for (const [key, admins] of adminSockets.entries()) {
+          if (admins.includes(socket.id) && kioskSystemSockets.has(key)) {
+            targetKioskId = kioskSystemSockets.get(key);
+            console.log(`🧊 ICE admin fallback: kiosk found via systemNumber key "${key}": ${targetKioskId}`);
+            break;
+          }
+        }
+      }
+      console.log('🧊 SERVER: ICE from ADMIN → sending to kiosk:', targetKioskId);
+      if (targetKioskId) {
+        io.to(targetKioskId).emit('webrtc-ice-candidate', { candidate, sessionId });
+      } else {
+        console.warn('🧊 ⚠️ SERVER: Could not find kiosk for ICE candidate, sessionId:', sessionId);
       }
     }
   });
@@ -5176,7 +5268,7 @@ app.get('/api/manual-reports/:filename', async (req, res) => {
 // System heartbeat - Registers/updates kiosk even before login
 app.post('/api/system-heartbeat', async (req, res) => {
   try {
-    const { systemNumber, labId, ipAddress, timestamp, status } = req.body;
+    const { systemNumber, computerName, labId, ipAddress, timestamp, status } = req.body;
     
     if (!systemNumber || !labId) {
       return res.status(400).json({ success: false, error: 'Missing systemNumber or labId' });
@@ -5186,18 +5278,21 @@ app.post('/api/system-heartbeat', async (req, res) => {
     const clientIP = ipAddress || req.ip || req.connection.remoteAddress;
     
     // Update or create system registry entry
+    const updateData = {
+      systemNumber,
+      labId,
+      ipAddress: clientIP,
+      lastSeen: new Date(),
+      status: status || 'available',
+      $setOnInsert: { 
+        createdAt: new Date()
+      }
+    };
+    if (computerName) updateData.computerName = computerName;
+    
     await SystemRegistry.findOneAndUpdate(
       { systemNumber, labId },
-      {
-        systemNumber,
-        labId,
-        ipAddress: clientIP,
-        lastSeen: new Date(),
-        status: status || 'available', // 'available' = powered on but no login
-        $setOnInsert: { 
-          createdAt: new Date()
-        }
-      },
+      updateData,
       { upsert: true, new: true }
     );
     

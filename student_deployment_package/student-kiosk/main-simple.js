@@ -244,7 +244,31 @@ function getLocalIP() {
 }
 
 const LAB_ID = detectLabFromIP();
-const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || `${LAB_ID}-${String(Math.floor(Math.random() * 10) + 1).padStart(2, '0')}`;
+
+// ✅ DETECT SYSTEM NUMBER FROM COMPUTER NAME (last digits of hostname)
+function detectSystemNumber() {
+  try {
+    const hostname = os.hostname().toUpperCase(); // e.g., "SDC-CC-69"
+    console.log(`🖥️ Computer hostname: ${hostname}`);
+    
+    // Try to extract number from hostname (e.g., "SDC-CC-69" → "69")
+    const match = hostname.match(/CC-?(\d+)/i) || hostname.match(/(\d+)$/);
+    
+    if (match && match[1]) {
+      const sysNum = match[1].padStart(2, '0'); // Ensure 2 digits (e.g., "01", "69")
+      console.log(`✅ System number detected from hostname: ${sysNum}`);
+      return `${LAB_ID}-${sysNum}`;
+    } else {
+      console.warn(`⚠️ Could not extract system number from hostname: ${hostname}`);
+      return `${LAB_ID}-01`; // Default fallback
+    }
+  } catch (error) {
+    console.error('⚠️ Error detecting system number:', error.message);
+    return `${LAB_ID}-01`;
+  }
+}
+
+const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || detectSystemNumber();
 
 // Kiosk mode configuration
 // ✅ PRODUCTION: Full kiosk lock enabled from startup
@@ -339,7 +363,21 @@ function createWindow() {
     return true;
   });
 
+  // ✅ CRITICAL FIX: Auto-select screen WITHOUT showing picker dialog
+  // Without this, getDisplayMedia shows a system dialog that kiosk blocks → 20s timeout → no WebRTC answer
+  mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      // Auto-select the first (primary) screen — no user interaction needed
+      console.log('🖥️ Auto-selecting screen source for display media:', sources[0]?.name);
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(err => {
+      console.error('❌ Error in setDisplayMediaRequestHandler:', err);
+      callback({}); // Fallback: let Electron handle it
+    });
+  });
+
   mainWindow.loadFile('student-interface.html');
+
   
   // 🔒 CRITICAL: Show window IMMEDIATELY (don't wait for ready-to-show)
   // This ensures kiosk appears within 1ms of launch
@@ -1475,6 +1513,7 @@ app.whenReady().then(() => {
     function sendSystemHeartbeat() {
       const systemInfo = {
         systemNumber: SYSTEM_NUMBER,
+        computerName: os.hostname(),
         labId: LAB_ID,
         ipAddress: getLocalIP(),
         timestamp: new Date().toISOString()

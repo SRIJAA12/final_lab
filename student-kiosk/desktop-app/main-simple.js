@@ -365,7 +365,21 @@ function createWindow() {
     return true;
   });
 
+  // ✅ CRITICAL FIX: Auto-select screen WITHOUT showing picker dialog
+  // Without this, getDisplayMedia shows a system dialog that kiosk blocks → 20s timeout → no WebRTC answer
+  mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      // Auto-select the first (primary) screen — no user interaction needed
+      console.log('🖥️ Auto-selecting screen source for display media:', sources[0]?.name);
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(err => {
+      console.error('❌ Error in setDisplayMediaRequestHandler:', err);
+      callback({}); // Fallback: let Electron handle it
+    });
+  });
+
   mainWindow.loadFile('student-interface.html');
+
   
   // 🔒 CRITICAL: Show window IMMEDIATELY (don't wait for ready-to-show)
   // This ensures kiosk appears within 1ms of launch

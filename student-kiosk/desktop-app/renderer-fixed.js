@@ -96,11 +96,11 @@ async function prepareScreenCapture() {
         mandatory: {
           chromeMediaSource: 'desktop',
           chromeMediaSourceId: screenSource.id,
-          minWidth: 1280,
-          maxWidth: 1920,
-          minHeight: 720,
-          maxHeight: 1080,
-          maxFrameRate: 30
+          minWidth: 640,
+          maxWidth: 800,
+          minHeight: 480,
+          maxHeight: 600,
+          maxFrameRate: 10
         }
       }
     });
@@ -132,15 +132,11 @@ async function handleAdminOffer({ offer, sessionId: adminSessionId, adminSocketI
   }
 
   try {
-    // Create peer connection
-    console.log('🔗 Creating peer connection for admin offer...');
+    // Create peer connection (LAN-only: STUN blocked by college firewall)
+    console.log('🔗 Creating peer connection (LAN-only, no STUN)...');
     pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ],
-      iceCandidatePoolSize: 10
+      iceServers: [],      // No STUN needed — all machines on same 10.10.46.x subnet
+      iceCandidatePoolSize: 0
     });
 
     console.log('✅ KIOSK: Peer connection created');
