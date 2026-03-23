@@ -784,9 +784,9 @@
               mandatory: {
                 chromeMediaSource: 'desktop',
                 chromeMediaSourceId: screenSource.id,
-                minWidth: 640, maxWidth: 800,
-                minHeight: 480, maxHeight: 600,
-                maxFrameRate: 10
+                minWidth: 640, maxWidth: 640,
+                minHeight: 360, maxHeight: 360,
+                maxFrameRate: 5  // 🔥 5fps: 70 streams × 5fps is sustainable; 10fps was overloading server
               }
             }
           });
@@ -797,9 +797,9 @@
           preWarmedStream = await navigator.mediaDevices.getDisplayMedia({
             video: {
               cursor: 'always',
-              width: { ideal: 800 },
-              height: { ideal: 600 },
-              frameRate: { ideal: 10 }
+              width: { ideal: 640, max: 640 },
+              height: { ideal: 360, max: 360 },
+              frameRate: { ideal: 5, max: 5 }  // 🔥 5fps for 70-system scalability
             },
             audio: false
           });
@@ -1010,9 +1010,9 @@
             displayStream = await navigator.mediaDevices.getDisplayMedia({
               video: {
                 cursor: 'always',
-                width: { ideal: 800 },
-                height: { ideal: 600 },
-                frameRate: { ideal: 10 }
+                width: { ideal: 640, max: 640 },
+                height: { ideal: 360, max: 360 },
+                frameRate: { ideal: 5, max: 5 }  // 🔥 5fps keeps 70 streams within LAN capacity
               },
               audio: false
             });
@@ -1043,10 +1043,10 @@
                     chromeMediaSource: 'desktop',
                     chromeMediaSourceId: screenSource.id,
                     minWidth: 640,
-                    maxWidth: 800,
-                    minHeight: 480,
-                    maxHeight: 600,
-                    maxFrameRate: 10
+                    maxWidth: 640,
+                    minHeight: 360,
+                    maxHeight: 360,
+                    maxFrameRate: 5  // 🔥 5fps - supports 70 simultaneous streams
                   }
                 }
               });
@@ -1070,11 +1070,27 @@
         // Store stream for cleanup on next offer
         currentDisplayStream = displayStream;
 
-        // Add video tracks to peer connection
+        // Add video tracks to peer connection with bitrate cap
         console.log('📹 KIOSK: Adding video tracks to peer connection...');
         displayStream.getVideoTracks().forEach((track) => {
           console.log('📹 KIOSK: Adding video track:', track.label);
           const sender = pc.addTrack(track, displayStream);
+          // 🔥 BITRATE CAP: 200 kbps per stream. 70 streams × 200kbps = 14 Mbps total.
+          // Without this cap each stream can use 1-5 Mbps, overloading the server at 8-9 systems.
+          if (sender && sender.setParameters) {
+            const params = sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+              params.encodings = [{}];
+            }
+            params.encodings[0].maxBitrate = 200000; // 200 kbps hard cap
+            params.encodings[0].maxFramerate = 5;
+            params.encodings[0].scaleResolutionDownBy = 1.0;
+            sender.setParameters(params).then(() => {
+              console.log('✅ KIOSK: Bitrate capped at 200kbps, max 5fps for scalability');
+            }).catch(e => {
+              console.warn('⚠️ KIOSK: Could not apply bitrate cap:', e.message);
+            });
+          }
           console.log('✅ Track added, sender:', sender ? 'created' : 'failed');
         });
 

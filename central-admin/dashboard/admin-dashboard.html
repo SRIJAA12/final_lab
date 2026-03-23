@@ -807,6 +807,7 @@
         let connectionDisconnectTime = new Map(); // Track WHEN each connection disconnects
         let connectionRetryCount = new Map(); // Track retry attempts per session (for exponential backoff)
         let exhaustedRetrySessions = new Set(); // Track sessions that exhausted all retries (don't restart these)
+        let pendingStartTimers = new Map(); // Track pending 1.5s INSTANT START timers (sessionId -> timerId) so kiosk-ready can cancel them
         
         // FIXED SERVER URL - Admin system only (no auto-detection needed)
         const serverUrl = 'http://10.10.46.103:7401';
@@ -1136,7 +1137,22 @@
                             const staggerDelay = 500 + (restartIndex * 1000);
                             setTimeout(() => startMonitoring(sessionId), staggerDelay);
                         } else if (state === 'connecting' || state === 'new') {
-                            console.log(`  ⏳ Connection still establishing for session: ${sessionId} (${connectingDuration.toFixed(1)}s) - leaving it alone`);
+                            // 🔥 SPLIT TIMEOUT: 'new/new' (offer dropped) vs 'connecting' (DTLS in progress)
+                            // - new/new: ICE never started = offer never reached kiosk → retry fast (30s)
+                            // - connecting: ICE started but connection not established yet → give more time (60s)
+                            const isFullyNew = (state === 'new' && iceState === 'new');
+                            const restartThreshold = isFullyNew ? 30 : 60;
+                            
+                            if (connectingDuration >= restartThreshold) {
+                                console.error(`  ❌ ❌ STUCK in ${state}/${iceState} for ${connectingDuration.toFixed(1)}s (threshold: ${restartThreshold}s) - FORCE RESTARTING session: ${sessionId}`);
+                                try { pc.close(); } catch(e) {}
+                                monitoringConnections.delete(sessionId);
+                                connectionStartTime.delete(sessionId);
+                                connectionDisconnectTime.delete(sessionId);
+                                setTimeout(() => startMonitoring(sessionId), 500);
+                            } else {
+                                console.log(`  ⏳ Connection establishing for session: ${sessionId} (${connectingDuration.toFixed(1)}s / ${restartThreshold}s threshold, state: ${state}/${iceState})`);
+                            }
                         } else if (isDisconnected && disconnectDuration < 10) {
                             console.log(`  🔄 Connection disconnected for session: ${sessionId} (${disconnectDuration.toFixed(1)}s) - letting WebRTC auto-reconnect`);
                         }
@@ -1203,10 +1219,13 @@
                         // The server emits session-created and session-login-success at the same time.
                         // The kiosk needs to receive session-login-success and re-register with sessionId
                         // BEFORE we send our offer. Otherwise server has no kiosk socket to forward to → dropped.
+                        // 🔥 FIX: Save the timer ID so kiosk-screen-ready can cancel it (prevents dual offer)
                         console.log('⏳ Waiting 1.5s for kiosk to re-register with sessionId before sending offer...');
-                        setTimeout(() => {
+                        const instantStartTimer = setTimeout(() => {
+                            pendingStartTimers.delete(sessionId); // Timer fired - remove from map
                             startMonitoring(sessionId);
                         }, 1500);
+                        pendingStartTimers.set(sessionId, instantStartTimer);
                     } else {
                         console.log('✅ Monitoring already active for:', sessionId);
                     }
@@ -1281,6 +1300,17 @@
                 
                 screenReadySessions.add(data.sessionId);
                 
+                // 🔥 CRITICAL FIX: Cancel any pending INSTANT START 1.5s timer for this session.
+                // This is the ROOT CAUSE of duplicate offers:
+                //   session-created fires → sets 1.5s timer
+                //   kiosk-screen-ready fires ~0.5s later → both send an offer
+                //   Kiosk gets 2 offers → processes first, second confuses it → new/new forever
+                if (pendingStartTimers.has(data.sessionId)) {
+                    clearTimeout(pendingStartTimers.get(data.sessionId));
+                    pendingStartTimers.delete(data.sessionId);
+                    console.log(`🚫 Cancelled pending INSTANT START timer for: ${data.sessionId} (kiosk-ready will handle it)`);
+                }
+                
                 const pc = monitoringConnections.get(data.sessionId);
                 const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
                 const isChecking = pc && (pc.iceConnectionState === 'checking' || pc.connectionState === 'connecting');
@@ -1301,7 +1331,8 @@
                     // PC was just created or is actively negotiating — the answer is in flight
                     // Do NOT restart — just wait for the answer to arrive
                     console.log(`⏳ KIOSK READY but PC is still young (${(pcAge/1000).toFixed(1)}s) / checking — NOT restarting. Waiting for WebRTC answer...`);
-                } else if (!monitoringConnections.has(data.sessionId) || (!isConnected && !hasActiveVideo)) {
+                } else {
+                    // No connection yet OR stale old connection - start fresh from kiosk-ready
                     console.log(`🎥 ⚡ KIOSK READY - Starting monitoring for:`, data.sessionId);
                     
                     // Clean up stale connection (older than 10s that never connected)
@@ -1730,11 +1761,20 @@
                 const disconnectDuration = disconnectTime ? (Date.now() - disconnectTime) / 1000 : 0;
                 const hasBeenDisconnectedTooLong = isDisconnected && disconnectDuration >= 10;
                 
+                // 🔥 NEW: Detect connections stuck in new/connecting for 90+ seconds
+                const connectingStartTime = connectionStartTime.get(sessionId);
+                const connectingDuration = connectingStartTime ? (Date.now() - connectingStartTime) / 1000 : 0;
+                // 🔥 STUCK CHECK: new/new (30s) vs connecting (60s)
+                const isFullyNew2 = (state === 'new' && iceState === 'new');
+                const stuckThreshold = isFullyNew2 ? 30 : 60;
+                const isStuckConnecting = isConnecting && connectingDuration >= stuckThreshold;
+                
                 // 🛡️ FIX: Only restart if:
                 // 1. No connection exists
                 // 2. Connection failed/closed
-                // 3. Disconnected for 10+ seconds (not just connection age >= 10)
-                const needsRestart = !hasConnection || isFailed || hasBeenDisconnectedTooLong;
+                // 3. Disconnected for 10+ seconds
+                // 4. Stuck in connecting/new for 90+ seconds (offer was probably dropped)
+                const needsRestart = !hasConnection || isFailed || hasBeenDisconnectedTooLong || isStuckConnecting;
                 
                 if (needsRestart) {
                     console.log('🔄 Restarting monitoring for EXISTING session:', sessionId, {
@@ -1762,7 +1802,21 @@
                     console.log('⏱️ Will restart monitoring in', staggerDelay / 1000, 'seconds');
                     setTimeout(() => startMonitoring(sessionId), staggerDelay);
                 } else if (isConnecting) {
-                    console.log('⏳ Session connecting:', sessionId, '- state:', state, '- ICE:', iceState, '- GIVING IT TIME');
+                    // 🔥 SPLIT TIMEOUT: new/new (offer dropped) restarts at 30s, connecting (DTLS) at 60s
+                    const isFullyNew = (state === 'new' && iceState === 'new');
+                    const restartThreshold = isFullyNew ? 30 : 60;
+                    if (isStuckConnecting && connectingDuration >= restartThreshold) {
+                        console.error(`⏳ STUCK ${state}/${iceState} for ${connectingDuration.toFixed(0)}s — FORCE RESTARTING: ${sessionId}`);
+                        if (pc) {
+                            try { pc.close(); } catch(e) {}
+                            monitoringConnections.delete(sessionId);
+                            connectionStartTime.delete(sessionId);
+                        }
+                        const staggerDelay = (index * 300) + 200;
+                        setTimeout(() => startMonitoring(sessionId), staggerDelay);
+                    } else {
+                        console.log(`⏳ Session connecting: ${sessionId} - state: ${state} - ICE: ${iceState} - ${connectingDuration.toFixed(0)}s elapsed (restart at ${restartThreshold}s)`);
+                    }
                 } else if (isDisconnected) {
                     console.log('⚠️ Session disconnected:', sessionId, '- duration:', disconnectDuration.toFixed(1) + 's - waiting for auto-reconnect (will restart at 10s)');
                 } else if (isConnected) {
@@ -2066,19 +2120,39 @@
                     });
                 };
                 
-                // Check if track is received within 15 seconds (increased from 10)
+                // 🔥 TRACK TIMEOUT: If no video track received within 15s, restart immediately
+                // new/new = offer never reached kiosk → restart NOW (no chance of recovery)
+                // connecting = DTLS may be in progress → also restart (30s DTLS check handles slow ones)
                 trackTimeoutId = setTimeout(() => {
                     if (!trackReceived) {
-                        console.error('❌ ❌ NO VIDEO TRACK RECEIVED within 15 seconds for session:', sessionId);
-                        console.error('❌ This means the kiosk is not sending video tracks properly');
-                        console.error('❌ Connection state:', peerConnection.connectionState);
-                        console.error('❌ ICE state:', peerConnection.iceConnectionState);
-                        console.error('❌ Checking if kiosk stream is active...');
+                        const connState = peerConnection.connectionState;
+                        const iceState = peerConnection.iceConnectionState;
+                        console.error('❌ NO VIDEO TRACK within 15s for session:', sessionId);
+                        console.error('   Connection:', connState, '| ICE:', iceState);
                         
-                        // Don't close the connection - let it keep trying
-                        console.warn('⚠️ Keeping connection open for potential recovery...');
+                        if (connState === 'new' && iceState === 'new') {
+                            // new/new = offer was DROPPED (kiosk never received it)
+                            // No point keeping this open — immediately restart
+                            console.error('   🔄 STATE IS new/new → OFFER WAS DROPPED. Restarting immediately...');
+                            try { peerConnection.close(); } catch(e) {}
+                            monitoringConnections.delete(sessionId);
+                            connectionStartTime.delete(sessionId);
+                            connectionDisconnectTime.delete(sessionId);
+                            setTimeout(() => startMonitoring(sessionId), 500);
+                        } else if (connState === 'connected') {
+                            // Connected but no video → track may come soon, give extra time
+                            console.warn('   ⏳ STATE IS connected but no video yet — waiting longer...');
+                        } else {
+                            // connecting/checking state → restart to unblock
+                            console.error('   🔄 STATE IS', connState, '/ ICE:', iceState, '→ Restarting to unblock...');
+                            try { peerConnection.close(); } catch(e) {}
+                            monitoringConnections.delete(sessionId);
+                            connectionStartTime.delete(sessionId);
+                            connectionDisconnectTime.delete(sessionId);
+                            setTimeout(() => startMonitoring(sessionId), 1000);
+                        }
                     }
-                }, 15000); // Increased timeout
+                }, 15000);
                 
                 // Handle ICE candidates
                 peerConnection.onicecandidate = (event) => {
@@ -2141,9 +2215,11 @@
                         // Clear disconnect time on successful ICE reconnect
                         connectionDisconnectTime.delete(sessionId);
                         
-                        // 🔥 DTLS TIMEOUT CHECK: If ICE connects but connection state is still "connecting" after 5 seconds,
+                        // 🔥 DTLS TIMEOUT CHECK: If ICE connects but connection state is still "connecting" after 30 seconds,
                         // this indicates DTLS handshake failure - restart with exponential backoff
-                        // ✅ FIX: Reduced from 15s to 5s for faster recovery (60 systems need quick retries)
+                        // ✅ FIX: 30s is correct for LAN with 70 simultaneous systems.
+                        // 5s was WAY too short - ICE connected but DTLS can legitimately take 5-20s on a busy LAN.
+                        // Premature restart at 5s caused: new offer sent → kiosk confused → new/new stuck loop.
                         setTimeout(() => {
                             const currentConnectionState = peerConnection.connectionState;
                             const currentIceState = peerConnection.iceConnectionState;
@@ -2157,7 +2233,7 @@
                                 connectionRetryCount.set(sessionId, retryCount + 1);
                                 
                                 console.error('❌ ❌ DTLS HANDSHAKE TIMEOUT for session:', sessionId);
-                                console.error('   ICE is connected but connection state stuck at "connecting" for 5s');
+                                console.error('   ICE is connected but connection state stuck at "connecting" for 30s');
                                 console.error('   This indicates DTLS encryption handshake failed');
                                 console.error(`   Retry attempt: ${retryCount + 1} - Backoff delay: ${backoffDelay}ms`);
                                 
@@ -2215,7 +2291,7 @@
                                 console.log('✅ Connection completed successfully for session:', sessionId,
                                            '(ICE:', currentIceState, '+ Connection:', currentConnectionState, ')');
                             }
-                        }, 5000); // ✅ FIX: Reduced from 15s to 5s - check DTLS status after 5 seconds for faster retry
+                        }, 30000); // ✅ FIX: 30s - DTLS can take 5-20s on a busy LAN with 70 systems. 5s caused premature restart loops.
                     } else if (peerConnection.iceConnectionState === 'disconnected') {
                         // Track ICE disconnection time
                         if (!connectionDisconnectTime.has(sessionId)) {
