@@ -4237,13 +4237,22 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => { 
+  socket.on('disconnect', async () => { 
     console.log("❌ Socket disconnected:", socket.id); 
     
     for (const [sessionId, sId] of kioskSockets.entries()) {
       if (sId === socket.id) {
         kioskSockets.delete(sessionId);
         console.log('🧹 Cleaned up kiosk for session:', sessionId);
+      }
+    }
+
+    const disconnectedSystems = [];
+    for (const [systemNumber, sId] of kioskSystemSockets.entries()) {
+      if (sId === socket.id) {
+        kioskSystemSockets.delete(systemNumber);
+        disconnectedSystems.push(systemNumber);
+        console.log('🧹 Cleaned up kiosk system socket for:', systemNumber);
       }
     }
     
@@ -4255,6 +4264,24 @@ io.on('connection', (socket) => {
           adminSockets.delete(sessionId);
         }
         console.log('🧹 Cleaned up admin for session:', sessionId);
+      }
+    }
+
+    if (disconnectedSystems.length > 0) {
+      try {
+        await SystemRegistry.updateMany(
+          { systemNumber: { $in: disconnectedSystems }, socketId: socket.id },
+          {
+            $set: {
+              socketId: null,
+              status: 'offline',
+              lastSeen: new Date()
+            }
+          }
+        );
+        console.log('🧹 Marked disconnected systems offline:', disconnectedSystems.join(', '));
+      } catch (error) {
+        console.error('❌ Error cleaning up disconnected systems:', error);
       }
     }
   });
