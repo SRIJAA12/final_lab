@@ -3658,6 +3658,14 @@ io.on('connection', (socket) => {
         kioskSystemSockets.set(systemNumber, socket.id);
         console.log(`✅ Registered kiosk by system number: ${systemNumber} -> ${socket.id}`);
         
+        // ✅ FIX 6: Flush pending offer keyed by systemNumber (when admin sent offer before kiosk registered by sessionId)
+        if (!sessionId && pendingOffers.has(systemNumber)) {
+          const pending = pendingOffers.get(systemNumber);
+          pendingOffers.delete(systemNumber);
+          console.log(`📤 FLUSHING pending offer for systemNumber ${systemNumber} to newly-registered kiosk ${socket.id}`);
+          socket.emit('admin-offer', { offer: pending.offer, sessionId: pending.sessionId || null, adminSocketId: pending.adminSocketId });
+        }
+        
         // Update system registry in database
         await SystemRegistry.findOneAndUpdate(
           { systemNumber },
@@ -3696,6 +3704,15 @@ io.on('connection', (socket) => {
   // Handle kiosk screen ready event
   socket.on('kiosk-screen-ready', ({ sessionId, hasVideo, timestamp }) => {
     console.log('🎉 KIOSK SCREEN READY:', sessionId, 'Has Video:', hasVideo);
+    
+    // ✅ FIX 7: Flush any pending offer now that kiosk's screen is confirmed ready
+    if (sessionId && pendingOffers.has(sessionId)) {
+      const pending = pendingOffers.get(sessionId);
+      pendingOffers.delete(sessionId);
+      console.log(`📤 FLUSHING pending offer on kiosk-screen-ready for session ${sessionId}`);
+      socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId });
+    }
+    
     // Notify all admins that this kiosk's screen is ready for monitoring
     io.to('admins').emit('kiosk-screen-ready', { 
       sessionId, 
@@ -3770,19 +3787,22 @@ io.on('connection', (socket) => {
       } else {
         // ✅ TIMING FIX: Queue the offer if kiosk hasn't registered with sessionId yet
         if (sessionId) {
-          console.log(`⏳ Kiosk not found yet for session ${sessionId} — queuing offer for when kiosk registers`);
-          pendingOffers.set(sessionId, { offer, adminSocketId });
-          // ✅ FIX: Extended from 30s → 120s to survive DB pool queue delays for students 11–70
+          console.log(`⏳ Kiosk not found yet for session ${sessionId} — queuing by sessionId for when kiosk registers`);
+          pendingOffers.set(sessionId, { offer, adminSocketId, sessionId });
           setTimeout(() => { if (pendingOffers.get(sessionId)?.offer === offer) pendingOffers.delete(sessionId); }, 120000);
-        } else {
-          console.warn('⚠️ Kiosk not found for system:', systemNumber, '(no sessionId to queue)');
-          // Send error back to admin
+        }
+        // ✅ FIX 6: ALSO queue by systemNumber — covers the case where kiosk reconnects before login
+        // When kiosk boots and calls register-kiosk with just systemNumber, flush fires
+        if (systemNumber) {
+          console.log(`⏳ ALSO queuing by systemNumber ${systemNumber} for when kiosk re-registers`);
+          pendingOffers.set(systemNumber, { offer, adminSocketId, sessionId: sessionId || null });
+          setTimeout(() => { if (pendingOffers.get(systemNumber)?.offer === offer) pendingOffers.delete(systemNumber); }, 120000);
+        }
+        if (!sessionId && !systemNumber) {
+          console.warn('⚠️ No sessionId or systemNumber — cannot queue offer, kiosk unreachable');
           if (adminSocketId) {
             const targetSocketId = adminSocketId.replace('-modal', '');
-            io.to(targetSocketId).emit('webrtc-error', {
-              sessionId,
-              error: 'Student not connected'
-            });
+            io.to(targetSocketId).emit('webrtc-error', { sessionId, error: 'Student not connected' });
           }
         }
       }
@@ -3835,7 +3855,8 @@ io.on('connection', (socket) => {
   });
 
 
-  socket.on('webrtc-ice-candidate', ({ candidate, sessionId, adminSocketId }) => {
+
+  socket.on('webrtc-ice-candidate', ({ candidate, sessionId, adminSocketId, systemNumber: payloadSystemNum }) => {
     console.log('🧊 SERVER: ICE candidate for session:', sessionId, 'from:', socket.id);
 
     // 🔥 FIX: Determine direction (kiosk→admin or admin→kiosk) using MULTIPLE methods.
@@ -3851,6 +3872,13 @@ io.on('connection', (socket) => {
       if (sockId === socket.id) { kioskSystemNum = sysNum; break; }
     }
 
+    // ✅ FIX 9: Method 3 — use systemNumber from payload if kiosk included it
+    // If payloadSystemNum is set and matches kioskSystemSockets, we know it's a kiosk
+    if (!kioskSystemNum && payloadSystemNum && kioskSystemSockets.get(payloadSystemNum) === socket.id) {
+      kioskSystemNum = payloadSystemNum;
+      console.log(`🧊 ICE direction confirmed via payload systemNumber: ${kioskSystemNum}`);
+    }
+
     const isFromKiosk = socket.id === registeredKioskId || kioskSystemNum !== null;
 
     if (isFromKiosk) {
@@ -3861,7 +3889,12 @@ io.on('connection', (socket) => {
         admins = adminSockets.get(kioskSystemNum) || [];
         console.log(`🧊 ICE fallback: found ${admins.length} admin(s) via systemNumber key "${kioskSystemNum}"`);
       }
-      // Fallback 2: use adminSocketId that the kiosk echoed from the original offer
+      // Fallback 2: use payloadSystemNum from the kiosk if available
+      if (admins.length === 0 && payloadSystemNum) {
+        admins = adminSockets.get(payloadSystemNum) || [];
+        console.log(`🧊 ICE payload-sys fallback: found ${admins.length} admin(s) via payloadSystemNum "${payloadSystemNum}"`);
+      }
+      // Fallback 3: use adminSocketId that the kiosk echoed from the original offer
       if (admins.length === 0 && adminSocketId) {
         admins = [adminSocketId];
         console.log(`🧊 ICE direct fallback: routing to adminSocketId ${adminSocketId}`);
@@ -4244,6 +4277,14 @@ io.on('connection', (socket) => {
       if (sId === socket.id) {
         kioskSockets.delete(sessionId);
         console.log('🧹 Cleaned up kiosk for session:', sessionId);
+      }
+    }
+    
+    // ✅ FIX 5: Also clean kioskSystemSockets to prevent stale socket IDs causing routing failures
+    for (const [sysNum, sId] of kioskSystemSockets.entries()) {
+      if (sId === socket.id) {
+        kioskSystemSockets.delete(sysNum);
+        console.log('🧹 Cleaned up kioskSystemSockets for system:', sysNum);
       }
     }
     

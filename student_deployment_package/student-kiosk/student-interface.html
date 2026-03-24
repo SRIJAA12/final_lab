@@ -825,7 +825,10 @@
       console.log('📹 ========================================');
       console.log('📹 KIOSK: Handling admin offer for screen mirroring');
       const { offer, sessionId, adminSocketId } = data;
-      console.log('📹 KIOSK: Offer params:', { hasOffer: !!offer, sessionId, adminSocketId });
+      // ✅ FIX 9: Always read systemNumber from DOM so it can be included in ICE candidates and answer
+      // This allows server routing to work even when sessionId is null (pre-login / guest flow)
+      const mySystemNumber = document.getElementById('systemNumber')?.textContent || null;
+      console.log('📹 KIOSK: Offer params:', { hasOffer: !!offer, sessionId, adminSocketId, mySystemNumber });
 
       // Set processing flag
       isProcessingOffer = true;
@@ -956,11 +959,12 @@
         pc.onicecandidate = (event) => {
           if (event.candidate && socket) {
             // 🚀 TRICKLE ICE: Send candidates immediately for faster connection
-            console.log('🧊 KIOSK: Sending ICE candidate immediately:', event.candidate.type);
+            console.log('🧧 KIOSK: Sending ICE candidate immediately:', event.candidate.type);
             socket.emit('webrtc-ice-candidate', {
               candidate: event.candidate,
-              sessionId: sessionId,
-              adminSocketId: adminSocketId  // Send to specific admin
+              sessionId: sessionId || null,           // may be null in pre-login flow
+              adminSocketId: adminSocketId,
+              systemNumber: mySystemNumber            // ✅ FIX 9: include systemNumber for server routing fallback
             });
           } else if (!event.candidate) {
             console.log('🧊 KIOSK: ICE gathering complete');
@@ -1124,7 +1128,8 @@
         socket.emit('webrtc-answer', {
           answer: answer,
           adminSocketId: adminSocketId,
-          sessionId: sessionId
+          sessionId: sessionId || null,              // ✅ FIX 9: explicit null instead of undefined
+          systemNumber: mySystemNumber               // ✅ FIX 9: include for server routing fallback
         });
 
         console.log('✅✅✅ KIOSK: Answer sent to admin with video stream');
