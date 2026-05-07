@@ -1,0 +1,5672 @@
+
+require('dotenv').config();
+
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
+const cron = require('node-cron');
+const { exec } = require('child_process');
+
+// IP Auto-Detection
+const { detectLocalIP, saveServerConfig } = require('./ip-detector');
+
+// Multi-Lab Configuration
+const { detectLabFromIP, getLabConfig, getAllLabConfigs, isValidLabId } = require('./lab-config');
+
+// NEW: CSV Import Dependencies (using secure ExcelJS instead of xlsx)
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
+const ExcelJS = require('exceljs');
+
+// CSV Session Storage Directories
+const SESSION_CSV_DIR = path.join(__dirname, 'session-csvs');
+const MANUAL_REPORT_DIR = path.join(__dirname, 'reports', 'manual');
+const AUTO_REPORT_DIR = path.join(__dirname, 'reports', 'automatic');
+
+// Create directories if they don't exist
+if (!fs.existsSync(SESSION_CSV_DIR)) fs.mkdirSync(SESSION_CSV_DIR, { recursive: true });
+if (!fs.existsSync(MANUAL_REPORT_DIR)) fs.mkdirSync(MANUAL_REPORT_DIR, { recursive: true });
+if (!fs.existsSync(AUTO_REPORT_DIR)) fs.mkdirSync(AUTO_REPORT_DIR, { recursive: true });
+
+// NEW: Email and OTP Dependencies
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: { origin: "*" },
+  maxHttpBufferSize: 1e7,        // ✅ FIX: 10MB buffer for large SDP offer/answer messages
+  pingTimeout: 60000,            // ✅ FIX: 60s timeout (default 20s too short for 70+ systems)
+  pingInterval: 25000,           // Keep-alive every 25s
+  transports: ['websocket', 'polling']  // Prefer WebSocket for low-latency signaling
+});
+
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+
+// Serve server-config.json for clients to discover server IP (BEFORE static files)
+app.get('/server-config.json', (req, res) => {
+  const configPath = path.join(__dirname, '..', '..', 'server-config.json');
+  if (fs.existsSync(configPath)) {
+    res.sendFile(configPath);
+  } else {
+    // Return default config if file doesn't exist
+    const defaultConfig = {
+      serverIp: detectLocalIP(),
+      serverPort: process.env.PORT || 7401,
+      lastUpdated: new Date().toISOString(),
+      autoDetect: true
+    };
+    res.json(defaultConfig);
+  }
+});
+
+// IMPORTANT: API routes must be defined BEFORE static file middleware
+// Static files will be served last as a catch-all
+
+// Serve student sign-in system
+app.use('/student-signin', express.static(path.join(__dirname, '../../student-signin')));
+
+// Serve student management system
+app.use('/student-management', express.static(path.join(__dirname, '../../')));
+
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://srijaaanandhan12_db_user:122007@cluster0.2kzkkpe.mongodb.net/college-lab-registration?retryWrites=true&w=majority';
+const BCRYPT_SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 10;
+
+// Enhanced MongoDB Connection with Connection Pooling
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  maxPoolSize: 50,  // ✅ FIX: Increased from 10 → 50 to handle 70+ concurrent student logins without DB queuing
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+  family: 4
+})
+  .then(async () => {
+    console.log("✅ MongoDB connected successfully");
+
+    // Clean up any lingering active sessions from previous server runs
+    await cleanupStaleSessions();
+  })
+  .catch(err => console.error("❌ MongoDB connection error:", err));
+
+// Student Schema
+const studentSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  studentId: { type: String, unique: true, required: true },
+  email: { type: String, unique: true, required: true },
+  passwordHash: { type: String },
+  dateOfBirth: { type: Date, required: true },
+  department: { type: String, required: true },
+  section: { type: String, default: 'A' },
+  year: { type: Number, required: true },
+  labId: { type: String, required: true },
+  isPasswordSet: { type: Boolean, default: false },
+  registeredAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+studentSchema.methods.verifyPassword = function (password) {
+  return bcrypt.compare(password, this.passwordHash);
+};
+
+const Student = mongoose.model('Student', studentSchema);
+
+// Session Schema
+const sessionSchema = new mongoose.Schema({
+  studentName: String,
+  studentId: String,
+  computerName: String,
+  labId: String,
+  systemNumber: String,
+  ipAddress: String, // Added to help match systems with custom IPs
+  loginTime: { type: Date, default: Date.now },
+  logoutTime: Date,
+  duration: Number,
+  status: { type: String, enum: ['active', 'completed'], default: 'active' },
+  screenshot: String
+});
+
+const Session = mongoose.model('Session', sessionSchema);
+
+// Lab Session Schema (for managing entire lab sessions with metadata)
+const labSessionSchema = new mongoose.Schema({
+  labId: { type: String, required: true, default: 'CC1' }, // 🔧 MULTI-LAB: Lab identifier (CC1, CC2, etc.)
+  subject: { type: String, required: true },
+  faculty: { type: String, required: true },
+  year: { type: Number, required: false, default: 1 }, // Made optional for backward compatibility
+  department: { type: String, required: false, default: 'Computer Science' }, // Made optional for backward compatibility
+  section: { type: String, required: false, default: 'None' }, // Made optional for backward compatibility
+  periods: { type: Number, required: true },
+  expectedDuration: { type: Number, required: true }, // in minutes
+  startTime: { type: Date, default: Date.now },
+  endTime: Date,
+  status: { type: String, enum: ['active', 'completed'], default: 'active' },
+  createdBy: { type: String, default: 'admin' },
+  studentRecords: [{
+    studentName: String,
+    studentId: String,
+    email: String,     // Student email stored for reports
+    systemNumber: String,
+    loginTime: Date,
+    logoutTime: Date,
+    duration: Number, // in seconds
+    status: { type: String, enum: ['active', 'completed'], default: 'active' }
+  }]
+});
+
+// Add index for efficient lab-based queries
+labSessionSchema.index({ labId: 1, status: 1 });
+
+const LabSession = mongoose.model('LabSession', labSessionSchema);
+
+// Cleanup function to mark all active sessions as completed when server starts
+async function cleanupStaleSessions() {
+  try {
+    const staleSessions = await Session.find({ status: 'active' });
+
+    if (staleSessions.length > 0) {
+      console.log(`🧹 Cleaning up ${staleSessions.length} stale active session(s) from previous server run...`);
+
+      const now = new Date();
+      await Session.updateMany(
+        { status: 'active' },
+        {
+          status: 'completed',
+          logoutTime: now,
+          duration: 0, // Can't calculate accurate duration for interrupted sessions
+          notes: 'Auto-closed: Server restart'
+        }
+      );
+
+      console.log(`✅ Cleaned up ${staleSessions.length} stale session(s)`);
+    } else {
+      console.log(`✅ No stale sessions found - database is clean`);
+    }
+
+    // Also cleanup any active lab sessions
+    const staleLabSessions = await LabSession.find({ status: 'active' });
+    if (staleLabSessions.length > 0) {
+      console.log(`🧹 Cleaning up ${staleLabSessions.length} stale active lab session(s)...`);
+
+      const now = new Date();
+      await LabSession.updateMany(
+        { status: 'active' },
+        {
+          status: 'completed',
+          endTime: now
+        }
+      );
+
+      console.log(`✅ Cleaned up ${staleLabSessions.length} stale lab session(s)`);
+    }
+  } catch (error) {
+    console.error('❌ Error cleaning up stale sessions:', error);
+  }
+}
+
+// One-Time Password Schema
+const oneTimePasswordSchema = new mongoose.Schema({
+  studentId: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  isUsed: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date, default: () => new Date(Date.now() + 24 * 60 * 60 * 1000) }, // 24 hours
+  createdBy: { type: String, default: 'admin' }
+});
+
+const OneTimePassword = mongoose.model('OneTimePassword', oneTimePasswordSchema);
+
+// OTP Schema for password reset
+const otpSchema = new mongoose.Schema({
+  studentId: { type: String, required: true },
+  email: { type: String, required: true },
+  otp: { type: String, required: true },
+  isUsed: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date, default: () => new Date(Date.now() + 10 * 60 * 1000) } // 10 minutes
+});
+
+const OTP = mongoose.model('OTP', otpSchema);
+
+// Timetable Entry Schema
+const timetableEntrySchema = new mongoose.Schema({
+  sessionDate: { type: Date, required: true },
+  startTime: { type: String, required: true }, // Format: "09:00"
+  endTime: { type: String, required: true }, // Format: "10:40"
+  faculty: { type: String, required: true },
+  subject: { type: String, required: true },
+  labId: { type: String, required: true },
+  year: { type: Number, required: true },
+  department: { type: String, required: true },
+  section: { type: String, default: 'A' },
+  periods: { type: Number, required: true },
+  duration: { type: Number, required: true }, // in minutes
+  maxStudents: { type: Number, default: 60 },
+  remarks: { type: String, default: '' },
+  isActive: { type: Boolean, default: true },
+  isProcessed: { type: Boolean, default: false }, // Whether session has been auto-started
+  labSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'LabSession' }, // Link to created lab session
+  uploadedAt: { type: Date, default: Date.now },
+  uploadedBy: { type: String, default: 'admin' }
+});
+
+// Add index for efficient querying
+timetableEntrySchema.index({ sessionDate: 1, startTime: 1, labId: 1 });
+
+const TimetableEntry = mongoose.model('TimetableEntry', timetableEntrySchema);
+
+// Report Schedule Schema - Updated to support 2 schedules per day
+const reportScheduleSchema = new mongoose.Schema({
+  labId: { type: String, required: true, unique: true },
+  // Schedule 1 (Morning/Afternoon)
+  scheduleTime1: { type: String, default: '13:00' }, // 24-hour format HH:MM
+  enabled1: { type: Boolean, default: true },
+  // Schedule 2 (Evening)
+  scheduleTime2: { type: String, default: '18:00' }, // 24-hour format HH:MM
+  enabled2: { type: Boolean, default: true },
+  // Legacy support
+  scheduleTime: { type: String }, // Kept for backward compatibility
+  enabled: { type: Boolean }, // Kept for backward compatibility
+  lastGenerated: { type: Date },
+  outputPath: { type: String, default: './reports' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const ReportSchedule = mongoose.model('ReportSchedule', reportScheduleSchema);
+
+// Hardware Alert Schema - For tracking hardware disconnections
+const hardwareAlertSchema = new mongoose.Schema({
+  studentId: { type: String, required: true },
+  studentName: { type: String, required: true },
+  systemNumber: { type: String, required: true },
+  deviceType: { type: String, required: true }, // 'Network', 'Keyboard', 'Mouse'
+  type: { type: String, required: true }, // 'hardware_disconnect' or 'hardware_reconnect'
+  severity: { type: String, default: 'warning' }, // 'critical', 'warning', 'info'
+  message: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now },
+  acknowledged: { type: Boolean, default: false },
+  acknowledgedAt: { type: Date },
+  acknowledgedBy: { type: String }
+});
+
+const HardwareAlert = mongoose.model('HardwareAlert', hardwareAlertSchema);
+
+// System Registry Schema (tracks all powered-on systems, even before student login)
+const systemRegistrySchema = new mongoose.Schema({
+  systemNumber: { type: String, required: true, unique: true }, // e.g., 'CC1-05'
+  computerName: { type: String }, // e.g., 'cse-cclab-70'
+  labId: { type: String, required: true }, // e.g., 'CC1'
+  ipAddress: { type: String, required: true }, // e.g., '192.168.29.101'
+  status: { type: String, enum: ['available', 'logged-in', 'guest', 'offline'], default: 'available' },
+  lastSeen: { type: Date, default: Date.now },
+  currentSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
+  currentStudentId: { type: String },
+  currentStudentName: { type: String },
+  isGuest: { type: Boolean, default: false },
+  socketId: { type: String }
+});
+
+// Update lastSeen on every registry update
+systemRegistrySchema.pre('save', function (next) {
+  this.lastSeen = new Date();
+  next();
+});
+
+const SystemRegistry = mongoose.model('SystemRegistry', systemRegistrySchema);
+
+// Email Configuration - Now enabled for real email sending
+let emailTransporter = null;
+
+// Create email transporter - Using Gmail SMTP
+// You can use any Gmail account or create a dedicated one for the system
+const EMAIL_USER = process.env.EMAIL_USER || 'screen.mirrorsdc@gmail.com';
+const EMAIL_PASS = process.env.EMAIL_PASS || 'jeetkuyfdaaenoav';
+
+// Always try to create email transporter
+try {
+  emailTransporter = nodemailer.createTransport({
+    service: 'gmail', // Use Gmail service
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: EMAIL_USER,
+      pass: EMAIL_PASS
+    },
+    tls: {
+      rejectUnauthorized: false // Allow self-signed certificates
+    }
+  });
+
+  // Test the connection
+  emailTransporter.verify((error, success) => {
+    if (error) {
+      console.log('❌ Email configuration error:', error.message);
+      console.log('📧 Falling back to console logging for OTP');
+      emailTransporter = null;
+    } else {
+      console.log('✅ Email server is ready to send emails');
+      console.log(`📧 Email configured: ${EMAIL_USER}`);
+    }
+  });
+
+} catch (error) {
+  console.log('❌ Failed to create email transporter:', error.message);
+  console.log('📧 OTP emails will be logged to console only');
+  emailTransporter = null;
+}
+
+// Helper Functions
+function generateOneTimePassword() {
+  return crypto.randomBytes(4).toString('hex').toUpperCase(); // 8-character password
+}
+
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+}
+
+async function sendOTPEmail(email, otp, studentName) {
+  // Always log to console for backup/debugging
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`📧 SENDING OTP EMAIL:`);
+  console.log(`👤 Student: ${studentName}`);
+  console.log(`📧 Email: ${email}`);
+  console.log(`🔢 OTP CODE: ${otp}`);
+  console.log(`⏰ Valid for: 10 minutes`);
+  console.log(`${'='.repeat(60)}\n`);
+
+  // If email is not configured, just log the OTP to console
+  if (!emailTransporter) {
+    console.log(`⚠️ EMAIL NOT CONFIGURED - OTP logged above for manual testing`);
+    console.log(`🚨 BACKUP MODE: Copy this OTP → ${otp}`);
+    return true; // Return true so the process continues
+  }
+
+  // Try to send actual email
+  try {
+    console.log(`📤 Attempting to send email to: ${email}`);
+
+    const mailOptions = {
+      from: `"College Lab System" <${EMAIL_USER}>`,
+      to: email,
+      subject: '🔐 Password Reset OTP - College Lab System',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa; padding: 20px;">
+          <div style="background: white; border-radius: 15px; padding: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #28a745; margin: 0;">🔐 Password Reset Request</h1>
+              <p style="color: #6c757d; margin: 10px 0 0 0;">College Lab Management System</p>
+            </div>
+           
+            <div style="background: #e8f5e9; border-radius: 10px; padding: 20px; margin: 20px 0;">
+              <p style="margin: 0; color: #2c3e50;">Dear <strong>${studentName}</strong>,</p>
+              <p style="margin: 10px 0 0 0; color: #2c3e50;">You have requested to reset your password for the College Lab System.</p>
+            </div>
+           
+            <div style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 25px; text-align: center; margin: 25px 0; border-radius: 12px;">
+              <p style="margin: 0; font-size: 16px; opacity: 0.9;">Your OTP Code:</p>
+              <h1 style="margin: 10px 0 0 0; font-size: 3rem; letter-spacing: 8px; font-weight: bold;">${otp}</h1>
+            </div>
+           
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 5px;">
+              <p style="margin: 0; color: #856404;"><strong>⏰ Important:</strong></p>
+              <ul style="margin: 10px 0 0 0; color: #856404;">
+                <li>This OTP will expire in <strong>10 minutes</strong></li>
+                <li>Use this code in the kiosk interface to reset your password</li>
+                <li>Do not share this OTP with anyone</li>
+              </ul>
+            </div>
+           
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+              <p style="margin: 0; color: #6c757d; font-size: 14px;">
+                If you did not request this password reset, please ignore this email.<br>
+                This is an automated email from College Lab Management System.
+              </p>
+            </div>
+          </div>
+        </div>
+      `
+    };
+
+    const info = await emailTransporter.sendMail(mailOptions);
+    console.log(`✅ Email sent successfully!`);
+    console.log(`📧 Message ID: ${info.messageId}`);
+    console.log(`📬 Email delivered to: ${email}`);
+
+    return true;
+
+  } catch (error) {
+    console.log(`❌ Failed to send email: ${error.message}`);
+    console.log(`📧 Falling back to console logging`);
+    console.log(`🚨 BACKUP MODE: Copy this OTP → ${otp}`);
+
+    // Don't fail the process, just continue with console logging
+    return true;
+  }
+}
+
+// CSV/Excel Import Configuration
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV and Excel files (.csv, .xlsx, .xls) are allowed!'));
+    }
+  }
+});
+
+// Process CSV File
+function processCSVFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const results = [];
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on('data', (data) => results.push(data))
+      .on('end', () => resolve(results))
+      .on('error', (error) => reject(error));
+  });
+}
+
+// Process Excel File using ExcelJS (secure alternative to xlsx)
+async function processExcelFile(filePath) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+
+    const worksheet = workbook.getWorksheet(1); // First worksheet
+    const jsonData = [];
+
+    // Get headers from first row
+    const headerRow = worksheet.getRow(1);
+    const headers = [];
+    headerRow.eachCell((cell, colNumber) => {
+      headers[colNumber] = cell.value ? cell.value.toString().trim() : '';
+    });
+
+    // Process data rows (skip header row)
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header row
+
+      const rowData = {};
+      let hasData = false;
+
+      row.eachCell((cell, colNumber) => {
+        if (headers[colNumber]) {
+          let cellValue = '';
+          if (cell.value !== null && cell.value !== undefined) {
+            // Handle different cell value types
+            if (cell.value instanceof Date) {
+              cellValue = cell.value.toISOString().split('T')[0]; // Convert date to YYYY-MM-DD format
+            } else if (typeof cell.value === 'object' && cell.value.text) {
+              cellValue = cell.value.text; // Rich text
+            } else {
+              cellValue = cell.value.toString().trim();
+            }
+            hasData = true;
+          }
+          rowData[headers[colNumber]] = cellValue;
+        }
+      });
+
+      // Only add row if it has data
+      if (hasData && Object.values(rowData).some(val => val && val.length > 0)) {
+        jsonData.push(rowData);
+      }
+    });
+
+    return jsonData;
+  } catch (error) {
+    throw new Error('Error processing Excel file: ' + error.message);
+  }
+}
+
+// Validate Student Data
+function validateStudentData(rawData) {
+  const validatedStudents = [];
+  const seenIds = new Set();
+  const seenEmails = new Set();
+
+  for (let i = 0; i < rawData.length; i++) {
+    const row = rawData[i];
+
+    try {
+      const student = {
+        name: cleanString(row.name || row.Name || row.student_name || row['Student Name'] || row['Full Name']),
+        studentId: cleanString(row.studentId || row.student_id || row.student_Id || row.StudentID || row.id || row.ID || row['Student ID'] || row['Roll No']),
+        email: cleanString(row.email || row.Email || row.email_address || row['Email Address']),
+        dateOfBirth: parseDate(row.dob || row.date_of_birth || row.dateOfBirth || row['Date of Birth'] || row.DOB),
+        department: cleanString(row.department || row.Department || row.dept || row.Dept || row['Department Name']),
+        year: parseInt(row.year || row.Year || row.class_year || row['Year'] || row['Academic Year'] || 1),
+        section: cleanString(row.section || row.Section || 'A'),
+        labId: cleanString(row.lab_id || row.labId || row.lab || row.Lab || row['Lab ID'] || 'LAB-01'),
+        isPasswordSet: false,
+        registeredAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      // Validate required fields
+      if (!student.name || student.name.length < 2) {
+        console.warn(`⚠️ Row ${i + 1}: Invalid or missing name - got: "${student.name}"`);
+        continue;
+      }
+
+      if (!student.studentId || student.studentId.length < 3) {
+        console.warn(`⚠️ Row ${i + 1}: Invalid or missing student ID - got: "${student.studentId}"`);
+        continue;
+      }
+
+      if (!student.dateOfBirth || student.dateOfBirth.getFullYear() < 1980) {
+        console.warn(`⚠️ Row ${i + 1}: Invalid date of birth - got: ${student.dateOfBirth}`);
+        continue;
+      }
+
+      if (!student.department || student.department.length < 2) {
+        console.warn(`⚠️ Row ${i + 1}: Invalid or missing department - got: "${student.department}"`);
+        continue;
+      }
+
+      // Check for duplicates in current batch
+      if (seenIds.has(student.studentId.toUpperCase())) {
+        console.warn(`⚠️ Row ${i + 1}: Duplicate student ID ${student.studentId}`);
+        continue;
+      }
+
+      // Generate email if missing or invalid
+      if (!student.email || !student.email.includes('@') || !student.email.includes('.')) {
+        student.email = `${student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')}@college.edu`;
+      }
+
+      // Check for duplicate emails in current batch
+      if (seenEmails.has(student.email.toLowerCase())) {
+        // Generate unique email
+        student.email = `${student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')}.${Date.now()}@college.edu`;
+      }
+
+      // Validate and normalize year
+      if (isNaN(student.year) || student.year < 1 || student.year > 4) {
+        student.year = 1;
+      }
+
+      // Normalize department names
+      student.department = normalizeDepartment(student.department);
+
+      // Normalize student ID (uppercase)
+      student.studentId = student.studentId.toUpperCase();
+
+      // Add to tracking sets
+      seenIds.add(student.studentId);
+      seenEmails.add(student.email.toLowerCase());
+
+      validatedStudents.push(student);
+
+    } catch (error) {
+      console.warn(`⚠️ Row ${i + 1}: Validation error:`, error.message);
+    }
+  }
+
+  return validatedStudents;
+}
+
+// Helper Functions
+function cleanString(str) {
+  if (!str) return '';
+  return str.toString().trim().replace(/\s+/g, ' '); // Normalize whitespace
+}
+
+function parseDate(dateString) {
+  if (!dateString) return new Date('2000-01-01');
+
+  // Handle Excel date serial numbers
+  if (typeof dateString === 'number' && dateString > 25000 && dateString < 50000) {
+    // Excel serial date to JS date
+    const date = new Date((dateString - 25569) * 86400 * 1000);
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  const formats = [
+    dateString.toString(),
+    dateString.toString().replace(/[-/]/g, '-'),
+    dateString.toString().replace(/[-/]/g, '/'),
+  ];
+
+  for (let format of formats) {
+    const parsed = new Date(format);
+    if (!isNaN(parsed.getTime()) &&
+      parsed.getFullYear() > 1980 &&
+      parsed.getFullYear() < 2020) {  // Changed from 2015 to 2020 to accept students born 2000-2019
+      return parsed;
+    }
+  }
+
+  return new Date('2000-01-01');
+}
+
+function normalizeDepartment(dept) {
+  if (!dept) return 'General';
+
+  const deptMap = {
+    'cs': 'Computer Science',
+    'cse': 'Computer Science',
+    'computer': 'Computer Science',
+    'it': 'Information Technology',
+    'information': 'Information Technology',
+    'ec': 'Electronics & Communication',
+    'ece': 'Electronics & Communication',
+    'electronics': 'Electronics & Communication',
+    'me': 'Mechanical Engineering',
+    'mechanical': 'Mechanical Engineering',
+    'ce': 'Civil Engineering',
+    'civil': 'Civil Engineering',
+    'ee': 'Electrical Engineering',
+    'electrical': 'Electrical Engineering',
+    'ch': 'Chemical Engineering',
+    'chemical': 'Chemical Engineering',
+    'bt': 'Biotechnology',
+    'bio': 'Biotechnology',
+    'ai': 'Artificial Intelligence',
+    'ml': 'Machine Learning',
+    'ds': 'Data Science',
+    'data': 'Data Science',
+    'csbs': 'CSBS',
+    'computer science and business systems': 'CSBS',
+    'cs&bs': 'CSBS'
+  };
+
+  const normalized = dept.toLowerCase().trim();
+  return deptMap[normalized] || dept;
+}
+
+// Import Students to Database
+async function importStudentsToDatabase(students) {
+  let successful = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (let student of students) {
+    try {
+      const existing = await Student.findOne({
+        $or: [
+          { studentId: student.studentId },
+          { email: student.email }
+        ]
+      });
+
+      if (existing) {
+        // Update existing student (except password fields)
+        await Student.findByIdAndUpdate(existing._id, {
+          name: student.name,
+          email: student.email,
+          dateOfBirth: student.dateOfBirth,
+          department: student.department,
+          year: student.year,
+          labId: student.labId,
+          updatedAt: new Date()
+          // Keep existing passwordHash and isPasswordSet
+        });
+        successful++;
+        console.log(`✅ Updated existing student: ${student.studentId}`);
+      } else {
+        const newStudent = new Student(student);
+        await newStudent.save();
+        successful++;
+        console.log(`✅ Added new student: ${student.studentId}`);
+      }
+
+    } catch (error) {
+      failed++;
+      errors.push(`${student.studentId || 'Unknown'}: ${error.message}`);
+      console.error(`❌ Failed to import ${student.studentId}:`, error.message);
+    }
+  }
+
+  return { successful, failed, errors };
+}
+
+// NEW: Restore sample data (alias for setup-sample-data)
+// Note: Admin dashboard route moved to end of file (after static middleware)
+app.post('/api/restore-sample-data', async (req, res) => {
+  try {
+    console.log('🗑️ Clearing all existing data...');
+
+    // Clear all collections
+    await Student.deleteMany({});
+    await Session.deleteMany({});
+    await OneTimePassword.deleteMany({});
+    await OTP.deleteMany({});
+
+    console.log('📊 Setting up sample student data...');
+
+    // Sample student data including TEST2025001
+    const sampleStudents = [
+      {
+        name: 'Rajesh Kumar',
+        studentId: 'CS2021001',
+        email: 'rajesh.kumar@college.edu',
+        dateOfBirth: new Date('2000-05-15'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Priya Sharma',
+        studentId: 'CS2021002',
+        email: 'priya.sharma@college.edu',
+        dateOfBirth: new Date('2001-08-22'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Arjun Patel',
+        studentId: 'IT2021003',
+        email: 'arjun.patel@college.edu',
+        dateOfBirth: new Date('2000-12-10'),
+        department: 'Information Technology',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Sneha Reddy',
+        studentId: 'CS2021004',
+        email: 'sneha.reddy@college.edu',
+        dateOfBirth: new Date('2001-03-18'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Vikram Singh',
+        studentId: 'IT2021005',
+        email: 'vikram.singh@college.edu',
+        dateOfBirth: new Date('2000-09-25'),
+        department: 'Information Technology',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Test User',
+        studentId: 'TEST2025001',
+        email: '24z258@psgitech.ac.in',
+        dateOfBirth: new Date('2000-01-01'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      }
+    ];
+
+    // Insert sample students
+    const insertedStudents = await Student.insertMany(sampleStudents);
+
+    console.log(`✅ Sample data restored: ${insertedStudents.length} students added`);
+
+    res.json({
+      success: true,
+      message: 'Sample data restored successfully',
+      studentsAdded: insertedStudents.length,
+      students: insertedStudents.map(s => ({
+        name: s.name,
+        studentId: s.studentId,
+        email: s.email,
+        department: s.department
+      }))
+    });
+
+  } catch (error) {
+    console.error('❌ Sample data restore error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Clear all data and setup sample students
+app.post('/api/setup-sample-data', async (req, res) => {
+  try {
+    console.log('🗑️ Clearing all existing data...');
+
+    // Clear all collections
+    await Student.deleteMany({});
+    await Session.deleteMany({});
+    await OneTimePassword.deleteMany({});
+    await OTP.deleteMany({});
+
+    console.log('📊 Setting up sample student data...');
+
+    // Sample student data
+    const sampleStudents = [
+      {
+        name: 'Rajesh Kumar',
+        studentId: 'CS2021001',
+        email: 'rajesh.kumar@college.edu',
+        dateOfBirth: new Date('2000-05-15'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Priya Sharma',
+        studentId: 'CS2021002',
+        email: 'priya.sharma@college.edu',
+        dateOfBirth: new Date('2001-08-22'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Arjun Patel',
+        studentId: 'IT2021003',
+        email: 'arjun.patel@college.edu',
+        dateOfBirth: new Date('2000-12-10'),
+        department: 'Information Technology',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Sneha Reddy',
+        studentId: 'CS2021004',
+        email: 'sneha.reddy@college.edu',
+        dateOfBirth: new Date('2001-03-18'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Vikram Singh',
+        studentId: 'IT2021005',
+        email: 'vikram.singh@college.edu',
+        dateOfBirth: new Date('2000-09-25'),
+        department: 'Information Technology',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      },
+      {
+        name: 'Test User',
+        studentId: 'TEST2025001',
+        email: '24z258@psgitech.ac.in',
+        dateOfBirth: new Date('2000-01-01'),
+        department: 'Computer Science',
+        year: 3,
+        labId: 'CC1',
+        isPasswordSet: false
+      }
+    ];
+
+    // Insert sample students
+    const insertedStudents = await Student.insertMany(sampleStudents);
+
+    console.log(`✅ Sample data setup complete: ${insertedStudents.length} students added`);
+
+    res.json({
+      success: true,
+      message: 'Sample data setup complete',
+      studentsAdded: insertedStudents.length,
+      students: insertedStudents.map(s => ({
+        name: s.name,
+        studentId: s.studentId,
+        email: s.email,
+        department: s.department
+      }))
+    });
+
+  } catch (error) {
+    console.error('❌ Sample data setup error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Generate one-time password for a student
+app.post('/api/generate-one-time-password', async (req, res) => {
+  try {
+    const { studentId } = req.body;
+
+    if (!studentId) {
+      return res.status(400).json({ success: false, error: 'Student ID is required' });
+    }
+
+    // Check if student exists
+    const student = await Student.findOne({ studentId: studentId.toUpperCase() });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    // Check if student already has a password set
+    if (student.isPasswordSet) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student already has a password set. Use password reset instead.'
+      });
+    }
+
+    // Generate one-time password
+    const oneTimePass = generateOneTimePassword();
+
+    // Remove any existing one-time password for this student
+    await OneTimePassword.deleteMany({ studentId: studentId.toUpperCase() });
+
+    // Create new one-time password
+    const otpRecord = new OneTimePassword({
+      studentId: studentId.toUpperCase(),
+      password: oneTimePass,
+      isUsed: false
+    });
+
+    await otpRecord.save();
+
+    console.log(`✅ One-time password generated for ${studentId}: ${oneTimePass}`);
+
+    res.json({
+      success: true,
+      message: 'One-time password generated successfully',
+      studentId: studentId.toUpperCase(),
+      studentName: student.name,
+      oneTimePassword: oneTimePass,
+      expiresAt: otpRecord.expiresAt
+    });
+
+  } catch (error) {
+    console.error('❌ One-time password generation error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Use one-time password to set permanent password
+app.post('/api/use-one-time-password', async (req, res) => {
+  try {
+    const { studentId, oneTimePassword, newPassword } = req.body;
+
+    if (!studentId || !oneTimePassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID, one-time password, and new password are required'
+      });
+    }
+
+    // Find the one-time password record
+    const otpRecord = await OneTimePassword.findOne({
+      studentId: studentId.toUpperCase(),
+      password: oneTimePassword.toUpperCase(),
+      isUsed: false
+    });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired one-time password'
+      });
+    }
+
+    // Check if expired
+    if (otpRecord.expiresAt < new Date()) {
+      await OneTimePassword.deleteOne({ _id: otpRecord._id });
+      return res.status(400).json({
+        success: false,
+        error: 'One-time password has expired'
+      });
+    }
+
+    // Find the student
+    const student = await Student.findOne({ studentId: studentId.toUpperCase() });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' });
+    }
+
+    // Validate new password
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters long'
+      });
+    }
+
+    // Hash the new password and update student
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+    await Student.findByIdAndUpdate(student._id, {
+      passwordHash,
+      isPasswordSet: true,
+      updatedAt: new Date()
+    });
+
+    // Mark one-time password as used
+    otpRecord.isUsed = true;
+    await otpRecord.save();
+
+    console.log(`✅ One-time password used successfully for ${studentId}`);
+
+    res.json({
+      success: true,
+      message: 'Password set successfully using one-time password',
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        email: student.email,
+        department: student.department
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ One-time password usage error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DEBUG: List all students in database
+app.get('/api/debug-students', async (req, res) => {
+  try {
+    // Get all students with all necessary fields, no limit
+    const students = await Student.find({}, 'studentId name email isPasswordSet department year dateOfBirth labId createdAt').sort({ createdAt: -1 });
+
+    console.log(`📊 Fetching all students: ${students.length} students found`);
+
+    res.json({
+      success: true,
+      count: students.length,
+      students: students
+    });
+  } catch (error) {
+    console.error('❌ Error fetching students:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Check student eligibility for first-time sign-in
+app.post('/api/check-student-eligibility', async (req, res) => {
+  try {
+    const { studentId } = req.body;
+
+    if (!studentId) {
+      return res.status(400).json({
+        eligible: false,
+        reason: 'Student ID is required'
+      });
+    }
+
+    // Find student by ID
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase()
+    });
+
+    if (!student) {
+      return res.status(400).json({
+        eligible: false,
+        reason: 'Student ID not found in our records. Please contact admin.'
+      });
+    }
+
+    // Check if password is already set
+    if (student.passwordHash && student.isPasswordSet) {
+      return res.status(400).json({
+        eligible: false,
+        reason: 'Password already set for this account. Use regular login or "Forgot Password".'
+      });
+    }
+
+    res.json({
+      eligible: true,
+      studentName: student.name,
+      department: student.department,
+      year: student.year,
+      labId: student.labId
+    });
+
+  } catch (error) {
+    console.error('❌ Student eligibility check error:', error);
+    res.status(500).json({ eligible: false, reason: 'Server error. Please try again.' });
+  }
+});
+
+// NEW: Add individual student
+app.post('/api/add-student', async (req, res) => {
+  try {
+    const { studentId, name, email, dateOfBirth, department, section, year, labId } = req.body;
+
+    // Validate required fields (labId and section are optional)
+    if (!studentId || !name || !email || !dateOfBirth || !department || !year) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: studentId, name, email, dateOfBirth, department, year'
+      });
+    }
+
+    // Check if student ID already exists
+    const existingStudent = await Student.findOne({
+      $or: [
+        { studentId: studentId.toUpperCase() },
+        { email: email.toLowerCase() }
+      ]
+    });
+
+    if (existingStudent) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID or email already exists'
+      });
+    }
+
+    // Create new student
+    const newStudent = new Student({
+      studentId: studentId.toUpperCase(),
+      name: name.trim(),
+      email: email.toLowerCase(),
+      dateOfBirth: new Date(dateOfBirth),
+      department: department.trim(),
+      section: section ? section.trim() : 'A', // Default to 'A' if not provided
+      year: parseInt(year),
+      labId: labId ? labId.toUpperCase() : 'ALL', // Default to 'ALL' if not provided
+      isPasswordSet: false
+    });
+
+    await newStudent.save();
+
+    console.log(`✅ New student added: ${newStudent.name} (${newStudent.studentId})`);
+
+    res.json({
+      success: true,
+      message: 'Student added successfully',
+      student: {
+        studentId: newStudent.studentId,
+        name: newStudent.name,
+        email: newStudent.email,
+        department: newStudent.department,
+        section: newStudent.section,
+        year: newStudent.year,
+        labId: newStudent.labId
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Add student error:', error);
+    if (error.code === 11000) {
+      res.status(400).json({ success: false, error: 'Student ID or email already exists' });
+    } else {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+// UPDATE: Update student information
+app.put('/api/update-student/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { name, email, department, year } = req.body;
+
+    // Find and update student
+    const student = await Student.findOne({ studentId: studentId.toUpperCase() });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found'
+      });
+    }
+
+    // Update fields if provided
+    if (name) student.name = name.trim();
+    if (email) student.email = email.toLowerCase();
+    if (department) student.department = department.trim();
+    if (year) student.year = parseInt(year);
+
+    await student.save();
+
+    console.log(`✅ Student updated: ${student.name} (${student.studentId})`);
+
+    res.json({
+      success: true,
+      message: 'Student updated successfully',
+      student: {
+        studentId: student.studentId,
+        name: student.name,
+        email: student.email,
+        department: student.department,
+        year: student.year
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update student error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE: Delete student
+app.delete('/api/delete-student/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // Find and delete student
+    const student = await Student.findOneAndDelete({ studentId: studentId.toUpperCase() });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found'
+      });
+    }
+
+    console.log(`🗑️ Student deleted: ${student.name} (${student.studentId})`);
+
+    res.json({
+      success: true,
+      message: 'Student deleted successfully',
+      studentId: student.studentId
+    });
+
+  } catch (error) {
+    console.error('❌ Delete student error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE: Clear all students
+app.delete('/api/clear-all-students', async (req, res) => {
+  try {
+    const result = await Student.deleteMany({});
+
+    console.log(`🗑️ Cleared all students: ${result.deletedCount} deleted`);
+
+    res.json({
+      success: true,
+      message: 'All students deleted successfully',
+      deletedCount: result.deletedCount
+    });
+
+  } catch (error) {
+    console.error('❌ Clear all students error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Student authentication for kiosk login
+app.post('/api/authenticate', async (req, res) => {
+  try {
+    const { studentId, password } = req.body;
+
+    if (!studentId || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID and password are required'
+      });
+    }
+
+    // Find student by ID
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase()
+    });
+
+    if (!student) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid student ID or password'
+      });
+    }
+
+    // Check if password is set
+    if (!student.passwordHash || !student.isPasswordSet) {
+      return res.status(401).json({
+        success: false,
+        error: 'Password not set. Please complete first-time sign-in online first.'
+      });
+    }
+
+    // Verify password
+    const passwordMatch = await bcrypt.compare(password, student.passwordHash);
+
+    if (!passwordMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid student ID or password'
+      });
+    }
+
+    console.log(`✅ Student authenticated: ${student.name} (${student.studentId})`);
+
+    res.json({
+      success: true,
+      message: 'Authentication successful',
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        email: student.email,
+        department: student.department,
+        year: student.year,
+        labId: student.labId
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Authentication error:', error);
+    res.status(500).json({ success: false, error: 'Server error during authentication' });
+  }
+});
+
+// NEW: Student first-time sign-in (separate web system)
+app.post('/api/student-first-signin', async (req, res) => {
+  try {
+    const { name, studentId, dateOfBirth, password } = req.body;
+
+    if (!name || !studentId || !dateOfBirth || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: name, student ID, date of birth, and password'
+      });
+    }
+
+    // Find student by ID
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase()
+    });
+
+    if (!student) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student not found in our records'
+      });
+    }
+
+    // Verify date of birth
+    const providedDate = new Date(dateOfBirth);
+    const storedDate = new Date(student.dateOfBirth);
+
+    if (providedDate.toDateString() !== storedDate.toDateString()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Date of birth does not match our records'
+      });
+    }
+
+    // Check if password is already set
+    if (student.passwordHash && student.isPasswordSet) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password already set for this account. Use "Forgot Password" if you need to reset it.'
+      });
+    }
+
+    // Hash the new password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Update student with new password and name
+    student.name = name; // Allow name update during first signin
+    student.passwordHash = passwordHash;
+    student.isPasswordSet = true;
+    await student.save();
+
+    console.log(`✅ First-time sign-in completed via web for: ${student.name} (${student.studentId})`);
+
+    res.json({
+      success: true,
+      message: 'Password set successfully. You can now login at lab computers.',
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        department: student.department,
+        labId: student.labId
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Student first-time sign-in error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: First-time sign-in endpoint (legacy - for kiosk)
+app.post('/api/first-time-signin', async (req, res) => {
+  try {
+    const { studentId, email, dateOfBirth, newPassword } = req.body;
+
+    if (!studentId || !email || !dateOfBirth || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: Student ID, email, date of birth, and password'
+      });
+    }
+
+    // Find student by ID, email, and date of birth
+    console.log(`🔍 First-time signin attempt for: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
+
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase(),
+      email: email.toLowerCase()
+    });
+
+    if (!student) {
+      console.log(`❌ Student not found for first-time signin: ${studentId.toUpperCase()}`);
+
+      // Try to find by studentId only to give better error message
+      const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
+      if (studentById) {
+        console.log(`⚠️ Student ID exists but email mismatch. Expected: ${studentById.email}, Got: ${email.toLowerCase()}`);
+        return res.status(400).json({
+          success: false,
+          error: `Email does not match our records. Registered email: ${studentById.email}`
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: 'Student not found with this ID and email combination'
+      });
+    }
+
+    console.log(`✅ Student found for first-time signin: ${student.name} (${student.studentId})`);
+
+    // Verify date of birth
+    const providedDate = new Date(dateOfBirth);
+    const storedDate = new Date(student.dateOfBirth);
+
+    if (providedDate.toDateString() !== storedDate.toDateString()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Date of birth does not match our records'
+      });
+    }
+
+    // Check if password is already set
+    if (student.passwordHash && student.isPasswordSet) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password already set for this account. Use "Forgot Password" if you need to reset it.'
+      });
+    }
+
+    // Hash the new password
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update student with new password
+    student.passwordHash = passwordHash;
+    student.isPasswordSet = true;
+    await student.save();
+
+    console.log(`✅ First-time sign-in completed for: ${student.name} (${student.studentId})`);
+
+    res.json({
+      success: true,
+      message: 'Password set successfully. You can now login.',
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        email: student.email,
+        department: student.department
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ First-time sign-in error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🔍 DIAGNOSTIC: Check if student exists
+app.post('/api/check-student-exists', async (req, res) => {
+  try {
+    const { studentId, email } = req.body;
+
+    console.log(`🔍 Checking student: ${studentId} with email: ${email}`);
+
+    // Search by student ID only
+    const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
+
+    if (!studentById) {
+      return res.json({
+        success: false,
+        found: false,
+        message: `Student ID "${studentId.toUpperCase()}" not found in database`,
+        suggestion: 'Please add this student via Admin Dashboard → Student Management'
+      });
+    }
+
+    // Student found, check email match
+    const emailMatch = studentById.email.toLowerCase() === email.toLowerCase();
+
+    res.json({
+      success: true,
+      found: true,
+      studentId: studentById.studentId,
+      name: studentById.name,
+      registeredEmail: studentById.email,
+      providedEmail: email,
+      emailMatch: emailMatch,
+      isPasswordSet: studentById.isPasswordSet,
+      department: studentById.department,
+      message: emailMatch
+        ? `✅ Student found! Email matches.`
+        : `⚠️ Student found but email DOES NOT match. Registered: ${studentById.email}, Provided: ${email}`,
+      action: !emailMatch
+        ? `Use the registered email: ${studentById.email}`
+        : studentById.isPasswordSet
+          ? 'Use Forgot Password to reset'
+          : 'Use First-Time Signin to set password'
+    });
+
+  } catch (error) {
+    console.error('❌ Check student error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Initiate forgot password with roll number and email
+app.post('/api/forgot-password-initiate', async (req, res) => {
+  try {
+    const { studentId } = req.body;
+
+    if (!studentId) {
+      return res.status(400).json({ success: false, error: 'Student ID (Roll Number) is required' });
+    }
+
+    // Find student
+    const student = await Student.findOne({ studentId: studentId.toUpperCase() });
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found with this roll number' });
+    }
+
+    if (!student.isPasswordSet) {
+      return res.status(400).json({
+        success: false,
+        error: 'No password set for this student. Please use first-time sign-in instead.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Student verified. Please provide email for OTP.',
+      studentName: student.name,
+      maskedEmail: student.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') // Mask email for security
+    });
+
+  } catch (error) {
+    console.error('❌ Forgot password initiate error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Send OTP to email for password reset
+app.post('/api/forgot-password-send-otp', async (req, res) => {
+  try {
+    const { studentId, email } = req.body;
+
+    if (!studentId || !email) {
+      return res.status(400).json({ success: false, error: 'Student ID and email are required' });
+    }
+
+    // Find student first
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase()
+    });
+
+    if (!student) {
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID not found in our records'
+      });
+    }
+
+    // For testing purposes, allow any email but warn if it doesn't match
+    if (student.email.toLowerCase() !== email.toLowerCase()) {
+      console.log(`⚠️ Email mismatch for ${studentId}:`);
+      console.log(`   Registered: ${student.email}`);
+      console.log(`   Provided: ${email}`);
+      console.log(`   Proceeding with OTP send for testing...`);
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+
+    // Remove any existing OTPs for this student
+    await OTP.deleteMany({ studentId: studentId.toUpperCase() });
+
+    // Create new OTP record
+    const otpRecord = new OTP({
+      studentId: studentId.toUpperCase(),
+      email: email.toLowerCase(),
+      otp: otp
+    });
+
+    await otpRecord.save();
+
+    // Send OTP email
+    const emailSent = await sendOTPEmail(email, otp, student.name);
+
+    if (!emailSent) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to send OTP email. Please try again.'
+      });
+    }
+
+    console.log(`✅ OTP sent to ${email} for student ${studentId}`);
+
+    res.json({
+      success: true,
+      message: 'OTP sent to your email address',
+      studentName: student.name,
+      email: email,
+      expiresIn: '10 minutes'
+    });
+
+  } catch (error) {
+    console.error('❌ OTP send error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Verify OTP and reset password
+app.post('/api/forgot-password-verify-otp', async (req, res) => {
+  try {
+    const { studentId, email, otp, newPassword } = req.body;
+
+    if (!studentId || !email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: Student ID, email, OTP, and new password'
+      });
+    }
+
+    // Find and verify OTP
+    const otpRecord = await OTP.findOne({
+      studentId: studentId.toUpperCase(),
+      email: email.toLowerCase(),
+      otp: otp,
+      isUsed: false
+    });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP or OTP already used'
+      });
+    }
+
+    // Check if OTP expired
+    if (otpRecord.expiresAt < new Date()) {
+      await OTP.deleteOne({ _id: otpRecord._id });
+      return res.status(400).json({
+        success: false,
+        error: 'OTP has expired. Please request a new one.'
+      });
+    }
+
+    // Validate new password
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters long'
+      });
+    }
+
+    // Find student and update password
+    console.log(`🔍 Searching for student: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
+
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase(),
+      email: email.toLowerCase()
+    });
+
+    if (!student) {
+      console.log(`❌ Student not found for: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
+
+      // Try to find by studentId only to give better error message
+      const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
+      if (studentById) {
+        return res.status(404).json({
+          success: false,
+          error: `Student ID found but email does not match. Registered email: ${studentById.email}`
+        });
+      }
+
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found with this ID and email combination'
+      });
+    }
+
+    console.log(`✅ Student found: ${student.name} (${student.studentId})`);
+
+    // Hash new password and update
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+    await Student.findByIdAndUpdate(student._id, {
+      passwordHash,
+      updatedAt: new Date()
+    });
+
+    // Mark OTP as used
+    otpRecord.isUsed = true;
+    await otpRecord.save();
+
+    console.log(`✅ Password reset successful for ${studentId} via OTP`);
+
+    res.json({
+      success: true,
+      message: 'Password reset successful! You can now login with your new password.',
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        email: student.email
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ OTP verification error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Upload and Import Students from CSV/Excel
+app.post('/api/import-students', upload.single('studentFile'), async (req, res) => {
+  let filePath = null;
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+
+    filePath = req.file.path;
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+
+    console.log(`📁 Processing file: ${req.file.originalname} (${fileExtension})`);
+
+    let studentsData = [];
+
+    if (fileExtension === '.csv') {
+      studentsData = await processCSVFile(filePath);
+    } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
+      studentsData = await processExcelFile(filePath);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Unsupported file format. Please use CSV or Excel files.'
+      });
+    }
+
+    console.log(`📊 Raw data extracted: ${studentsData.length} rows`);
+    if (studentsData.length > 0) {
+      console.log('📋 First row sample:', JSON.stringify(studentsData[0], null, 2));
+    }
+
+    const validatedStudents = validateStudentData(studentsData);
+
+    console.log(`✅ Validated students: ${validatedStudents.length} records`);
+
+    if (validatedStudents.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid student records found in file. Please check the format and required fields.'
+      });
+    }
+
+    const clearExisting = req.body.clearExisting === 'true';
+    if (clearExisting) {
+      const deletedCount = await Student.countDocuments();
+      await Student.deleteMany({});
+      console.log(`🗑️ Cleared ${deletedCount} existing student records`);
+    }
+
+    const importResult = await importStudentsToDatabase(validatedStudents);
+
+    console.log(`✅ Import completed: ${importResult.successful} successful, ${importResult.failed} failed`);
+
+    res.json({
+      success: true,
+      message: 'Students imported successfully',
+      stats: {
+        totalProcessed: studentsData.length,
+        validatedRecords: validatedStudents.length,
+        successful: importResult.successful,
+        failed: importResult.failed,
+        errors: importResult.errors.slice(0, 10) // Limit error messages
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Import error:', error);
+    res.status(500).json({
+      success: false,
+      error: `Import failed: ${error.message}`
+    });
+  } finally {
+    // Clean up uploaded file
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupError) {
+        console.warn('⚠️ Failed to clean up uploaded file:', cleanupError.message);
+      }
+    }
+  }
+});
+
+// Download Sample CSV Template
+app.get('/api/download-template', (req, res) => {
+  const sampleData = [
+    {
+      'Student ID': '2024CS001',
+      'Name': 'John Doe',
+      'Email': 'john.doe@college.edu',
+      'Date of Birth': '2002-01-15',
+      'Department': 'Computer Science',
+      'Year': 3,
+      'Lab ID': 'LAB-01'
+    },
+    {
+      'Student ID': '2024IT002',
+      'Name': 'Jane Smith',
+      'Email': 'jane.smith@college.edu',
+      'Date of Birth': '2001-08-22',
+      'Department': 'Information Technology',
+      'Year': 2,
+      'Lab ID': 'LAB-02'
+    },
+    {
+      'Student ID': '2024EC003',
+      'Name': 'Mike Wilson',
+      'Email': 'mike.wilson@college.edu',
+      'Date of Birth': '2000-12-10',
+      'Department': 'Electronics & Communication',
+      'Year': 4,
+      'Lab ID': 'LAB-03'
+    },
+    {
+      'Student ID': '2024ME004',
+      'Name': 'Sarah Johnson',
+      'Email': 'sarah.johnson@college.edu',
+      'Date of Birth': '2001-07-05',
+      'Department': 'Mechanical Engineering',
+      'Year': 2,
+      'Lab ID': 'LAB-04'
+    },
+    {
+      'Student ID': '2024CE005',
+      'Name': 'David Brown',
+      'Email': 'david.brown@college.edu',
+      'Date of Birth': '2000-03-12',
+      'Department': 'Civil Engineering',
+      'Year': 4,
+      'Lab ID': 'LAB-05'
+    }
+  ];
+
+  // Create CSV content
+  const headers = Object.keys(sampleData[0]).join(',');
+  const rows = sampleData.map(row => Object.values(row).join(',')).join('\n');
+  const csvContent = headers + '\n' + rows;
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="student-template.csv"');
+  res.send(csvContent);
+});
+
+// =================================================================
+// TIMETABLE MANAGEMENT API ENDPOINTS
+// =================================================================
+
+// Upload and Import Timetable from CSV
+app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, res) => {
+  let filePath = null;
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+
+    filePath = req.file.path;
+    console.log(`📅 Processing timetable file: ${req.file.originalname}`);
+
+    // Parse the CSV file
+    const timetableData = await processCSVFile(filePath);
+    console.log(`📅 Parsed ${timetableData.length} timetable entries`);
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    for (const row of timetableData) {
+      try {
+        // Parse date (format: YYYY-MM-DD)
+        const sessionDate = new Date(row['Session Date'] || row.sessionDate);
+
+        // Get and validate lab ID
+        const rawLabId = row['Lab ID'] || row.labId || 'CC1';
+        const labId = String(rawLabId).toUpperCase();
+
+        // Validate lab ID exists in configuration
+        if (!isValidLabId(labId)) {
+          throw new Error(`Invalid Lab ID: ${labId}. Must be one of: ${Object.keys(getAllLabConfigs()).join(', ')}`);
+        }
+
+        // Create timetable entry
+        const timetableEntry = new TimetableEntry({
+          sessionDate: sessionDate,
+          startTime: row['Start Time'] || row.startTime,
+          endTime: row['End Time'] || row.endTime,
+          faculty: row.Faculty || row.faculty,
+          subject: row.Subject || row.subject,
+          labId: labId,
+          year: parseInt(row.Year || row.year),
+          department: row.Department || row.department,
+          section: row.Section || row.section || 'A',
+          periods: parseInt(row.Periods || row.periods),
+          duration: parseInt(row.Duration || row.duration),
+          maxStudents: parseInt(row['Max Students'] || row.maxStudents || 60),
+          remarks: row.Remarks || row.remarks || '',
+          isActive: true,
+          isProcessed: false,
+          uploadedBy: 'admin'
+        });
+
+        await timetableEntry.save();
+        successCount++;
+        console.log(`✅ Saved: ${row.Subject} on ${sessionDate.toDateString()} at ${row['Start Time']}`);
+      } catch (error) {
+        errorCount++;
+        errors.push({
+          row: row,
+          error: error.message
+        });
+        console.error(`❌ Error saving timetable entry:`, error.message);
+      }
+    }
+
+    // Clean up uploaded file
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    console.log(`📅 Timetable Import Complete:`);
+    console.log(`   ✅ Successful: ${successCount}`);
+    console.log(`   ❌ Failed: ${errorCount}`);    // ✅ CRITICAL FIX: Immediately check if any uploaded sessions should start NOW
+    // Don't wait for the next cron cycle - check synchronously before sending response
+    console.log('\n🚀 Checking if any sessions should start immediately...');
+
+    try {
+      const now = new Date();
+      const currentDate = now.toISOString().split('T')[0];
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      const currentMinutes = currentHour * 60 + currentMinute;
+
+      console.log(`⏰ Current time: ${currentHour}:${currentMinute} (${currentMinutes} minutes from midnight)`);
+
+      const startOfDay = new Date(currentDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(currentDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const todayEntries = await TimetableEntry.find({
+        isActive: true,
+        isProcessed: false,
+        sessionDate: { $gte: startOfDay, $lte: endOfDay }
+      });
+
+      console.log(`📋 Found ${todayEntries.length} unprocessed entries for today`);
+
+      let immediateStartCount = 0;
+
+      for (const entry of todayEntries) {
+        // ✅ FIX: Normalize time format to handle "0:00" and "00:00"
+        const normalizeTime = (timeStr) => {
+          if (!timeStr) return '00:00';
+          const parts = timeStr.split(':');
+          const hours = String(parts[0] || '0').padStart(2, '0');
+          const minutes = String(parts[1] || '0').padStart(2, '0');
+          return `${hours}:${minutes}`;
+        };
+
+        const normalizedStartTime = normalizeTime(entry.startTime);
+        const normalizedEndTime = normalizeTime(entry.endTime);
+
+        const [startHour, startMin] = normalizedStartTime.split(':').map(Number);
+        const [endHour, endMin] = normalizedEndTime.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        console.log(`\n📅 Checking entry: ${entry.subject}`);
+        console.log(`   Start: ${normalizedStartTime} (${startMinutes} min) | End: ${normalizedEndTime} (${endMinutes} min)`);
+        console.log(`   Current: ${currentHour}:${currentMinute} (${currentMinutes} min)`);
+        console.log(`   Should start? ${currentMinutes >= startMinutes && currentMinutes < endMinutes}`);
+
+        // ✅ FIX: If current time is between start and end time, start immediately
+        if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+          console.log(`\n🚀 IMMEDIATE START TRIGGERED!`);
+          console.log(`   Subject: ${entry.subject}`);
+          console.log(`   Faculty: ${entry.faculty}`);
+          console.log(`   Scheduled: ${normalizedStartTime} - ${normalizedEndTime}`);
+          console.log(`   Uploaded at: ${now.toLocaleTimeString()}`);
+          console.log(`   Time difference: ${currentMinutes - startMinutes} minutes late`);
+
+          const result = await autoStartLabSession(entry);
+          if (result.success) {
+            console.log(`✅ Session auto-started immediately: ${entry.subject}`);
+            immediateStartCount++;
+          } else {
+            console.error(`❌ Failed to start session: ${result.error}`);
+          }
+        }
+      }
+
+      console.log(`\n✅ Immediate start check complete: ${immediateStartCount} session(s) started\n`);
+
+    } catch (err) {
+      console.error('❌ Error in immediate session check:', err);
+    }
+
+    res.json({
+      success: true,
+      message: `Timetable uploaded successfully`,
+      successCount,
+      errorCount,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (error) {
+    console.error('❌ Timetable upload error:', error);
+
+    // Clean up file on error
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get all timetable entries (with optional filters)
+app.get('/api/timetable', async (req, res) => {
+  try {
+    const { date, labId, upcoming } = req.query;
+
+    let filter = { isActive: true };
+
+    // Filter by specific date
+    if (date) {
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+      filter.sessionDate = { $gte: startDate, $lte: endDate };
+    }
+
+    // Filter by lab ID
+    if (labId) {
+      filter.labId = labId.toUpperCase();
+    }
+    // Only upcoming sessions
+    if (upcoming === 'true') {
+      // ✅ FIX: Compare date only, not datetime (to show today's pending sessions)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      filter.sessionDate = { $gte: today };
+      filter.isProcessed = false;
+    }
+
+    const entries = await TimetableEntry.find(filter)
+      .sort({ sessionDate: 1, startTime: 1 })
+      .limit(100);
+
+    res.json({ success: true, count: entries.length, entries });
+  } catch (error) {
+    console.error('Error fetching timetable:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a timetable entry
+app.delete('/api/timetable/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await TimetableEntry.findByIdAndDelete(id);
+    console.log(`🗑️ Deleted timetable entry: ${id}`);
+    res.json({ success: true, message: 'Timetable entry deleted' });
+  } catch (error) {
+    console.error('Error deleting timetable entry:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Clear all timetable entries
+app.post('/api/timetable/clear-all', async (req, res) => {
+  try {
+    const result = await TimetableEntry.deleteMany({});
+    console.log(`🗑️ Cleared ${result.deletedCount} timetable entries`);
+    res.json({ success: true, message: `Cleared ${result.deletedCount} entries` });
+  } catch (error) {
+    console.error('Error clearing timetable:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ NEW: Manual start session from timetable entry
+app.post('/api/manual-start-session', async (req, res) => {
+  try {
+    const { entryId } = req.body;
+
+    if (!entryId) {
+      return res.status(400).json({ success: false, error: 'Entry ID is required' });
+    }
+
+    console.log(`🚀 Manual start requested for timetable entry: ${entryId}`);
+
+    // Find the timetable entry
+    const entry = await TimetableEntry.findById(entryId);
+
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Timetable entry not found' });
+    }
+
+    console.log(`📋 Found entry: ${entry.subject} by ${entry.faculty}`);
+
+    // Check if already processed
+    if (entry.isProcessed) {
+      return res.status(400).json({
+        success: false,
+        error: 'This session has already been started'
+      });
+    }
+
+    // Start the session
+    const result = await autoStartLabSession(entry);
+
+    if (result.success) {
+      console.log(`✅ Manual start successful: ${entry.subject}`);
+      res.json({
+        success: true,
+        message: `Session started: ${entry.subject}`,
+        sessionId: result.labSession._id
+      });
+    } else {
+      console.error(`❌ Manual start failed: ${result.error}`);
+      res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to start session'
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Manual start session error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Download Timetable Template
+app.get('/api/timetable-template', (req, res) => {
+  const csvContent = `Session Date,Start Time,End Time,Faculty,Subject,Lab ID,Year,Department,Section,Periods,Duration,Max Students,Remarks
+2025-11-10,09:00,10:40,Dr. John Smith,Data Structures,CC1,2,Computer Science,A,2,100,60,Regular class
+2025-11-10,11:00,12:40,Prof. Jane Doe,Database Management,CC2,3,Computer Science,B,2,100,60,Lab session
+2025-11-10,14:00,15:40,Dr. Bob Johnson,Web Development,CC1,2,Information Technology,A,2,100,60,Practical session`;
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="timetable-template.csv"');
+  res.send(csvContent);
+});
+
+// Student Registration API
+app.post('/api/student-register', async (req, res) => {
+  try {
+    const { name, studentId, email, password, dateOfBirth, department, year, labId } = req.body;
+
+    if (!name || !studentId || !email || !password || !dateOfBirth || !department || !year || !labId) {
+      return res.status(400).json({ success: false, error: "Missing required fields." });
+    }
+
+    const existing = await Student.findOne({ $or: [{ studentId }, { email }] });
+    if (existing) {
+      return res.status(400).json({ success: false, error: "Student ID or email already exists." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+    const student = new Student({
+      name,
+      studentId,
+      email,
+      passwordHash,
+      dateOfBirth,
+      department,
+      year,
+      labId,
+      isPasswordSet: true
+    });
+
+    await student.save();
+    console.log(`✅ Student registered: ${studentId}`);
+
+    res.json({ success: true, message: "Student registered successfully." });
+  } catch (error) {
+    console.error("Registration error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Student Authentication API
+app.post('/api/student-authenticate', async (req, res) => {
+  try {
+    const { studentId, password, labId } = req.body;
+
+    const student = await Student.findOne({ studentId, labId });
+    if (!student) {
+      return res.status(400).json({ success: false, error: "Invalid student or lab" });
+    }
+
+    if (!student.isPasswordSet || !student.passwordHash) {
+      return res.status(400).json({
+        success: false,
+        error: "Password not set. Please complete first-time signin first."
+      });
+    }
+
+    const isValid = await student.verifyPassword(password);
+    if (!isValid) {
+      return res.status(400).json({ success: false, error: "Incorrect password" });
+    }
+
+    console.log(`✅ Authentication successful: ${studentId}`);
+
+    res.json({
+      success: true,
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        email: student.email,
+        department: student.department,
+        year: student.year,
+        labId: student.labId
+      }
+    });
+  } catch (error) {
+    console.error("Authentication error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// First-time signin API
+app.post('/api/student-first-signin', async (req, res) => {
+  try {
+    const { name, studentId, dateOfBirth, password } = req.body;
+
+    if (!name || !studentId || !dateOfBirth || !password) {
+      return res.status(400).json({ success: false, error: "All fields are required" });
+    }
+
+    const student = await Student.findOne({
+      studentId: studentId.toUpperCase(),
+      name: { $regex: new RegExp(name.trim(), 'i') }
+    });
+
+    if (!student) {
+      return res.status(400).json({ success: false, error: "Student details not found in database" });
+    }
+
+    if (student.isPasswordSet) {
+      return res.status(400).json({ success: false, error: "Password already set for this student. Use login instead." });
+    }
+
+    const providedDOB = new Date(dateOfBirth);
+    const studentDOB = new Date(student.dateOfBirth);
+
+    if (providedDOB.toDateString() !== studentDOB.toDateString()) {
+      return res.status(400).json({ success: false, error: "Date of birth does not match our records" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+    await Student.findByIdAndUpdate(student._id, {
+      passwordHash,
+      isPasswordSet: true,
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ First-time signin completed for: ${studentId}`);
+    res.json({
+      success: true,
+      message: "Password set successfully! You can now login at kiosk.",
+      student: {
+        name: student.name,
+        studentId: student.studentId,
+        department: student.department,
+        labId: student.labId
+      }
+    });
+
+  } catch (error) {
+    console.error("First-time signin error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Password Reset API
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { studentId, dateOfBirth, newPassword } = req.body;
+
+    if (!studentId || !dateOfBirth || !newPassword) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+
+    const student = await Student.findOne({ studentId: studentId.toUpperCase() });
+    if (!student) {
+      return res.status(400).json({ success: false, error: "Student not found" });
+    }
+
+    if (!student.isPasswordSet) {
+      return res.status(400).json({
+        success: false,
+        error: "No password set yet. Please complete first-time signin first."
+      });
+    }
+
+    const providedDate = new Date(dateOfBirth);
+    const studentDOB = new Date(student.dateOfBirth);
+
+    if (providedDate.toDateString() !== studentDOB.toDateString()) {
+      return res.status(400).json({ success: false, error: "Date of birth does not match our records" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, error: "New password must be at least 6 characters" });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
+    await Student.findByIdAndUpdate(student._id, {
+      passwordHash,
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ Password reset successful for: ${studentId}`);
+    res.json({
+      success: true,
+      message: "Password reset successful! You can now login with your new password.",
+      student: {
+        name: student.name,
+        studentId: student.studentId
+      }
+    });
+
+  } catch (error) {
+    console.error("Password reset error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Student Login (Create Session)
+app.post('/api/student-login', async (req, res) => {
+  try {
+    const { studentName, studentId, computerName, labId, systemNumber, isGuest } = req.body;
+
+    // CRITICAL FIX: End ALL existing active sessions for this student to prevent duplicates
+    // This ensures only ONE active session per student at any time
+    if (!isGuest && studentId) {
+      const existingSessions = await Session.find({ studentId, status: 'active' });
+      if (existingSessions.length > 0) {
+        console.log(`🧹 Ending ${existingSessions.length} existing active session(s) for student ${studentId}`);
+        await Session.updateMany(
+          { studentId, status: 'active' },
+          { status: 'completed', logoutTime: new Date() }
+        );
+      }
+    }
+
+    // End any existing session for this computer/system to prevent duplicates
+    await Session.updateMany(
+      { systemNumber, status: 'active' },
+      { status: 'completed', logoutTime: new Date() }
+    );
+
+    // Also end any other sessions on this computer name
+    await Session.updateMany(
+      { computerName, status: 'active' },
+      { status: 'completed', logoutTime: new Date() }
+    );
+
+    // Extract clean IP address (remove IPv6 prefix if present)
+    let clientIP = req.ip || req.connection.remoteAddress || '';
+    if (clientIP.startsWith('::ffff:')) {
+      clientIP = clientIP.substring(7); // Remove '::ffff:' prefix
+    }
+
+    const newSession = new Session({
+      studentName: isGuest ? 'Guest User' : studentName,
+      studentId: isGuest ? 'GUEST' : studentId,
+      computerName,
+      labId,
+      systemNumber,
+      ipAddress: clientIP, // Save cleaned IP for system matching
+      loginTime: new Date(),
+      status: 'active',
+      isGuest: isGuest || false
+    });
+
+    await newSession.save();
+
+    // Update system registry with student login info - CRITICAL FOR SCREEN MIRRORING
+    try {
+      await SystemRegistry.findOneAndUpdate(
+        { systemNumber },
+        {
+          systemNumber,
+          computerName,
+          labId,
+          ipAddress: clientIP, // Use cleaned IP address
+          status: isGuest ? 'guest' : 'logged-in',
+          currentSessionId: newSession._id,
+          currentStudentId: isGuest ? 'GUEST' : studentId,
+          currentStudentName: isGuest ? 'Guest User' : studentName,
+          isGuest: isGuest || false,
+          lastSeen: new Date()
+        },
+        { upsert: true, new: true }
+      );
+      console.log(`✅ System registry updated: ${systemNumber} -> ${studentName} (Session: ${newSession._id}, IP: ${clientIP})`);
+    } catch (regError) {
+      console.error('❌ Error updating system registry:', regError);
+    }
+
+    // Save session to CSV file
+    await saveSessionToCSV(newSession);
+
+    // Update active lab session with this student record
+    try {
+      const activeLabSession = await LabSession.findOne({
+        status: 'active',
+        labId: labId
+      });
+      if (activeLabSession) {
+        console.log(`📚 Found active lab session: ${activeLabSession.subject} (ID: ${activeLabSession._id})`);
+
+        // Remove any existing record for this system to prevent duplicates
+        activeLabSession.studentRecords = activeLabSession.studentRecords.filter(
+          record => record.systemNumber !== systemNumber
+        );
+
+        // Also remove any existing record for this student to prevent duplicates
+        if (!isGuest && studentId) {
+          activeLabSession.studentRecords = activeLabSession.studentRecords.filter(
+            record => record.studentId !== studentId
+          );
+        }
+
+        // Look up student email for embedding in the record
+        let studentEmail = '';
+        if (!isGuest && studentId) {
+          try {
+            const studentDoc = await Student.findOne({ studentId }, { email: 1, _id: 0 }).lean();
+            if (studentDoc) studentEmail = studentDoc.email || '';
+          } catch (emailErr) {
+            console.warn(`⚠️ Could not look up email for ${studentId}:`, emailErr.message);
+          }
+        }
+
+        // Add new student record
+        activeLabSession.studentRecords.push({
+          studentName,
+          studentId,
+          email: studentEmail,
+          systemNumber,
+          loginTime: newSession.loginTime,
+          status: 'active'
+        });
+
+        await activeLabSession.save();
+        console.log(`📚 Added ${studentName} to lab session: ${activeLabSession.subject}`);
+      } else {
+        console.log(`⚠️ No active lab session found for ${labId}. Student ${studentName} logged in but not tracked in lab session.`);
+      }
+    } catch (labSessionError) {
+      console.error(`❌ Error updating lab session:`, labSessionError);
+      // Continue with student login even if lab session update fails
+    }
+
+    console.log(`✅ Session created: ${newSession._id} for ${studentName}`);
+
+    // Notify admins of new session
+    io.to('admins').emit('session-created', {
+      _id: newSession._id,
+      sessionId: newSession._id,
+      studentName,
+      studentId,
+      computerName,
+      labId,
+      systemNumber,
+      loginTime: newSession.loginTime
+    });
+
+    // CRITICAL: Notify kiosk to re-register with sessionId for screen mirroring
+    io.emit('session-login-success', {
+      sessionId: newSession._id,
+      systemNumber,
+      labId,
+      studentId,
+      studentName
+    });
+
+    io.emit('start-live-stream', { sessionId: newSession._id });
+
+    res.json({ success: true, sessionId: newSession._id });
+  } catch (error) {
+    console.error("Session login error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Student Logout (End Session)
+app.post('/api/student-logout', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    const session = await Session.findById(sessionId);
+    if (session) {
+      session.status = 'completed';
+      session.logoutTime = new Date();
+      session.duration = Math.floor((session.logoutTime - session.loginTime) / 1000);
+      await session.save();
+
+      // Update system registry - mark as available again
+      try {
+        await SystemRegistry.findOneAndUpdate(
+          { systemNumber: session.systemNumber },
+          {
+            status: 'available',
+            currentSessionId: null,
+            currentStudentId: null,
+            currentStudentName: null,
+            isGuest: false,
+            lastSeen: new Date()
+            // computerName is not changed on logout
+          }
+        );
+        console.log(`✅ System ${session.systemNumber} marked as available`);
+      } catch (regError) {
+        console.error('❌ Error updating system registry on logout:', regError);
+      }
+
+      // Update session in CSV file
+      await updateSessionInCSV(session);
+
+      // Update active lab session with logout info
+      const activeLabSession = await LabSession.findOne({
+        status: 'active',
+        labId: session.labId
+      });
+      if (activeLabSession) {
+        const studentRecord = activeLabSession.studentRecords.find(
+          record => record.systemNumber === session.systemNumber && record.status === 'active'
+        );
+
+        if (studentRecord) {
+          studentRecord.logoutTime = session.logoutTime;
+          studentRecord.duration = session.duration;
+          studentRecord.status = 'completed';
+
+          await activeLabSession.save();
+          console.log(`📚 Updated logout for ${session.studentName} in lab session: ${activeLabSession.subject}`);
+        }
+      }
+
+      console.log(`✅ Session ended: ${sessionId} - Duration: ${session.duration}s`);
+
+      // Notify admins of session end
+      io.to('admins').emit('session-ended', {
+        sessionId,
+        studentName: session.studentName,
+        computerName: session.computerName,
+        systemNumber: session.systemNumber,
+        logoutTime: session.logoutTime,
+        duration: session.duration
+      });
+
+      io.emit('stop-live-stream', { sessionId });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Session logout error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update session screenshot
+app.post('/api/update-screenshot', async (req, res) => {
+  try {
+    const { sessionId, screenshot } = req.body;
+    await Session.findByIdAndUpdate(sessionId, { screenshot });
+    io.emit('screenshot-update', { sessionId, screenshot, timestamp: new Date() });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Screenshot update error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Debug endpoint to check lab session data
+app.get('/api/debug-lab-session', async (req, res) => {
+  try {
+    const activeLabSession = await LabSession.findOne({ status: 'active' });
+
+    if (activeLabSession) {
+      console.log('🔍 DEBUG - Active Lab Session Found:');
+      console.log('   ID:', activeLabSession._id);
+      console.log('   Subject:', activeLabSession.subject);
+      console.log('   Faculty:', activeLabSession.faculty);
+      console.log('   Year:', activeLabSession.year);
+      console.log('   Department:', activeLabSession.department);
+      console.log('   Section:', activeLabSession.section);
+      console.log('   Periods:', activeLabSession.periods);
+      console.log('   Students:', activeLabSession.studentRecords.length);
+
+      res.json({
+        success: true,
+        session: activeLabSession
+      });
+    } else {
+      console.log('⚠️ No active lab session found');
+      res.json({
+        success: false,
+        message: 'No active lab session'
+      });
+    }
+  } catch (error) {
+    console.error('Error checking lab session:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get active sessions
+app.get('/api/active-sessions/:labId', async (req, res) => {
+  try {
+    const labIdParam = req.params.labId.toLowerCase();
+    let filter = { status: 'active' };
+
+    if (labIdParam !== 'all') {
+      filter.labId = labIdParam.toUpperCase();
+    }
+
+    const sessions = await Session.find(filter).sort({ loginTime: -1 });
+    res.json({ success: true, sessions });
+  } catch (error) {
+    console.error("Error fetching sessions:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all students
+app.get('/api/students', async (req, res) => {
+  try {
+    const students = await Student.find({}, '-passwordHash')
+      .sort({ studentId: 1 });
+    res.json({ success: true, students });
+  } catch (error) {
+    console.error("Error fetching students:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================================================
+// MULTI-LAB SUPPORT APIs
+// ========================================================================
+
+// Get daily guest password (4-digit, changes at midnight)
+app.get('/api/guest-password', (req, res) => {
+  try {
+    // Generate 4-digit password based on current date
+    const today = new Date();
+    const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+
+    // Create hash from date
+    const hash = crypto.createHash('sha256').update(dateString).digest('hex');
+
+    // Convert first 8 characters of hash to 4-digit number (0000-9999)
+    const password = (parseInt(hash.substring(0, 8), 16) % 10000).toString().padStart(4, '0');
+
+    // Format date for display
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formattedDate = `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+
+    console.log(`🔑 Guest password generated: ${password} for ${formattedDate}`);
+
+    res.json({
+      success: true,
+      password: password,
+      date: dateString,
+      formattedDate: formattedDate
+    });
+  } catch (error) {
+    console.error("Error generating guest password:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Authenticate guest password (for student kiosk)
+app.post('/api/guest-authenticate', (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password || password.length !== 4) {
+      return res.status(400).json({ success: false, error: 'Invalid password format' });
+    }
+
+    // Generate today's password
+    const today = new Date();
+    const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const hash = crypto.createHash('sha256').update(dateString).digest('hex');
+    const expectedPassword = (parseInt(hash.substring(0, 8), 16) % 10000).toString().padStart(4, '0');
+
+    // Verify password
+    if (password === expectedPassword) {
+      console.log(`✅ Guest authentication successful: ${password}`);
+      res.json({ success: true, message: 'Guest authenticated' });
+    } else {
+      console.log(`❌ Guest authentication failed: ${password} (expected: ${expectedPassword})`);
+      res.status(401).json({ success: false, error: 'Invalid guest password' });
+    }
+  } catch (error) {
+    console.error("Error authenticating guest:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all lab configurations
+app.get('/api/labs', (req, res) => {
+  try {
+    const labs = getAllLabConfigs();
+    res.json({ success: true, labs });
+  } catch (error) {
+    console.error("Error fetching labs:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get available systems for a specific lab
+app.get('/api/systems/:labId', async (req, res) => {
+  try {
+    const { labId } = req.params;
+
+    if (!isValidLabId(labId)) {
+      return res.status(400).json({ success: false, error: 'Invalid lab ID' });
+    }
+
+    // Get all registered (connected) systems for this lab from registry
+    // ONLY show systems with logged-in or guest status (actively being used)
+    const systems = await SystemRegistry.find({
+      labId,
+      status: { $in: ['logged-in', 'guest'] } // Only show systems with active students
+    })
+      .sort({ systemNumber: 1 })
+      .lean();
+
+    // Get lab configuration for metadata
+    const labConfig = getLabConfig(labId);
+
+    // Create list with only logged-in/guest systems
+    const systemList = systems.map(system => ({
+      systemNumber: system.systemNumber,
+      computerName: system.computerName || null,
+      labId: system.labId,
+      status: system.status,
+      ipAddress: system.ipAddress || null,
+      lastSeen: system.lastSeen || null,
+      currentStudentId: system.currentStudentId || null,
+      currentStudentName: system.currentStudentName || null,
+      isGuest: system.isGuest || false,
+      sessionId: system.currentSessionId || null
+    }));
+
+    // Calculate statistics
+    const stats = {
+      totalSystems: systemList.length,
+      availableSystems: 0, // Not showing available systems
+      loggedInSystems: systemList.filter(s => s.status === 'logged-in').length,
+      guestSystems: systemList.filter(s => s.status === 'guest').length,
+      offlineSystems: 0 // Not showing offline systems
+    };
+
+    console.log(`📊 Systems for ${labId} (logged-in only):`, stats);
+
+    res.json({
+      success: true,
+      labId,
+      labName: labConfig.labName,
+      systems: systemList,
+      ...stats
+    });
+  } catch (error) {
+    console.error("Error fetching systems:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get students by department
+app.get('/api/students/department/:dept', async (req, res) => {
+  try {
+    const department = req.params.dept;
+    const students = await Student.find({ department }, '-passwordHash')
+      .sort({ studentId: 1 });
+    res.json({ success: true, students, count: students.length });
+  } catch (error) {
+    console.error("Error fetching students by department:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Database statistics
+app.get('/api/stats', async (req, res) => {
+  try {
+    const totalStudents = await Student.countDocuments();
+    const passwordsSet = await Student.countDocuments({ isPasswordSet: true });
+    const pendingPasswords = await Student.countDocuments({ isPasswordSet: false });
+
+    const departmentStats = await Student.aggregate([
+      { $group: { _id: "$department", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    const yearStats = await Student.aggregate([
+      { $group: { _id: "$year", count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalStudents,
+        passwordsSet,
+        pendingPasswords,
+        departments: departmentStats,
+        years: yearStats
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Search students
+app.get('/api/students/search/:query', async (req, res) => {
+  try {
+    const query = req.params.query;
+    const students = await Student.find({
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { studentId: { $regex: query, $options: 'i' } },
+        { email: { $regex: query, $options: 'i' } }
+      ]
+    }, '-passwordHash').sort({ studentId: 1 }).limit(50);
+
+    res.json({ success: true, students, count: students.length });
+  } catch (error) {
+    console.error("Error searching students:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Export all sessions to CSV
+app.get('/api/export-sessions', async (req, res) => {
+  try {
+    const { startDate, endDate, labId, status } = req.query;
+
+    // Build filter query
+    let filter = {};
+
+    if (startDate && endDate) {
+      filter.loginTime = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate + 'T23:59:59.999Z')
+      };
+    }
+
+    if (labId && labId !== 'all') {
+      filter.labId = labId.toUpperCase();
+    }
+
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    console.log('📊 Exporting sessions with filter:', filter);
+
+    const sessions = await Session.find(filter)
+      .sort({ loginTime: -1 })
+      .lean();
+
+    console.log(`📊 Found ${sessions.length} sessions to export`);
+
+    // Prepare CSV data
+    const csvData = sessions.map(session => ({
+      'Session ID': session._id.toString(),
+      'Student Name': session.studentName || 'N/A',
+      'Student ID': session.studentId || 'N/A',
+      'Computer Name': session.computerName || 'N/A',
+      'Lab ID': session.labId || 'N/A',
+      'System Number': session.systemNumber || 'N/A',
+      'Login Time': session.loginTime ? new Date(session.loginTime).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }) : 'N/A',
+      'Logout Time': session.logoutTime ? new Date(session.logoutTime).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }) : 'Still Active',
+      'Duration (seconds)': session.duration || (session.status === 'active' ? 'Ongoing' : 'N/A'),
+      'Duration (formatted)': session.duration ? formatDuration(session.duration) : (session.status === 'active' ? 'Ongoing' : 'N/A'),
+      'Status': session.status || 'unknown',
+      'Date': session.loginTime ? new Date(session.loginTime).toLocaleDateString('en-IN') : 'N/A'
+    }));
+
+    // Convert to CSV
+    const csvHeaders = Object.keys(csvData[0] || {}).join(',') + '\n';
+    const csvRows = csvData.map(row =>
+      Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+
+    const csvContent = csvHeaders + csvRows;
+
+    // Set response headers for file download
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `lab-sessions-${timestamp}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    console.log(`✅ Exporting ${sessions.length} sessions as ${filename}`);
+    res.send(csvContent);
+
+  } catch (error) {
+    console.error('❌ Export sessions error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Helper function to format duration
+function formatDuration(seconds) {
+  if (!seconds || seconds === 0) return '00:00:00';
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+// Get session history with pagination
+app.get('/api/session-history', async (req, res) => {
+  try {
+    const { page = 1, limit = 50, labId, status, startDate, endDate } = req.query;
+
+    let filter = {};
+
+    if (labId && labId !== 'all') {
+      filter.labId = labId.toUpperCase();
+    }
+
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    if (startDate && endDate) {
+      filter.loginTime = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate + 'T23:59:59.999Z')
+      };
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const sessions = await Session.find(filter)
+      .sort({ loginTime: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const totalSessions = await Session.countDocuments(filter);
+    const totalPages = Math.ceil(totalSessions / parseInt(limit));
+
+    res.json({
+      success: true,
+      sessions,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalSessions,
+        hasNext: parseInt(page) < totalPages,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Session history error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Clear all sessions from database
+app.post('/api/clear-all-sessions', async (req, res) => {
+  try {
+    console.log('🗑️ Clearing all sessions from database...');
+
+    const result = await Session.deleteMany({});
+
+    console.log(`✅ Cleared ${result.deletedCount} sessions from database`);
+
+    // Emit event to all connected clients
+    io.emit('sessions-cleared', {
+      message: 'All sessions have been cleared',
+      deletedCount: result.deletedCount,
+      timestamp: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: `Successfully cleared ${result.deletedCount} sessions`,
+      deletedCount: result.deletedCount
+    });
+
+  } catch (error) {
+    console.error('❌ Clear sessions error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// WebSocket: Socket.io WebRTC signaling
+// Lab Session Management API Endpoints
+
+// Note: detectLabFromIP is now imported from lab-config.js at the top of this file
+
+// Start Lab Session
+app.post('/api/start-lab-session', async (req, res) => {
+  try {
+    const { subject, faculty, year, department, section, periods, startTime, expectedDuration, labId } = req.body;
+
+    // 🔧 MULTI-LAB: Detect lab from admin IP or use provided labId
+    const adminIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for']?.split(',')[0];
+    const detectedLabId = labId || detectLabFromIP(adminIP);
+
+    console.log(`🏢 Starting lab session for Lab: ${detectedLabId} (Admin IP: ${adminIP})`);
+
+    // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
+    console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);
+    // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
+    console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);
+
+    // End all active student sessions for this lab only
+    const activeSessionsCount = await Session.countDocuments({ status: 'active', labId: detectedLabId });
+    if (activeSessionsCount > 0) {
+      await Session.updateMany(
+        { status: 'active', labId: detectedLabId },
+        {
+          status: 'completed',
+          logoutTime: new Date(),
+          endReason: 'New lab session started - auto logout'
+        }
+      );
+      console.log(`🗑️ Cleared ${activeSessionsCount} old student sessions for Lab ${detectedLabId}`);
+    }
+
+    // Clean up any incomplete lab sessions for this lab
+    await LabSession.deleteMany({
+      labId: detectedLabId,
+      $or: [
+        { subject: { $exists: false } },
+        { faculty: { $exists: false } },
+        { periods: { $exists: false } }
+      ]
+    });
+
+    // End any existing active lab sessions for THIS LAB ONLY
+    await LabSession.updateMany(
+      { status: 'active', labId: detectedLabId },
+      { status: 'completed', endTime: new Date() }
+    );
+
+    console.log(`✅ Ready to start new lab session for Lab ${detectedLabId}...`);
+
+    // Create new lab session with labId
+    const newLabSession = new LabSession({
+      labId: detectedLabId, // 🔧 MULTI-LAB: Include lab identifier
+      subject,
+      faculty,
+      year,
+      department,
+      section,
+      periods,
+      expectedDuration,
+      startTime: new Date(startTime),
+      status: 'active',
+      studentRecords: []
+    });
+
+    await newLabSession.save();
+
+    // Check how many student sessions are still active
+    const activeStudentSessions = await Session.countDocuments({ status: 'active' });
+    console.log(`🚀 Lab session started: ${subject} by ${faculty} - ${year}${year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th'} Year ${department} ${section !== 'None' ? 'Section ' + section : ''}`);
+    console.log(`📊 Active student sessions preserved: ${activeStudentSessions}`);
+
+    res.json({
+      success: true,
+      session: {
+        _id: newLabSession._id,
+        subject: newLabSession.subject,
+        faculty: newLabSession.faculty,
+        year: newLabSession.year,
+        department: newLabSession.department,
+        section: newLabSession.section,
+        periods: newLabSession.periods,
+        expectedDuration: newLabSession.expectedDuration,
+        startTime: newLabSession.startTime,
+        status: newLabSession.status
+      },
+      message: 'Lab session started successfully'
+    });
+
+  } catch (error) {
+    console.error('Error starting lab session:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// End Lab Session
+app.post('/api/end-lab-session', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    // Handle force clear
+    if (sessionId === 'force-clear' || sessionId === 'clear-all') {
+      await LabSession.deleteMany({});
+      await Session.updateMany({ status: 'active' }, { status: 'completed', logoutTime: new Date() });
+      console.log('🧹 Force cleared all lab sessions');
+      return res.json({ success: true, message: 'All lab sessions force cleared' });
+    }
+
+    const labSession = await LabSession.findById(sessionId);
+    if (!labSession) {
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
+      });
+    }
+
+    // 🔧 MULTI-LAB: Clear all individual student sessions for THIS LAB ONLY
+    const activeSessions = await Session.find({ status: 'active', labId: labSession.labId });
+    const currentTime = new Date();
+
+    console.log(`🛑 Ending ${activeSessions.length} active sessions for Lab ${labSession.labId}`);
+
+    for (const session of activeSessions) {
+      const durationMs = currentTime - session.loginTime;
+      const durationSeconds = Math.floor(durationMs / 1000);
+
+      await Session.findByIdAndUpdate(session._id, {
+        status: 'completed',
+        logoutTime: currentTime,
+        duration: durationSeconds
+      });
+
+      // Notify corresponding kiosk (if connected) that lab session is ending soon
+      try {
+        const kioskSocketId = kioskSockets.get(session._id.toString());
+        if (kioskSocketId) {
+          io.to(kioskSocketId).emit('lab-session-ending', {
+            sessionId: session._id.toString(),
+            timeoutSeconds: 60,
+            message: 'Session has ended. Please save your work and log out within 1 minute.'
+          });
+          console.log(`📢 Sent lab-session-ending notice to kiosk socket ${kioskSocketId} for session ${session._id}`);
+        }
+      } catch (notifyErr) {
+        console.error('⚠️ Error notifying kiosk about session end:', notifyErr.message || notifyErr);
+      }
+    }
+
+    console.log(`🛑 Updated ${activeSessions.length} active sessions to completed`);
+
+    // 🔧 FIX: Update labSession.studentRecords with final logout times and durations
+    // Set end time first
+    labSession.endTime = new Date();
+
+    // Get ALL sessions (active + completed) for this lab during THIS session period ONLY
+    // Use both start and end time to avoid picking up future sessions
+    const allSessionsForThisLab = await Session.find({
+      labId: labSession.labId,
+      loginTime: {
+        $gte: labSession.startTime,
+        $lte: labSession.endTime  // 🔧 FIX: Add upper limit to avoid future sessions
+      }
+    }).sort({ loginTime: 1 });
+
+    console.log(`📊 Found ${allSessionsForThisLab.length} total sessions for this lab session`);
+    console.log(`📊 Session period: ${labSession.startTime} to ${labSession.endTime}`);
+
+    if (allSessionsForThisLab.length > 0) {
+      console.log(`📊 First session: ${allSessionsForThisLab[0].studentName} at ${allSessionsForThisLab[0].loginTime}`);
+      console.log(`📊 Last session: ${allSessionsForThisLab[allSessionsForThisLab.length - 1].studentName} at ${allSessionsForThisLab[allSessionsForThisLab.length - 1].loginTime}`);
+    }
+
+    // Update studentRecords with complete data from Session collection
+    labSession.studentRecords = allSessionsForThisLab.map(session => ({
+      studentName: session.studentName,
+      studentId: session.studentId,
+      systemNumber: session.systemNumber,
+      loginTime: session.loginTime,
+      logoutTime: session.logoutTime,
+      duration: session.duration || 0,
+      status: session.status
+    }));
+
+    console.log(`📊 Updated studentRecords array with ${labSession.studentRecords.length} records`);
+
+    // Log sample records for debugging
+    if (labSession.studentRecords.length > 0) {
+      console.log(`📊 Sample record:`, {
+        name: labSession.studentRecords[0].studentName,
+        id: labSession.studentRecords[0].studentId,
+        system: labSession.studentRecords[0].systemNumber,
+        duration: labSession.studentRecords[0].duration
+      });
+    }
+
+    // Update lab session status
+    labSession.status = 'completed';
+    await labSession.save();
+
+    console.log(`✅ Lab session saved with ${labSession.studentRecords.length} student records`);
+
+    // 🔧 FIX: Mark timetable entry as processed/completed when session ends
+    try {
+      const timetableEntry = await TimetableEntry.findOne({ labSessionId: labSession._id });
+      if (timetableEntry && !timetableEntry.isProcessed) {
+        timetableEntry.isProcessed = true;
+        await timetableEntry.save();
+        console.log(`✅ Marked timetable entry as completed: ${timetableEntry.subject}`);
+      }
+    } catch (timetableErr) {
+      console.error('⚠️ Error updating timetable entry:', timetableErr.message);
+      // Don't fail the entire operation if timetable update fails
+    }
+
+    console.log(`🛑 Lab session ended: ${labSession.subject}`);
+
+    // Generate lab session CSV report
+    const csvResult = await generateLabSessionCSV(labSession._id);
+
+    if (csvResult.success) {
+      // Save to manual reports folder
+      const filepath = path.join(MANUAL_REPORT_DIR, csvResult.filename);
+      fs.writeFileSync(filepath, csvResult.csvContent, 'utf8');
+      console.log(`💾 Lab session CSV saved: ${csvResult.filename}`);
+
+      // Notify all admins with CSV download link
+      io.to('admins').emit('lab-session-ended', {
+        sessionId: labSession._id,
+        subject: labSession.subject,
+        clearedSessions: activeSessions.length,
+        csvFilename: csvResult.filename,
+        csvAvailable: true
+      });
+    } else {
+      // Notify without CSV if generation failed
+      io.to('admins').emit('lab-session-ended', {
+        sessionId: labSession._id,
+        subject: labSession.subject,
+        clearedSessions: activeSessions.length
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Lab session ended and all data cleared successfully',
+      csvGenerated: csvResult.success,
+      csvFilename: csvResult.success ? csvResult.filename : null
+    });
+
+  } catch (error) {
+    console.error('Error ending lab session:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update session duration - allows adjusting duration after session starts
+app.post('/api/update-session-duration', async (req, res) => {
+  try {
+    const { sessionId, periods, expectedDuration } = req.body;
+
+    if (!sessionId || !periods || !expectedDuration) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session ID, periods, and expected duration are required'
+      });
+    }
+
+    // Validate periods (1-6)
+    if (periods < 1 || periods > 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Periods must be between 1 and 6'
+      });
+    }
+
+    // Find and update the lab session
+    const labSession = await LabSession.findById(sessionId);
+    if (!labSession) {
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
+      });
+    }
+
+    // Update the duration
+    labSession.periods = periods;
+    labSession.expectedDuration = expectedDuration;
+    labSession.updatedAt = new Date();
+    await labSession.save();
+
+    console.log(`⏱️ Session duration updated: ${labSession.subject} - ${periods} periods (${expectedDuration} min)`);
+
+    res.json({
+      success: true,
+      message: 'Session duration updated successfully',
+      session: labSession
+    });
+
+  } catch (error) {
+    console.error('Error updating session duration:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Force clear everything - emergency endpoint
+app.post('/api/force-clear-all', async (req, res) => {
+  try {
+    console.log('🚨 EMERGENCY: Force clearing ALL data...');
+
+    // Delete all lab sessions
+    const labResult = await LabSession.deleteMany({});
+
+    // Set all individual sessions to completed with proper duration
+    const activeSessionsForClear = await Session.find({ status: 'active' });
+    const clearTime = new Date();
+
+    for (const session of activeSessionsForClear) {
+      const durationMs = clearTime - session.loginTime;
+      const durationSeconds = Math.floor(durationMs / 1000);
+
+      await Session.findByIdAndUpdate(session._id, {
+        status: 'completed',
+        logoutTime: clearTime,
+        duration: durationSeconds
+      });
+    }
+
+    const sessionResult = { modifiedCount: activeSessionsForClear.length };
+
+    console.log(`🧹 Deleted ${labResult.deletedCount} lab sessions`);
+    console.log(`🧹 Completed ${sessionResult.modifiedCount} individual sessions`);
+
+    res.json({
+      success: true,
+      message: `Emergency clear completed: ${labResult.deletedCount} lab sessions deleted, ${sessionResult.modifiedCount} individual sessions completed`,
+      labSessionsDeleted: labResult.deletedCount,
+      individualSessionsCompleted: sessionResult.modifiedCount
+    });
+  } catch (error) {
+    console.error('Error in emergency clear:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Clean up problematic lab sessions
+app.post('/api/cleanup-lab-sessions', async (req, res) => {
+  try {
+    // Remove any lab sessions that might have validation issues
+    const result = await LabSession.deleteMany({
+      $or: [
+        { subject: { $exists: false } },
+        { faculty: { $exists: false } },
+        { periods: { $exists: false } },
+        { year: { $exists: false } },
+        { department: { $exists: false } },
+        { section: { $exists: false } }
+      ]
+    });
+
+    console.log(`🧹 Cleaned up ${result.deletedCount} problematic lab sessions`);
+
+    res.json({
+      success: true,
+      message: `Cleaned up ${result.deletedCount} problematic lab sessions`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Error cleaning up lab sessions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Debug current active session
+app.get('/api/debug-current-session', async (req, res) => {
+  try {
+    const activeLabSession = await LabSession.findOne({ status: 'active' });
+    const allSessions = await Session.find({}).sort({ loginTime: -1 }).limit(10);
+    const activeSessions = await Session.find({ status: 'active' });
+
+    res.json({
+      success: true,
+      debug: {
+        activeLabSession: activeLabSession,
+        activeLabSessionStudentRecords: activeLabSession ? activeLabSession.studentRecords : null,
+        recentIndividualSessions: allSessions,
+        activeIndividualSessions: activeSessions,
+        counts: {
+          labSessionStudents: activeLabSession ? activeLabSession.studentRecords.length : 0,
+          activeIndividualSessions: activeSessions.length,
+          recentIndividualSessions: allSessions.length
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Debug endpoint to check session data
+app.get('/api/debug-session-data/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const labSession = await LabSession.findById(sessionId);
+    const allSessions = await Session.find({}).sort({ loginTime: -1 }).limit(10);
+    const activeSessions = await Session.find({ status: 'active' });
+
+    res.json({
+      success: true,
+      debug: {
+        labSession: labSession,
+        recentSessions: allSessions,
+        activeSessions: activeSessions,
+        labSessionStudentRecords: labSession ? labSession.studentRecords : null
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Export Session Data
+app.get('/api/export-session-data/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const labSession = await LabSession.findById(sessionId);
+    if (!labSession) {
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
+      });
+    }
+
+    console.log(`📊 Lab session found: ${labSession.subject} - Start time: ${labSession.startTime}`);
+    console.log(`📊 Lab session embedded student records: ${labSession.studentRecords ? labSession.studentRecords.length : 0}`);
+
+    // PRIORITY 1: Use embedded student records from lab session (most reliable)
+    let finalStudentRecords = [];
+
+    if (labSession.studentRecords && labSession.studentRecords.length > 0) {
+      console.log(`📊 Using embedded student records from lab session: ${labSession.studentRecords.length}`);
+      finalStudentRecords = labSession.studentRecords;
+    } else {
+      // PRIORITY 2: Get individual session records during this lab session period
+      console.log(`📊 No embedded records, checking individual Session records...`);
+      const studentRecords = await Session.find({
+        loginTime: { $gte: labSession.startTime },
+        ...(labSession.endTime && { loginTime: { $lte: labSession.endTime } })
+      }).sort({ loginTime: 1 });
+
+      console.log(`📊 Found ${studentRecords.length} individual session records`);
+      finalStudentRecords = studentRecords;
+    }
+
+    // PRIORITY 3: If still no records, get ALL active sessions (fallback)
+    if (finalStudentRecords.length === 0) {
+      console.log(`📊 No records found, using ALL active sessions as fallback...`);
+      const allActiveSessions = await Session.find({ status: 'active' }).sort({ loginTime: 1 });
+      console.log(`📊 Found ${allActiveSessions.length} active sessions as fallback`);
+      finalStudentRecords = allActiveSessions;
+    }
+
+    console.log(`📊 FINAL: Will export ${finalStudentRecords.length} student records`);
+    console.log(`📊 Student names in export:`, finalStudentRecords.map(r => r.studentName));
+
+    // 🔧 EMAIL ENRICHMENT: Look up student emails from Student collection
+    const studentIdsForEmail = finalStudentRecords
+      .filter(r => !r.email)
+      .map(r => r.studentId)
+      .filter(Boolean);
+
+    let emailLookup = {};
+    if (studentIdsForEmail.length > 0) {
+      const studentsWithEmail = await Student.find(
+        { studentId: { $in: studentIdsForEmail } },
+        { studentId: 1, email: 1, _id: 0 }
+      ).lean();
+      studentsWithEmail.forEach(s => { emailLookup[s.studentId] = s.email; });
+    }
+
+    res.json({
+      success: true,
+      sessionData: {
+        subject: labSession.subject,
+        faculty: labSession.faculty,
+        year: labSession.year,
+        department: labSession.department,
+        section: labSession.section,
+        periods: labSession.periods,
+        expectedDuration: labSession.expectedDuration,
+        startTime: labSession.startTime,
+        endTime: labSession.endTime
+      },
+      studentRecords: finalStudentRecords.map(record => ({
+        studentName: record.studentName,
+        studentId: record.studentId,
+        email: record.email || emailLookup[record.studentId] || 'N/A',
+        systemNumber: record.systemNumber,
+        computerName: record.computerName,
+        loginTime: record.loginTime,
+        logoutTime: record.logoutTime,
+        duration: record.duration,
+        status: record.status
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error exporting session data:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Socket maps for kiosk/admin WebRTC + control
+const kioskSockets = new Map(); // sessionId -> socket.id (for logged-in kiosks)
+const kioskSystemSockets = new Map(); // systemNumber -> socket.id (for pre-login kiosks)
+const adminSockets = new Map();
+const pendingOffers = new Map(); // sessionId -> { offer, adminSocketId } — queued until kiosk registers
+
+io.on('connection', (socket) => {
+  console.log("✅ Socket connected:", socket.id);
+
+  // Get client IP address for lab detection
+  const clientIP = socket.handshake.address.replace('::ffff:', ''); // Remove IPv6 prefix if present
+  console.log('🌐 Client IP:', clientIP);
+
+  socket.on('computer-online', (data) => {
+    console.log("💻 Computer online:", data);
+  });
+
+  socket.on('screen-share', (data) => {
+    socket.broadcast.emit('live-screen', data);
+  });
+
+  // ========================================================================
+  // SYSTEM REGISTRY - Track all powered-on systems (even before login)
+  // ========================================================================
+  socket.on('register-kiosk', async ({ sessionId, systemNumber, computerName, labId, ipAddress }) => {
+    try {
+      // Detect lab from IP if not provided
+      const detectedLabId = labId || detectLabFromIP(ipAddress || clientIP);
+      console.log('📡 Kiosk registering:', {
+        sessionId: sessionId || 'PRE-LOGIN',
+        socketId: socket.id,
+        systemNumber,
+        labId: detectedLabId,
+        ipAddress: ipAddress || clientIP
+      });
+
+      // Register by session ID if available (after login)
+      if (sessionId) {
+        kioskSockets.set(sessionId, socket.id);
+        socket.join(`session-${sessionId}`);
+
+        // ✅ TIMING FIX: Flush any pending offer that arrived before kiosk registered
+        if (pendingOffers.has(sessionId)) {
+          const pending = pendingOffers.get(sessionId);
+          pendingOffers.delete(sessionId);
+          console.log(`📤 FLUSHING pending offer for session ${sessionId} to newly-registered kiosk ${socket.id} (nonce: ${pending.nonce})`);
+          // 🔥 FIX: Include nonce so admin can correlate answer to offer
+          socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId, nonce: pending.nonce });
+        }
+      }
+
+      // Always register by system number (works before and after login)
+      if (systemNumber) {
+        kioskSystemSockets.set(systemNumber, socket.id);
+        console.log(`✅ Registered kiosk by system number: ${systemNumber} -> ${socket.id}`);
+
+        // ✅ FIX 6: Flush pending offer keyed by systemNumber (when admin sent offer before kiosk registered by sessionId)
+        if (!sessionId && pendingOffers.has(systemNumber)) {
+          const pending = pendingOffers.get(systemNumber);
+          pendingOffers.delete(systemNumber);
+          console.log(`📤 FLUSHING pending offer for systemNumber ${systemNumber} to newly-registered kiosk ${socket.id} (nonce: ${pending.nonce})`);
+          // 🔥 FIX: Include nonce so admin can correlate answer to offer
+          socket.emit('admin-offer', { offer: pending.offer, sessionId: pending.sessionId || null, adminSocketId: pending.adminSocketId, nonce: pending.nonce });
+        }
+
+        // Update system registry in database
+        await SystemRegistry.findOneAndUpdate(
+          { systemNumber },
+          {
+            systemNumber,
+            computerName,
+            labId: detectedLabId,
+            ipAddress: ipAddress || clientIP,
+            status: sessionId ? 'logged-in' : 'available',
+            socketId: socket.id,
+            lastSeen: new Date()
+          },
+          { upsert: true, new: true }
+        );
+
+        console.log(`✅ System registry updated: ${systemNumber} in lab ${detectedLabId}`);
+
+        // Broadcast updated system list to all admins
+        const availableSystems = await SystemRegistry.find({ status: { $ne: 'offline' } })
+          .sort({ systemNumber: 1 })
+          .lean();
+
+        io.to('admins').emit('systems-registry-update', {
+          systems: availableSystems,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      socket.join(`lab-${detectedLabId}`); // Join lab-specific room
+
+    } catch (error) {
+      console.error('❌ Error in register-kiosk:', error);
+    }
+  });
+
+  // Handle kiosk screen ready event
+  socket.on('kiosk-screen-ready', ({ sessionId, hasVideo, timestamp }) => {
+    console.log('🎉 KIOSK SCREEN READY:', sessionId, 'Has Video:', hasVideo);
+
+    // ✅ FIX 7: Flush any pending offer now that kiosk's screen is confirmed ready
+    if (sessionId && pendingOffers.has(sessionId)) {
+      const pending = pendingOffers.get(sessionId);
+      pendingOffers.delete(sessionId);
+      console.log(`📤 FLUSHING pending offer on kiosk-screen-ready for session ${sessionId} (nonce: ${pending.nonce})`);
+      // 🔥 FIX: Include nonce so kiosk can echo it back and admin can validate the answer
+      socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId, nonce: pending.nonce });
+    }
+
+    // Notify all admins that this kiosk's screen is ready for monitoring
+    io.to('admins').emit('kiosk-screen-ready', {
+      sessionId,
+      hasVideo,
+      timestamp,
+      kioskSocketId: socket.id
+    });
+    console.log('📡 Notified admins: Kiosk screen ready for session:', sessionId);
+  });
+
+  // Handle system heartbeat via Socket.IO (real-time socketId updates)
+  socket.on('system-heartbeat', async ({ systemNumber, computerName, labId, ipAddress, timestamp, status }) => {
+    try {
+      if (!systemNumber || !labId) {
+        console.warn('⚠️ Invalid heartbeat: missing systemNumber or labId');
+        return;
+      }
+
+      // Update registry with current socket ID
+      await SystemRegistry.findOneAndUpdate(
+        { systemNumber, labId },
+        {
+          systemNumber,
+          computerName,
+          labId,
+          ipAddress: ipAddress || socket.handshake.address,
+          socketId: socket.id, // Update with current socket ID
+          lastSeen: new Date(),
+          status: status || 'available'
+        },
+        { upsert: true, new: true }
+      );
+
+      // Also track in kioskSystemSockets for quick lookup
+      kioskSystemSockets.set(systemNumber, socket.id);
+
+    } catch (error) {
+      console.error('❌ Socket heartbeat error:', error);
+    }
+  });
+
+  socket.on('admin-offer', ({ offer, sessionId, adminSocketId, systemNumber, nonce }) => {
+    // Try to find kiosk by sessionId first (after login)
+    let kioskSocketId = sessionId ? kioskSockets.get(sessionId) : null;
+
+    // If not found by sessionId, try by systemNumber (before login or guest mode)
+    if (!kioskSocketId && systemNumber) {
+      kioskSocketId = kioskSystemSockets.get(systemNumber);
+      console.log(`📹 Kiosk found by system number: ${systemNumber} -> ${kioskSocketId}`);
+    }
+
+    const isModal = adminSocketId && adminSocketId.includes('-modal');
+    console.log('📹 Admin offer for session:', sessionId || 'PRE-LOGIN', 'System:', systemNumber, '-> Kiosk:', kioskSocketId, 'Modal:', isModal, 'Nonce:', nonce);
+
+    // Track admin for this session/system
+    // 🔥 FIX: Replace the admin list entirely on each new offer so stale IDs don't accumulate.
+    // Old IDs from previous failed attempts would route answers/ICE to disconnected sockets.
+    const trackingKey = sessionId || systemNumber;
+    adminSockets.set(trackingKey, adminSocketId ? [adminSocketId] : []);
+    console.log(`📹 Admin registered for key "${trackingKey}": ${adminSocketId}`);
+
+    if (kioskSocketId) {
+      console.log('📤 Forwarding offer to kiosk:', kioskSocketId);
+      console.log('📤 Offer params:', {
+        hasOffer: !!offer,
+        sessionId: sessionId || null,
+        adminSocketId: adminSocketId,
+        kioskSocketId: kioskSocketId,
+        nonce: nonce
+      });
+      // 🔥 FIX: Forward nonce to kiosk so it can echo it back in the answer
+      io.to(kioskSocketId).emit('admin-offer', { offer, sessionId: sessionId || null, adminSocketId, nonce });
+      console.log('✅ Offer emitted to kiosk');
+    } else {
+      // ✅ TIMING FIX: Queue the offer if kiosk hasn't registered with sessionId yet
+      if (sessionId) {
+        console.log(`⏳ Kiosk not found yet for session ${sessionId} — queuing by sessionId for when kiosk registers`);
+        pendingOffers.set(sessionId, { offer, adminSocketId, sessionId, nonce });
+        setTimeout(() => { if (pendingOffers.get(sessionId)?.offer === offer) pendingOffers.delete(sessionId); }, 120000);
+      }
+      // ✅ FIX 6: ALSO queue by systemNumber — covers the case where kiosk reconnects before login
+      // When kiosk boots and calls register-kiosk with just systemNumber, flush fires
+      if (systemNumber) {
+        console.log(`⏳ ALSO queuing by systemNumber ${systemNumber} for when kiosk re-registers`);
+        pendingOffers.set(systemNumber, { offer, adminSocketId, sessionId: sessionId || null, nonce });
+        setTimeout(() => { if (pendingOffers.get(systemNumber)?.offer === offer) pendingOffers.delete(systemNumber); }, 120000);
+      }
+      if (!sessionId && !systemNumber) {
+        console.warn('⚠️ No sessionId or systemNumber — cannot queue offer, kiosk unreachable');
+        if (adminSocketId) {
+          const targetSocketId = adminSocketId.replace('-modal', '');
+          io.to(targetSocketId).emit('webrtc-error', { sessionId, error: 'Student not connected' });
+        }
+      }
+    }
+  });
+
+
+  socket.on('webrtc-answer', ({ answer, adminSocketId, sessionId, nonce }) => {
+    console.log('📹 ✅✅✅ SERVER RECEIVED WebRTC answer from kiosk!');
+    console.log('📹 Answer details:', {
+      hasAnswer: !!answer,
+      answerType: answer?.type,
+      adminSocketId: adminSocketId,
+      sessionId: sessionId,
+      nonce: nonce,
+      kioskSocketId: socket.id
+    });
+
+    // Use adminSockets registry (same as ICE candidate routing) — more reliable than raw socket ID
+    // The raw adminSocketId can be stale if admin browser reconnected since the offer was sent
+    // admin-offer registers admins using key = sessionId || systemNumber, so check both
+    // Reverse-lookup: find which systemNumber this kiosk socket corresponds to
+    let kioskSystemNum = null;
+    for (const [sysNum, sockId] of kioskSystemSockets.entries()) {
+      if (sockId === socket.id) { kioskSystemNum = sysNum; break; }
+    }
+    let registeredAdmins = adminSockets.get(sessionId) || [];
+    if (registeredAdmins.length === 0 && kioskSystemNum) {
+      registeredAdmins = adminSockets.get(kioskSystemNum) || [];
+      console.log(`📹 Falling back to systemNumber key "${kioskSystemNum}": ${registeredAdmins.length} admin(s)`);
+    }
+
+    if (registeredAdmins.length > 0) {
+      console.log(`📹 Forwarding answer to ${registeredAdmins.length} registered admin(s) for session: ${sessionId}`);
+      registeredAdmins.forEach(registeredAdminId => {
+        // 🔥 FIX: Forward nonce so admin can discard stale duplicate answers
+        io.to(registeredAdminId).emit('webrtc-answer', { answer, sessionId, adminSocketId, nonce });
+      });
+    } else {
+      // Fallback: use raw adminSocketId from the offer
+      let targetSocketId = adminSocketId;
+      if (adminSocketId && adminSocketId.includes('-modal')) {
+        targetSocketId = adminSocketId.replace('-modal', '');
+      }
+      console.log('📹 No registered admins in registry, falling back to raw adminSocketId:', targetSocketId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('webrtc-answer', { answer, sessionId, adminSocketId, nonce });
+      } else {
+        console.error('❌ SERVER: Cannot route webrtc-answer — no adminSocketId and no registered admins for session:', sessionId);
+      }
+    }
+    console.log('📹 ✅ Answer forwarded to admin(s)');
+  });
+
+
+
+  socket.on('webrtc-ice-candidate', ({ candidate, sessionId, adminSocketId, systemNumber: payloadSystemNum }) => {
+    console.log('🧊 SERVER: ICE candidate for session:', sessionId, 'from:', socket.id);
+
+    // 🔥 FIX: Determine direction (kiosk→admin or admin→kiosk) using MULTIPLE methods.
+    // Old code: only compared socket.id === kioskSockets.get(sessionId), which fails if kiosk
+    // hasn't re-registered its new socket ID after a reconnect → all kiosk ICE was misrouted.
+
+    // Method 1: Check kioskSockets map (reliable after login + register-kiosk with sessionId)
+    const registeredKioskId = kioskSockets.get(sessionId);
+
+    // Method 2: Reverse-lookup kioskSystemSockets to see if this socket is ANY known kiosk
+    let kioskSystemNum = null;
+    for (const [sysNum, sockId] of kioskSystemSockets.entries()) {
+      if (sockId === socket.id) { kioskSystemNum = sysNum; break; }
+    }
+
+    // ✅ FIX 9: Method 3 — use systemNumber from payload if kiosk included it
+    // If payloadSystemNum is set and matches kioskSystemSockets, we know it's a kiosk
+    if (!kioskSystemNum && payloadSystemNum && kioskSystemSockets.get(payloadSystemNum) === socket.id) {
+      kioskSystemNum = payloadSystemNum;
+      console.log(`🧊 ICE direction confirmed via payload systemNumber: ${kioskSystemNum}`);
+    }
+
+    const isFromKiosk = socket.id === registeredKioskId || kioskSystemNum !== null;
+
+    if (isFromKiosk) {
+      // --- Kiosk → Admin ---
+      let admins = adminSockets.get(sessionId) || [];
+      // Fallback 1: look up by system number key
+      if (admins.length === 0 && kioskSystemNum) {
+        admins = adminSockets.get(kioskSystemNum) || [];
+        console.log(`🧊 ICE fallback: found ${admins.length} admin(s) via systemNumber key "${kioskSystemNum}"`);
+      }
+      // Fallback 2: use payloadSystemNum from the kiosk if available
+      if (admins.length === 0 && payloadSystemNum) {
+        admins = adminSockets.get(payloadSystemNum) || [];
+        console.log(`🧊 ICE payload-sys fallback: found ${admins.length} admin(s) via payloadSystemNum "${payloadSystemNum}"`);
+      }
+      // Fallback 3: use adminSocketId that the kiosk echoed from the original offer
+      if (admins.length === 0 && adminSocketId) {
+        admins = [adminSocketId];
+        console.log(`🧊 ICE direct fallback: routing to adminSocketId ${adminSocketId}`);
+      }
+      console.log('🧊 SERVER: ICE from KIOSK → sending to', admins.length, 'admin(s)', admins);
+      admins.forEach(adminId => {
+        io.to(adminId).emit('webrtc-ice-candidate', { candidate, sessionId });
+      });
+    } else {
+      // --- Admin → Kiosk ---
+      // Use registeredKioskId first, then fall back to kioskSystemSockets
+      let targetKioskId = registeredKioskId;
+      if (!targetKioskId && sessionId) {
+        // Try to find kiosk by system number derived from adminSockets tracking key
+        for (const [key, admins] of adminSockets.entries()) {
+          if (admins.includes(socket.id) && kioskSystemSockets.has(key)) {
+            targetKioskId = kioskSystemSockets.get(key);
+            console.log(`🧊 ICE admin fallback: kiosk found via systemNumber key "${key}": ${targetKioskId}`);
+            break;
+          }
+        }
+      }
+      console.log('🧊 SERVER: ICE from ADMIN → sending to kiosk:', targetKioskId);
+      if (targetKioskId) {
+        io.to(targetKioskId).emit('webrtc-ice-candidate', { candidate, sessionId });
+      } else {
+        console.warn('🧊 ⚠️ SERVER: Could not find kiosk for ICE candidate, sessionId:', sessionId);
+      }
+    }
+  });
+
+  // Admin registration and session management
+  socket.on('register-admin', () => {
+    console.log('👨‍💼 Admin registered:', socket.id);
+    socket.join('admins');
+  });
+
+  // Generic room join handler
+  socket.on('join-room', (roomName) => {
+    console.log(`👥 Socket ${socket.id} joining room: ${roomName}`);
+    socket.join(roomName);
+  });
+
+  // Store admin's lab ID when they register
+  let adminLabMap = new Map(); // socket.id -> labId
+
+  socket.on('register-admin', (data) => {
+    // 🔧 MULTI-LAB: Admin can provide labId or it's auto-detected
+    const adminIP = socket.handshake.address || socket.request.connection.remoteAddress;
+    const providedLabId = data?.labId;
+    const detectedLabId = providedLabId || detectLabFromIP(adminIP);
+
+    adminLabMap.set(socket.id, detectedLabId);
+    console.log(`👨‍💼 Admin registered: ${socket.id} for Lab: ${detectedLabId} (IP: ${adminIP})`);
+    socket.join('admins');
+    socket.join(`admins-lab-${detectedLabId}`); // Lab-specific admin room
+  });
+
+  // 🔓 GUEST ACCESS: Handle guest access request from admin
+  socket.on('grant-guest-access', async ({ systemNumber, labId }) => {
+    try {
+      console.log(`🔓 Admin requesting guest access for system: ${systemNumber} in lab: ${labId}`);
+
+      // Find kiosk by system number (works even before login)
+      const kioskSocketId = kioskSystemSockets.get(systemNumber);
+
+      if (!kioskSocketId) {
+        console.error(`❌ Kiosk not found for system: ${systemNumber}`);
+        socket.emit('guest-access-error', {
+          systemNumber,
+          error: `System ${systemNumber} is not connected or not registered`
+        });
+        return;
+      }
+
+      console.log(`✅ Found kiosk socket for system ${systemNumber}: ${kioskSocketId}`);
+
+      // Send guest access command to kiosk
+      io.to(kioskSocketId).emit('guest-access-granted', {
+        systemNumber,
+        labId: labId || 'CC1',
+        timestamp: new Date().toISOString()
+      });
+
+      console.log(`✅ Guest access command sent to kiosk: ${systemNumber}`);
+
+      // Notify admin of success
+      socket.emit('guest-access-success', {
+        systemNumber,
+        labId,
+        message: `Guest access granted for ${systemNumber}`
+      });
+
+    } catch (error) {
+      console.error('❌ Error granting guest access:', error);
+      socket.emit('guest-access-error', {
+        systemNumber,
+        error: error.message || 'Unknown error'
+      });
+    }
+  });
+
+  socket.on('get-active-sessions', async (data) => {
+    try {
+      // 🔧 MULTI-LAB: Get labId from admin's stored value or request data
+      const adminLabId = adminLabMap.get(socket.id) || data?.labId || 'CC1';
+
+      console.log(`📋 Admin requesting active sessions for Lab: ${adminLabId}`);
+
+      // Get ALL active sessions first - CRITICAL: Only get sessions with valid studentId (actual logins)
+      const allActiveSessions = await Session.find({
+        status: 'active',
+        studentId: { $ne: null, $ne: '' } // Exclude null or empty studentIds (pre-login kiosks)
+      }).sort({ loginTime: -1 });
+      console.log(`📊 Total active sessions in DB: ${allActiveSessions.length}`);
+
+      // Filter by lab ID (but if none match, return all to avoid empty screen)
+      let activeSessions = allActiveSessions.filter(s => s.labId === adminLabId);
+
+      // CRITICAL FIX: If no sessions match the lab ID, return ALL active sessions
+      // This prevents "empty screen" issue when lab IDs don't match
+      if (activeSessions.length === 0 && allActiveSessions.length > 0) {
+        console.log(`⚠️ No sessions found for Lab ${adminLabId}, returning ALL active sessions`);
+        activeSessions = allActiveSessions;
+      }
+
+      // Also get active lab session - try specific lab first, then ANY active session
+      let activeLabSession = await LabSession.findOne({ status: 'active', labId: adminLabId });
+
+      if (!activeLabSession) {
+        // If no lab session for this lab, get ANY active lab session
+        activeLabSession = await LabSession.findOne({ status: 'active' });
+        if (activeLabSession) {
+          console.log(`ℹ️ Using active lab session from different lab: ${activeLabSession.labId}`);
+        }
+      }
+
+      socket.emit('active-sessions', {
+        sessions: activeSessions,
+        labSession: activeLabSession,
+        labId: adminLabId // Send labId back to admin
+      });
+
+      console.log(`📊 Sent ${activeSessions.length} sessions for Lab ${adminLabId} and lab session: ${activeLabSession ? activeLabSession.subject : 'none'}`);
+
+      // Debug logging
+      if (activeSessions.length > 0) {
+        activeSessions.forEach(s => {
+          console.log(`  ✓ Session: ${s.studentName} (${s.studentId}) on ${s.systemNumber}`);
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error getting active sessions:', error);
+      socket.emit('active-sessions', { sessions: [], labSession: null, labId: 'CC1' });
+    }
+  });
+
+  // Shutdown specific system
+  socket.on('shutdown-system', ({ sessionId }) => {
+    console.log(`🔌 Shutdown command received for session: ${sessionId}`);
+
+    const kioskSocketId = kioskSockets.get(sessionId);
+    if (kioskSocketId) {
+      io.to(kioskSocketId).emit('execute-shutdown');
+      console.log(`✅ Shutdown signal sent to kiosk: ${kioskSocketId}`);
+
+      // Log the shutdown action
+      Session.findByIdAndUpdate(sessionId, {
+        shutdownInitiatedAt: new Date(),
+        shutdownBy: 'admin'
+      }).catch(err => console.error('❌ Error logging shutdown:', err));
+    } else {
+      console.warn('⚠️ Kiosk not connected for session:', sessionId);
+      socket.emit('shutdown-error', { sessionId, error: 'Student not connected' });
+    }
+  });
+
+  // Shutdown all systems in a lab
+  socket.on('shutdown-all-systems', async ({ labId }) => {
+    console.log(`🔌 Shutdown ALL systems command received for lab: ${labId}`);
+
+    try {
+      // Get all active sessions in this lab
+      const activeSessions = await Session.find({
+        labId: labId,
+        status: 'active'
+      });
+
+      console.log(`📋 Found ${activeSessions.length} active sessions in lab ${labId}`);
+
+      let shutdownCount = 0;
+      for (const session of activeSessions) {
+        const kioskSocketId = kioskSockets.get(session._id.toString());
+        if (kioskSocketId) {
+          io.to(kioskSocketId).emit('execute-shutdown');
+          shutdownCount++;
+          console.log(`✅ Shutdown signal sent to session: ${session._id}`);
+
+          // Log the shutdown action
+          Session.findByIdAndUpdate(session._id, {
+            shutdownInitiatedAt: new Date(),
+            shutdownBy: 'admin-all'
+          }).catch(err => console.error('❌ Error logging shutdown:', err));
+        }
+      }
+
+      console.log(`✅ Shutdown signal broadcast to ${shutdownCount} systems in lab ${labId}`);
+      socket.emit('shutdown-all-complete', { labId, count: shutdownCount });
+    } catch (error) {
+      console.error('❌ Error shutting down all systems:', error);
+      socket.emit('shutdown-error', { labId, error: error.message });
+    }
+  });
+
+  // ========================================================================
+  // HARDWARE MONITORING - Disconnect Detection
+  // ========================================================================
+
+  // Handle hardware alerts (disconnections and reconnections)
+  socket.on('hardware-alert', async (alertData) => {
+    console.log('🚨 Hardware alert received:', alertData);
+
+    try {
+      // Save alert to database
+      const alert = new HardwareAlert({
+        studentId: alertData.studentId,
+        studentName: alertData.studentName,
+        systemNumber: alertData.systemNumber,
+        deviceType: alertData.deviceType,
+        type: alertData.type,
+        severity: alertData.severity || 'warning',
+        message: alertData.message,
+        timestamp: alertData.timestamp || new Date()
+      });
+
+      await alert.save();
+      console.log('✅ Hardware alert saved to database:', alert._id);
+
+      // Broadcast alert to all admin dashboards
+      io.to('admins').emit('admin-hardware-alert', {
+        ...alertData,
+        alertId: alert._id,
+        savedAt: new Date()
+      });
+
+      console.log('📡 Alert broadcast to admins:', alertData.deviceType, alertData.type);
+    } catch (error) {
+      console.error('❌ Error handling hardware alert:', error);
+    }
+  });
+
+  // Handle hardware status reports
+  socket.on('hardware-status', (statusData) => {
+    console.log('📊 Hardware status received:', statusData);
+
+    // Broadcast status to admins (optional - for dashboard monitoring)
+    io.to('admins').emit('hardware-status-update', statusData);
+  });
+
+  // Get hardware alerts (for admin dashboard)
+  socket.on('get-hardware-alerts', async ({ limit = 50, acknowledged = false }) => {
+    try {
+      const query = acknowledged ? {} : { acknowledged: false };
+      const alerts = await HardwareAlert.find(query)
+        .sort({ timestamp: -1 })
+        .limit(limit);
+
+      socket.emit('hardware-alerts-list', alerts);
+      console.log(`📋 Sent ${alerts.length} hardware alerts to admin`);
+    } catch (error) {
+      console.error('❌ Error fetching hardware alerts:', error);
+      socket.emit('hardware-alerts-list', []);
+    }
+  });
+
+  // Acknowledge hardware alert
+  socket.on('acknowledge-alert', async ({ alertId, adminName }) => {
+    try {
+      await HardwareAlert.findByIdAndUpdate(alertId, {
+        acknowledged: true,
+        acknowledgedAt: new Date(),
+        acknowledgedBy: adminName || 'admin'
+      });
+
+      console.log(`✅ Alert ${alertId} acknowledged by ${adminName}`);
+      socket.emit('alert-acknowledged', { alertId, success: true });
+
+      // Notify other admins
+      io.to('admins').emit('alert-status-changed', { alertId, acknowledged: true });
+    } catch (error) {
+      console.error('❌ Error acknowledging alert:', error);
+      socket.emit('alert-acknowledged', { alertId, success: false, error: error.message });
+    }
+  });
+
+  // ========================================================================
+  // GUEST ACCESS / BYPASS LOGIN
+  // ========================================================================
+
+  socket.on('admin-enable-guest-access', async ({ systemNumber, adminName, labId }) => {
+    try {
+      console.log('🔓 Admin enabling guest access for system:', systemNumber);
+
+      // Update system registry to mark as guest (even if not yet registered)
+      await SystemRegistry.findOneAndUpdate(
+        { systemNumber },
+        {
+          status: 'guest',
+          isGuest: true,
+          lastSeen: new Date()
+        },
+        { upsert: true, new: true }
+      );
+
+      // Broadcast to all kiosks - the matching system will respond
+      io.emit('enable-guest-access', {
+        systemNumber: systemNumber,
+        guestPassword: 'admin123',
+        enabledBy: adminName || 'admin',
+        timestamp: new Date().toISOString()
+      });
+
+      console.log('✅ Guest access command broadcast for system:', systemNumber);
+
+      // Notify admins that guest mode was enabled
+      io.to('admins').emit('guest-access-enabled', {
+        systemNumber: systemNumber,
+        enabledBy: adminName || 'admin',
+        timestamp: new Date().toISOString()
+      });
+
+      // Send updated system list to admins
+      const systems = await SystemRegistry.find({ status: { $ne: 'offline' } })
+        .sort({ systemNumber: 1 })
+        .lean();
+      io.to('admins').emit('systems-registry-update', {
+        systems,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Error enabling guest access:', error);
+    }
+  });
+
+  // Kiosk confirms guest access enabled
+  socket.on('guest-access-confirmed', async ({ systemNumber, studentInfo }) => {
+    try {
+      console.log('✅ Guest access confirmed for system:', systemNumber);
+
+      // Update system registry
+      await SystemRegistry.findOneAndUpdate(
+        { systemNumber },
+        {
+          status: 'guest',
+          isGuest: true,
+          currentStudentId: 'GUEST',
+          currentStudentName: 'Guest User',
+          lastSeen: new Date()
+        },
+        { upsert: true, new: true }
+      );
+
+      // Notify all admins that this system is now in guest mode
+      io.to('admins').emit('system-guest-mode-active', {
+        systemNumber: systemNumber,
+        guestInfo: studentInfo,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Error confirming guest access:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log("❌ Socket disconnected:", socket.id);
+
+    for (const [sessionId, sId] of kioskSockets.entries()) {
+      if (sId === socket.id) {
+        kioskSockets.delete(sessionId);
+        console.log('🧹 Cleaned up kiosk for session:', sessionId);
+      }
+    }
+
+    // ✅ FIX 5: Also clean kioskSystemSockets to prevent stale socket IDs causing routing failures
+    for (const [sysNum, sId] of kioskSystemSockets.entries()) {
+      if (sId === socket.id) {
+        kioskSystemSockets.delete(sysNum);
+        console.log('🧹 Cleaned up kioskSystemSockets for system:', sysNum);
+      }
+    }
+
+    for (const [sessionId, admins] of adminSockets.entries()) {
+      const index = admins.indexOf(socket.id);
+      if (index > -1) {
+        admins.splice(index, 1);
+        if (admins.length === 0) {
+          adminSockets.delete(sessionId);
+        }
+        console.log('🧹 Cleaned up admin for session:', sessionId);
+      }
+    }
+  });
+});
+
+// =============================================================================
+// AUTOMATIC REPORT SCHEDULING SYSTEM
+// =============================================================================
+
+let scheduledTasks = new Map();
+
+// =============================================================================
+// SESSION CSV STORAGE SYSTEM
+// =============================================================================
+
+// Function to save individual session to CSV
+async function saveSessionToCSV(session) {
+  try {
+    const date = new Date().toISOString().split('T')[0];
+    const labId = session.labId || 'UNKNOWN';
+    const filename = `${labId}_${date}.csv`;
+    const filepath = path.join(SESSION_CSV_DIR, filename);
+
+    // Prepare session data
+    const sessionData = {
+      'Session ID': session._id.toString(),
+      'Student Name': session.studentName || 'N/A',
+      'Student ID': session.studentId || 'N/A',
+      'Computer Name': session.computerName || 'N/A',
+      'Lab ID': session.labId || 'N/A',
+      'System Number': session.systemNumber || 'N/A',
+      'Login Time': session.loginTime ? new Date(session.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A',
+      'Logout Time': session.logoutTime ? new Date(session.logoutTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active',
+      'Duration (seconds)': session.duration || 'N/A',
+      'Status': session.status || 'unknown'
+    };
+
+    // Check if file exists
+    const fileExists = fs.existsSync(filepath);
+
+    if (!fileExists) {
+      // Create new file with headers
+      const headers = Object.keys(sessionData).join(',') + '\n';
+      fs.writeFileSync(filepath, headers, 'utf8');
+    }
+
+    // Append session data
+    const row = Object.values(sessionData)
+      .map(val => `"${String(val).replace(/"/g, '""')}"`)
+      .join(',') + '\n';
+
+    fs.appendFileSync(filepath, row, 'utf8');
+
+    console.log(`💾 Session saved to CSV: ${filename}`);
+    return { success: true, filename, filepath };
+  } catch (error) {
+    console.error('❌ Error saving session to CSV:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to update session in CSV (for logout)
+async function updateSessionInCSV(session) {
+  try {
+    const date = new Date(session.loginTime).toISOString().split('T')[0];
+    const labId = session.labId || 'UNKNOWN';
+    const filename = `${labId}_${date}.csv`;
+    const filepath = path.join(SESSION_CSV_DIR, filename);
+
+    if (!fs.existsSync(filepath)) {
+      // If file doesn't exist, create it with this session
+      return await saveSessionToCSV(session);
+    }
+
+    // Read existing CSV
+    const content = fs.readFileSync(filepath, 'utf8');
+    const lines = content.split('\n');
+    const sessionId = session._id.toString();
+
+    // Find and update the session row
+    let updated = false;
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].includes(sessionId)) {
+        const sessionData = {
+          'Session ID': session._id.toString(),
+          'Student Name': session.studentName || 'N/A',
+          'Student ID': session.studentId || 'N/A',
+          'Computer Name': session.computerName || 'N/A',
+          'Lab ID': session.labId || 'N/A',
+          'System Number': session.systemNumber || 'N/A',
+          'Login Time': session.loginTime ? new Date(session.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A',
+          'Logout Time': session.logoutTime ? new Date(session.logoutTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active',
+          'Duration (seconds)': session.duration || 'N/A',
+          'Status': session.status || 'unknown'
+        };
+
+        lines[i] = Object.values(sessionData)
+          .map(val => `"${String(val).replace(/"/g, '""')}"`)
+          .join(',');
+
+        updated = true;
+        break;
+      }
+    }
+
+    if (updated) {
+      fs.writeFileSync(filepath, lines.join('\n'), 'utf8');
+      console.log(`💾 Session updated in CSV: ${filename}`);
+    }
+
+    return { success: true, filename, filepath };
+  } catch (error) {
+    console.error('❌ Error updating session in CSV:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to generate lab session CSV with metadata
+async function generateLabSessionCSV(labSessionId) {
+  try {
+    const labSession = await LabSession.findById(labSessionId);
+
+    if (!labSession) {
+      console.error('❌ Lab session not found for ID:', labSessionId);
+      return { success: false, error: 'Lab session not found' };
+    }
+
+    console.log('📊 Generating CSV for lab session:');
+    console.log('   Subject:', labSession.subject);
+    console.log('   Faculty:', labSession.faculty);
+    console.log('   Year:', labSession.year);
+    console.log('   Department:', labSession.department);
+    console.log('   Section:', labSession.section);
+    console.log('   Periods:', labSession.periods);
+    console.log('   Students:', labSession.studentRecords.length);
+
+    // 🔧 FALLBACK: If studentRecords is empty, try to get from Session collection
+    let finalStudentRecords = labSession.studentRecords || [];
+
+    console.log(`📊 LabSession has ${finalStudentRecords.length} studentRecords`);
+
+    if (finalStudentRecords.length === 0) {
+      console.log('⚠️ No studentRecords found in labSession, fetching from Session collection...');
+      console.log(`⚠️ LabSession details: ID=${labSession._id}, labId=${labSession.labId}, startTime=${labSession.startTime}, endTime=${labSession.endTime}`);
+
+      // Get all sessions for this lab during this session period
+      const sessionQuery = {
+        labId: labSession.labId,
+        loginTime: { $gte: labSession.startTime }
+      };
+
+      if (labSession.endTime) {
+        sessionQuery.loginTime.$lte = labSession.endTime;
+      }
+
+      console.log(`⚠️ Session query:`, JSON.stringify(sessionQuery));
+
+      const sessions = await Session.find(sessionQuery).sort({ loginTime: 1 });
+
+      console.log(`📊 Found ${sessions.length} sessions from Session collection`);
+
+      if (sessions.length > 0) {
+        console.log(`📊 Sample session from DB:`, {
+          name: sessions[0].studentName,
+          id: sessions[0].studentId,
+          system: sessions[0].systemNumber,
+          loginTime: sessions[0].loginTime,
+          labId: sessions[0].labId
+        });
+      }
+
+      finalStudentRecords = sessions.map(session => ({
+        studentName: session.studentName,
+        studentId: session.studentId,
+        email: session.email || '',
+        systemNumber: session.systemNumber,
+        loginTime: session.loginTime,
+        logoutTime: session.logoutTime,
+        duration: session.duration || 0,
+        status: session.status
+      }));
+    } else {
+      console.log(`✅ Using ${finalStudentRecords.length} studentRecords from labSession`);
+      if (finalStudentRecords.length > 0) {
+        console.log(`✅ Sample record:`, {
+          name: finalStudentRecords[0].studentName,
+          id: finalStudentRecords[0].studentId,
+          system: finalStudentRecords[0].systemNumber
+        });
+      }
+    }
+
+    // 🔧 EMAIL ENRICHMENT: Look up student emails from Student collection for any records missing email
+    const studentIdsNeedingEmail = finalStudentRecords
+      .filter(r => !r.email)
+      .map(r => r.studentId)
+      .filter(Boolean);
+
+    let emailMap = {};
+    if (studentIdsNeedingEmail.length > 0) {
+      console.log(`📧 Looking up emails for ${studentIdsNeedingEmail.length} students...`);
+      const studentsWithEmail = await Student.find(
+        { studentId: { $in: studentIdsNeedingEmail } },
+        { studentId: 1, email: 1, _id: 0 }
+      ).lean();
+      studentsWithEmail.forEach(s => { emailMap[s.studentId] = s.email; });
+      console.log(`📧 Found emails for ${studentsWithEmail.length} students`);
+    }
+
+    // Enrich records with email
+    finalStudentRecords = finalStudentRecords.map(record => ({
+      ...record,
+      email: record.email || emailMap[record.studentId] || 'N/A'
+    }));
+
+    console.log(`📊 Final student records count for CSV: ${finalStudentRecords.length}`);
+
+    // Format dates
+    const startTime = new Date(labSession.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const endTime = labSession.endTime ? new Date(labSession.endTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active';
+
+    // Calculate total duration
+    const totalDuration = labSession.endTime
+      ? Math.floor((labSession.endTime - labSession.startTime) / 1000)
+      : 0;
+
+    const durationMinutes = Math.floor(totalDuration / 60);
+
+    // Create CSV content with metadata header
+    let csvContent = '';
+
+    // Session Metadata Section
+    csvContent += '"LAB SESSION REPORT"\n';
+    csvContent += '"="\n';
+    csvContent += `"Session Name (Subject):","${labSession.subject}"\n`;
+    csvContent += `"Handling Faculty:","${labSession.faculty}"\n`;
+    csvContent += `"Year:","${labSession.year || 'N/A'}"\n`;
+    csvContent += `"Department:","${labSession.department || 'N/A'}"\n`;
+    csvContent += `"Section:","${labSession.section || 'N/A'}"\n`;
+    csvContent += `"Time Periods:","${labSession.periods} periods"\n`;
+    csvContent += `"Expected Duration:","${labSession.expectedDuration} minutes"\n`;
+    csvContent += `"Actual Duration:","${durationMinutes} minutes"\n`;
+    csvContent += `"Session Start Time:","${startTime}"\n`;
+    csvContent += `"Session End Time:","${endTime}"\n`;
+    csvContent += `"Session Status:","${labSession.status}"\n`;
+    csvContent += `"Total Students Logged In:","${finalStudentRecords.length}"\n`;
+    csvContent += '"="\n';
+    csvContent += '\n';
+
+    // Student Records Section
+    csvContent += '"STUDENT ATTENDANCE RECORDS"\n';
+    csvContent += '"Sr. No","Student Name","Student ID","Email","System Number","Login Time","Logout Time","Duration (seconds)","Duration (minutes)","Status"\n';
+
+    finalStudentRecords.forEach((record, index) => {
+      const loginTime = record.loginTime ? new Date(record.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A';
+      const logoutTime = record.logoutTime ? new Date(record.logoutTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active';
+      const durationSec = record.duration || 0;
+      const durationMin = Math.floor(durationSec / 60);
+
+      csvContent += `"${index + 1}",`;
+      csvContent += `"${record.studentName || 'N/A'}",`;
+      csvContent += `"${record.studentId || 'N/A'}",`;
+      csvContent += `"${record.email || 'N/A'}",`;
+      csvContent += `"${record.systemNumber || 'N/A'}",`;
+      csvContent += `"${loginTime}",`;
+      csvContent += `"${logoutTime}",`;
+      csvContent += `"${durationSec}",`;
+      csvContent += `"${durationMin}",`;
+      csvContent += `"${record.status === 'active' ? 'Present (Active)' : 'Completed'}"\n`;
+    });
+
+    // Generate filename
+    const dateStr = new Date(labSession.startTime).toISOString().split('T')[0];
+    const timeStr = new Date(labSession.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(/[: ]/g, '-');
+    const subjectStr = labSession.subject.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 30);
+    const filename = `LabSession_${subjectStr}_${dateStr}_${timeStr}.csv`;
+
+    console.log(`✅ Lab session CSV generated: ${filename}`);
+
+    return {
+      success: true,
+      csvContent,
+      filename,
+      studentCount: finalStudentRecords.length,
+      subject: labSession.subject,
+      faculty: labSession.faculty
+    };
+  } catch (error) {
+    console.error('❌ Error generating lab session CSV:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to clean up old manual reports (older than 1 day)
+function cleanupOldManualReports() {
+  try {
+    const files = fs.readdirSync(MANUAL_REPORT_DIR);
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    let deletedCount = 0;
+
+    files.forEach(file => {
+      const filepath = path.join(MANUAL_REPORT_DIR, file);
+      const stats = fs.statSync(filepath);
+
+      if (stats.mtimeMs < oneDayAgo) {
+        fs.unlinkSync(filepath);
+        deletedCount++;
+        console.log(`🗑️ Deleted old manual report: ${file}`);
+      }
+    });
+
+    if (deletedCount > 0) {
+      console.log(`✅ Cleaned up ${deletedCount} old manual reports`);
+    }
+  } catch (error) {
+    console.error('❌ Error cleaning up old reports:', error);
+  }
+}
+
+// Schedule cleanup every hour
+setInterval(cleanupOldManualReports, 60 * 60 * 1000);
+
+// =============================================================================
+// END SESSION CSV STORAGE SYSTEM
+// =============================================================================
+
+// Function to generate and save report (returns CSV content)
+async function generateScheduledReport(labId) {
+  try {
+    console.log(`📊 Generating scheduled report for lab: ${labId} at ${new Date().toLocaleString()}`);
+
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999);
+
+    const filter = {
+      labId: labId,
+      loginTime: { $gte: startDate, $lte: endDate }
+    };
+
+    const sessions = await Session.find(filter).sort({ loginTime: -1 }).lean();
+
+    // Format CSV data
+    const csvData = sessions.map(session => ({
+      'Session ID': session._id.toString(),
+      'Student Name': session.studentName || 'N/A',
+      'Student ID': session.studentId || 'N/A',
+      'Computer Name': session.computerName || 'N/A',
+      'Lab ID': session.labId || 'N/A',
+      'System Number': session.systemNumber || 'N/A',
+      'Login Time': session.loginTime ? new Date(session.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A',
+      'Logout Time': session.logoutTime ? new Date(session.logoutTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Still Active',
+      'Duration (seconds)': session.duration || 'N/A',
+      'Status': session.status || 'unknown'
+    }));
+
+    // Create CSV content
+    const csvHeaders = Object.keys(csvData[0] || {}).join(',') + '\n';
+    const csvRows = csvData.map(row =>
+      Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+    const csvContent = csvHeaders + csvRows;
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `${labId}-sessions-${timestamp}.csv`;
+
+    // Update last generated timestamp
+    await ReportSchedule.findOneAndUpdate(
+      { labId },
+      { lastGenerated: new Date() }
+    );
+
+    console.log(`✅ Report generated: ${filename}`);
+
+    return { success: true, csvContent, filename, count: sessions.length };
+  } catch (error) {
+    console.error('❌ Error generating scheduled report:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Setup cron jobs for all labs - Updated to support 2 schedules per day
+async function setupReportSchedulers() {
+  try {
+    const schedules = await ReportSchedule.find({});
+    let totalSchedules = 0;
+
+    for (const schedule of schedules) {
+      // Schedule 1
+      if (schedule.scheduleTime1 && schedule.enabled1) {
+        const [hours1, minutes1] = schedule.scheduleTime1.split(':');
+        const cronExpression1 = `${minutes1} ${hours1} * * *`; // Daily at specified time
+
+        console.log(`⏰ Scheduling report 1 for ${schedule.labId} at ${schedule.scheduleTime1} (${cronExpression1})`);
+
+        const task1 = cron.schedule(cronExpression1, async () => {
+          const result = await generateScheduledReport(schedule.labId);
+
+          if (result.success && io) {
+            // Save automatic report to AUTO_REPORT_DIR
+            const autoReportPath = path.join(AUTO_REPORT_DIR, result.filename);
+            fs.writeFileSync(autoReportPath, result.csvContent, 'utf8');
+            console.log(`💾 Automatic report 1 saved: ${autoReportPath}`);
+
+            console.log(`📢 Broadcasting scheduled report 1 for ${schedule.labId}`);
+            io.emit('scheduled-report-ready', {
+              labId: schedule.labId,
+              scheduleNumber: 1,
+              filename: result.filename,
+              csvContent: result.csvContent,
+              count: result.count,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }, {
+          timezone: 'Asia/Kolkata'
+        });
+
+        scheduledTasks.set(`${schedule.labId}-schedule1`, task1);
+        totalSchedules++;
+      }
+
+      // Schedule 2
+      if (schedule.scheduleTime2 && schedule.enabled2) {
+        const [hours2, minutes2] = schedule.scheduleTime2.split(':');
+        const cronExpression2 = `${minutes2} ${hours2} * * *`; // Daily at specified time
+
+        console.log(`⏰ Scheduling report 2 for ${schedule.labId} at ${schedule.scheduleTime2} (${cronExpression2})`);
+
+        const task2 = cron.schedule(cronExpression2, async () => {
+          const result = await generateScheduledReport(schedule.labId);
+
+          if (result.success && io) {
+            // Save automatic report to AUTO_REPORT_DIR
+            const autoReportPath = path.join(AUTO_REPORT_DIR, result.filename);
+            fs.writeFileSync(autoReportPath, result.csvContent, 'utf8');
+            console.log(`💾 Automatic report 2 saved: ${autoReportPath}`);
+
+            console.log(`📢 Broadcasting scheduled report 2 for ${schedule.labId}`);
+            io.emit('scheduled-report-ready', {
+              labId: schedule.labId,
+              scheduleNumber: 2,
+              filename: result.filename,
+              csvContent: result.csvContent,
+              count: result.count,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }, {
+          timezone: 'Asia/Kolkata'
+        });
+
+        scheduledTasks.set(`${schedule.labId}-schedule2`, task2);
+        totalSchedules++;
+      }
+
+      // Legacy support - old single schedule
+      if (!schedule.scheduleTime1 && !schedule.scheduleTime2 && schedule.scheduleTime && schedule.enabled) {
+        const [hours, minutes] = schedule.scheduleTime.split(':');
+        const cronExpression = `${minutes} ${hours} * * *`;
+
+        console.log(`⏰ Scheduling legacy report for ${schedule.labId} at ${schedule.scheduleTime}`);
+
+        const task = cron.schedule(cronExpression, async () => {
+          const result = await generateScheduledReport(schedule.labId);
+
+          if (result.success && io) {
+            io.emit('scheduled-report-ready', {
+              labId: schedule.labId,
+              filename: result.filename,
+              csvContent: result.csvContent,
+              count: result.count,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }, {
+          timezone: 'Asia/Kolkata'
+        });
+
+        scheduledTasks.set(schedule.labId, task);
+        totalSchedules++;
+      }
+    }
+
+    console.log(`✅ ${totalSchedules} report scheduler(s) initialized for ${schedules.length} lab(s)`);
+  } catch (error) {
+    console.error('❌ Error setting up schedulers:', error);
+  }
+}
+
+// Restart all schedulers (called when schedule is updated)
+async function restartReportScheduler() {
+  console.log('🔄 Restarting report schedulers...');
+
+  // Stop all existing tasks
+  for (const [labId, task] of scheduledTasks.entries()) {
+    task.stop();
+    scheduledTasks.delete(labId);
+  }
+
+  // Setup new tasks
+  await setupReportSchedulers();
+}
+
+// =================================================================
+// TIMETABLE-BASED AUTOMATIC SESSION MANAGEMENT
+// =================================================================
+
+// Function to auto-start lab session from timetable
+// Function to auto-start lab session from timetable
+async function autoStartLabSession(timetableEntry) {
+  try {
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🚀 AUTO-STARTING LAB SESSION FROM TIMETABLE`);
+    console.log(`   Subject: ${timetableEntry.subject}`);
+    console.log(`   Faculty: ${timetableEntry.faculty}`);
+    console.log(`   Lab ID: ${timetableEntry.labId}`);
+    console.log(`   Time: ${timetableEntry.startTime} - ${timetableEntry.endTime}`);
+    console.log(`   Entry ID: ${timetableEntry._id}`);
+    console.log(`   Is Processed: ${timetableEntry.isProcessed}`);
+    console.log(`${'='.repeat(60)}\n`);
+
+    // Check if there's already an active lab session for this lab
+    const existingSession = await LabSession.findOne({
+      status: 'active',
+      labId: timetableEntry.labId
+    });
+
+    if (existingSession) {
+      console.log(`⚠️ Active lab session already exists in ${timetableEntry.labId}: ${existingSession.subject}`);
+      console.log(`   Existing Session ID: ${existingSession._id}`);
+      console.log(`   Existing Faculty: ${existingSession.faculty}`);
+      console.log(`   Existing Start Time: ${existingSession.startTime}`);
+
+      // Check if it's the same session (avoid duplicate starts)
+      if (existingSession.subject === timetableEntry.subject &&
+        existingSession.faculty === timetableEntry.faculty) {
+        console.log(`ℹ️ Same session already running - skipping duplicate start`);
+        timetableEntry.isProcessed = true;
+        timetableEntry.labSessionId = existingSession._id;
+        await timetableEntry.save();
+        console.log(`✅ Timetable entry marked as processed`);
+        return { success: true, labSession: existingSession, message: 'Session already running' };
+      }
+
+      // Different session - end the existing one first
+      console.log(`   Ending existing session before starting new one...`);
+
+      existingSession.status = 'completed';
+      existingSession.endTime = new Date();
+      await existingSession.save();
+      console.log(`✅ Previous session ended: ${existingSession._id}`);
+
+      // Generate CSV for old session
+      const csvResult = await generateLabSessionCSV(existingSession._id);
+      if (csvResult.success) {
+        const filepath = path.join(MANUAL_REPORT_DIR, csvResult.filename);
+        fs.writeFileSync(filepath, csvResult.csvContent, 'utf8');
+        console.log(`💾 Previous session CSV saved: ${csvResult.filename}`);
+      }
+    }
+
+    // Create new lab session from timetable
+    console.log(`📝 Creating new lab session...`);
+    const newLabSession = new LabSession({
+      labId: timetableEntry.labId,
+      subject: timetableEntry.subject,
+      faculty: timetableEntry.faculty,
+      year: timetableEntry.year,
+      department: timetableEntry.department,
+      section: timetableEntry.section,
+      periods: timetableEntry.periods,
+      expectedDuration: timetableEntry.duration,
+      startTime: new Date(),
+      status: 'active',
+      createdBy: 'timetable-auto',
+      studentRecords: []
+    });
+
+    await newLabSession.save();
+    console.log(`✅ New lab session created: ${newLabSession._id}`);
+
+    // Update timetable entry
+    timetableEntry.isProcessed = true;
+    timetableEntry.labSessionId = newLabSession._id;
+    await timetableEntry.save();
+    console.log(`✅ Timetable entry marked as processed`);
+
+    console.log(`✅ Lab session auto-started successfully!`);
+    console.log(`   Session ID: ${newLabSession._id}`);
+    console.log(`   Lab ID: ${newLabSession.labId}`);
+    console.log(`   Subject: ${newLabSession.subject}`);
+    console.log(`   Faculty: ${newLabSession.faculty}`);
+
+    // Notify admins via socket
+    if (io) {
+      console.log(`📢 Notifying admins about new session...`);
+      io.to('admins').emit('lab-session-auto-started', {
+        sessionId: newLabSession._id,
+        labId: newLabSession.labId,
+        subject: newLabSession.subject,
+        faculty: newLabSession.faculty,
+        startTime: newLabSession.startTime,
+        expectedDuration: newLabSession.expectedDuration,
+        source: 'timetable'
+      });
+      console.log(`✅ Admin notification sent`);
+    }
+
+    return { success: true, labSession: newLabSession };
+  } catch (error) {
+    console.error('❌ Error auto-starting lab session:', error);
+    console.error('❌ Error stack:', error.stack);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to auto-end lab session from timetable
+async function autoEndLabSession(timetableEntry) {
+  try {
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🛑 AUTO-ENDING LAB SESSION FROM TIMETABLE`);
+    console.log(`   Subject: ${timetableEntry.subject}`);
+    console.log(`   Faculty: ${timetableEntry.faculty}`);
+    console.log(`${'='.repeat(60)}\n`);
+
+    // Find the lab session linked to this timetable entry
+    let labSession = await LabSession.findById(timetableEntry.labSessionId);
+
+    // If not found by ID, try to find active session matching the subject
+    if (!labSession) {
+      labSession = await LabSession.findOne({
+        status: 'active',
+        subject: timetableEntry.subject
+      });
+    }
+
+    if (!labSession) {
+      console.log(`⚠️ No active lab session found for: ${timetableEntry.subject}`);
+      return { success: false, error: 'No active session found' };
+    }
+
+    // End the lab session
+    labSession.status = 'completed';
+    labSession.endTime = new Date();
+    await labSession.save();
+
+    // End all active student sessions
+    const activeSessions = await Session.find({ status: 'active' });
+    const currentTime = new Date();
+
+    for (const session of activeSessions) {
+      const durationMs = currentTime - session.loginTime;
+      const durationSeconds = Math.floor(durationMs / 1000);
+
+      await Session.findByIdAndUpdate(session._id, {
+        status: 'completed',
+        logoutTime: currentTime,
+        duration: durationSeconds
+      });
+
+      // Update session in CSV
+      await updateSessionInCSV(session);
+    }
+
+    console.log(`✅ Ended ${activeSessions.length} student sessions`);
+
+    // Generate lab session CSV report
+    const csvResult = await generateLabSessionCSV(labSession._id);
+
+    if (csvResult.success) {
+      const filepath = path.join(MANUAL_REPORT_DIR, csvResult.filename);
+      fs.writeFileSync(filepath, csvResult.csvContent, 'utf8');
+      console.log(`💾 Lab session CSV saved: ${csvResult.filename}`);
+
+      // Notify admins
+      if (io) {
+        io.to('admins').emit('lab-session-auto-ended', {
+          sessionId: labSession._id,
+          subject: labSession.subject,
+          csvFilename: csvResult.filename,
+          studentCount: csvResult.studentCount,
+          source: 'timetable'
+        });
+      }
+    }
+
+    console.log(`✅ Lab session auto-ended: ${labSession.subject}`);
+
+    return { success: true, labSession, csvFilename: csvResult.filename };
+  } catch (error) {
+    console.error('❌ Error auto-ending lab session:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Timetable monitor - runs every minute
+cron.schedule('* * * * *', async () => {
+  try {
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`⏰ TIMETABLE CHECK AT ${currentTime} (${currentDate})`);
+    console.log(`${'='.repeat(60)}`);
+
+    // Find timetable entries for today
+    const startOfDay = new Date(currentDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(currentDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    console.log(`📅 Checking for entries on: ${currentDate}`);
+
+    const todayEntries = await TimetableEntry.find({
+      isActive: true,
+      sessionDate: { $gte: startOfDay, $lte: endOfDay }
+    }).sort({ startTime: 1 });
+
+    console.log(`📋 Found ${todayEntries.length} timetable entries for today`);
+
+    if (todayEntries.length === 0) {
+      console.log(`ℹ️ No timetable entries found for today`);
+      console.log(`${'='.repeat(60)}\n`);
+      return;
+    }
+
+    console.log(`\n📋 TODAY'S TIMETABLE ENTRIES:`);
+    todayEntries.forEach((e, i) => {
+      console.log(`   ${i + 1}. ${e.subject} (${e.faculty})`);
+      console.log(`      ⏰ ${e.startTime} - ${e.endTime}`);
+      console.log(`      🏢 Lab: ${e.labId}`);
+      console.log(`      📊 Processed: ${e.isProcessed ? '✅ Yes' : '❌ No'}`);
+    });
+    console.log('');
+    for (const entry of todayEntries) {
+      // ✅ FIX: Handle time formats like "0:00" and "11:34" (normalize to HH:MM)
+      const normalizeTime = (timeStr) => {
+        if (!timeStr) return '00:00';
+        const parts = timeStr.split(':');
+        const hours = String(parts[0] || '0').padStart(2, '0');
+        const minutes = String(parts[1] || '0').padStart(2, '0');
+        return `${hours}:${minutes}`;
+      };
+
+      const normalizedStartTime = normalizeTime(entry.startTime);
+      const normalizedEndTime = normalizeTime(entry.endTime);
+
+      // IMPROVED: Start session if current time is AT or AFTER start time but BEFORE end time
+      const [startHour, startMin] = normalizedStartTime.split(':').map(Number);
+      const [endHour, endMin] = normalizedEndTime.split(':').map(Number);
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      console.log(`🔍 Checking: ${entry.subject}`);
+      console.log(`   Start: ${startMinutes}min (${entry.startTime})`);
+      console.log(`   Current: ${currentMinutes}min (${currentTime})`);
+      console.log(`   End: ${endMinutes}min (${entry.endTime})`);
+      console.log(`   Processed: ${entry.isProcessed}`);
+      const shouldStart = currentMinutes >= startMinutes && currentMinutes < endMinutes && !entry.isProcessed;
+      console.log(`   Should Start: ${shouldStart ? '✅ YES' : '❌ NO'}`);
+
+      // Check if it's time to start the session (between start and end time, not yet processed)
+      if (shouldStart) {
+        console.log(`\n📅 ✅✅✅ TRIGGER: Starting session for ${entry.subject} ✅✅✅`);
+        console.log(`   ⏰ Scheduled: ${entry.startTime}, Current: ${currentTime}, End: ${entry.endTime}`);
+        console.log(`   Starting session now...`);
+        const result = await autoStartLabSession(entry);
+        if (result.success) {
+          console.log(`✅ Session auto-started successfully: ${entry.subject}`);
+        } else {
+          console.error(`❌ Failed to auto-start session: ${result.error}`);
+        }
+      }
+
+      // Check if it's time to end the session
+      if (entry.endTime === currentTime && entry.isProcessed && entry.labSessionId) {
+        console.log(`📅 Timetable trigger: Ending session for ${entry.subject} at ${currentTime}`);
+        const result = await autoEndLabSession(entry);
+        if (result.success) {
+          console.log(`✅ Session auto-ended successfully: ${entry.subject}`);
+        } else {
+          console.error(`❌ Failed to auto-end session: ${result.error}`);
+        }
+      }
+    }
+
+    console.log(`${'='.repeat(60)}\n`);
+  } catch (error) {
+    console.error('❌ Timetable monitor error:', error);
+  }
+});
+
+console.log('📅 Timetable-based automatic session scheduler started');
+console.log('   - Checks every minute for scheduled sessions');
+console.log('   - Auto-starts sessions at scheduled time');
+console.log('   - Auto-ends sessions at end time');
+console.log('   - Generates CSV reports automatically');
+
+// Get current report schedule
+app.get('/api/report-schedule/:labId', async (req, res) => {
+  try {
+    const { labId } = req.params;
+    let schedule = await ReportSchedule.findOne({ labId });
+
+    if (!schedule) {
+      schedule = new ReportSchedule({
+        labId,
+        scheduleTime1: '13:00',
+        enabled1: true,
+        scheduleTime2: '18:00',
+        enabled2: true
+      });
+      await schedule.save();
+    }
+
+    res.json({ success: true, schedule });
+  } catch (error) {
+    console.error('Error fetching schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update report schedule - Updated to support 2 schedules
+app.post('/api/report-schedule', async (req, res) => {
+  try {
+    const { labId, scheduleTime1, enabled1, scheduleTime2, enabled2 } = req.body;
+
+    if (!labId) {
+      return res.status(400).json({ success: false, error: 'Lab ID is required' });
+    }
+
+    if (!scheduleTime1 && !scheduleTime2) {
+      return res.status(400).json({ success: false, error: 'At least one schedule time is required' });
+    }
+
+    // Validate time formats (HH:MM)
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (scheduleTime1 && !timeRegex.test(scheduleTime1)) {
+      return res.status(400).json({ success: false, error: 'Invalid time format for Schedule 1. Use HH:MM (24-hour)' });
+    }
+    if (scheduleTime2 && !timeRegex.test(scheduleTime2)) {
+      return res.status(400).json({ success: false, error: 'Invalid time format for Schedule 2. Use HH:MM (24-hour)' });
+    }
+
+    let schedule = await ReportSchedule.findOne({ labId });
+
+    if (schedule) {
+      if (scheduleTime1) schedule.scheduleTime1 = scheduleTime1;
+      if (enabled1 !== undefined) schedule.enabled1 = enabled1;
+      if (scheduleTime2) schedule.scheduleTime2 = scheduleTime2;
+      if (enabled2 !== undefined) schedule.enabled2 = enabled2;
+      schedule.updatedAt = new Date();
+    } else {
+      schedule = new ReportSchedule({
+        labId,
+        scheduleTime1: scheduleTime1 || '13:00',
+        enabled1: enabled1 !== undefined ? enabled1 : true,
+        scheduleTime2: scheduleTime2 || '18:00',
+        enabled2: enabled2 !== undefined ? enabled2 : true
+      });
+    }
+
+    await schedule.save();
+
+    // Restart cron jobs with new schedules
+    await restartReportScheduler();
+
+    console.log(`✅ Schedules updated for ${labId}:`);
+    if (scheduleTime1) console.log(`  - Schedule 1: ${scheduleTime1} (${enabled1 ? 'enabled' : 'disabled'})`);
+    if (scheduleTime2) console.log(`  - Schedule 2: ${scheduleTime2} (${enabled2 ? 'enabled' : 'disabled'})`);
+
+    res.json({ success: true, schedule, message: 'Schedules updated successfully' });
+  } catch (error) {
+    console.error('Error updating schedule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manual trigger for testing - downloads CSV to browser
+app.post('/api/generate-report-now', async (req, res) => {
+  try {
+    const { labId } = req.body;
+
+    if (!labId) {
+      return res.status(400).json({ success: false, error: 'Lab ID is required' });
+    }
+
+    const result = await generateScheduledReport(labId);
+
+    if (result.success) {
+      // Save manual report to MANUAL_REPORT_DIR
+      const manualReportPath = path.join(MANUAL_REPORT_DIR, result.filename);
+      fs.writeFileSync(manualReportPath, result.csvContent, 'utf8');
+      console.log(`💾 Manual report saved: ${manualReportPath}`);
+
+      // Send CSV as download to browser
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+      console.log(`📥 Sending report to browser: ${result.filename} (${result.count} sessions)`);
+      res.send(result.csvContent);
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
+  } catch (error) {
+    console.error('Error generating manual report:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// SESSION CSV FILE MANAGEMENT API
+// =============================================================================
+
+// List all session CSV files
+app.get('/api/session-csvs', async (req, res) => {
+  try {
+    const files = fs.readdirSync(SESSION_CSV_DIR);
+    const fileList = files
+      .filter(file => file.endsWith('.csv'))
+      .map(file => {
+        const filepath = path.join(SESSION_CSV_DIR, file);
+        const stats = fs.statSync(filepath);
+        return {
+          filename: file,
+          size: stats.size,
+          created: stats.birthtime,
+          modified: stats.mtime
+        };
+      })
+      .sort((a, b) => b.modified - a.modified);
+
+    res.json({ success: true, files: fileList });
+  } catch (error) {
+    console.error('Error listing session CSVs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Download a specific session CSV file
+app.get('/api/session-csvs/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filepath = path.join(SESSION_CSV_DIR, filename);
+
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    const content = fs.readFileSync(filepath, 'utf8');
+    res.send(content);
+
+    console.log(`📥 Downloaded session CSV: ${filename}`);
+  } catch (error) {
+    console.error('Error downloading session CSV:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// List all manual report files (including lab session CSVs)
+app.get('/api/manual-reports', async (req, res) => {
+  try {
+    const files = fs.readdirSync(MANUAL_REPORT_DIR);
+    const fileList = files
+      .filter(file => file.endsWith('.csv'))
+      .map(file => {
+        const filepath = path.join(MANUAL_REPORT_DIR, file);
+        const stats = fs.statSync(filepath);
+
+        // Determine file type
+        const isLabSession = file.startsWith('LabSession_');
+        const isDailyReport = !isLabSession;
+
+        return {
+          filename: file,
+          size: stats.size,
+          created: stats.birthtime,
+          modified: stats.mtime,
+          type: isLabSession ? 'lab-session' : 'daily-report'
+        };
+      })
+      .sort((a, b) => b.modified - a.modified);
+
+    res.json({ success: true, files: fileList });
+  } catch (error) {
+    console.error('Error listing manual reports:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Download a specific manual report file
+app.get('/api/manual-reports/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filepath = path.join(MANUAL_REPORT_DIR, filename);
+
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+    const content = fs.readFileSync(filepath, 'utf8');
+    res.send(content);
+
+    console.log(`📥 Downloaded manual report: ${filename}`);
+  } catch (error) {
+    console.error('Error downloading manual report:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// END SESSION CSV FILE MANAGEMENT API
+// =============================================================================
+
+// =============================================================================
+// END AUTOMATIC REPORT SCHEDULING SYSTEM
+// =============================================================================
+
+// =============================================================================
+// 🖥️ PRE-LOGIN SYSTEM TRACKING & SELECTIVE SHUTDOWN
+// Allows admin to see and shutdown systems BEFORE student login
+// =============================================================================
+
+// System heartbeat - Registers/updates kiosk even before login
+app.post('/api/system-heartbeat', async (req, res) => {
+  try {
+    const { systemNumber, computerName, labId, ipAddress, timestamp, status } = req.body;
+
+    if (!systemNumber || !labId) {
+      return res.status(400).json({ success: false, error: 'Missing systemNumber or labId' });
+    }
+
+    // Get client IP if not provided
+    const clientIP = ipAddress || req.ip || req.connection.remoteAddress;
+
+    // Update or create system registry entry
+    const updateData = {
+      systemNumber,
+      labId,
+      ipAddress: clientIP,
+      lastSeen: new Date(),
+      status: status || 'available',
+      $setOnInsert: {
+        createdAt: new Date()
+      }
+    };
+    if (computerName) updateData.computerName = computerName;
+
+    await SystemRegistry.findOneAndUpdate(
+      { systemNumber, labId },
+      updateData,
+      { upsert: true, new: true }
+    );
+
+    console.log(`💓 Heartbeat: System ${systemNumber} | Lab: ${labId} | IP: ${clientIP} | Status: ${status || 'available'}`);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ System heartbeat error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all lab systems (including pre-login systems)
+app.get('/api/lab-systems/:labId', async (req, res) => {
+  try {
+    const { labId } = req.params;
+
+    if (!isValidLabId(labId)) {
+      return res.status(400).json({ success: false, error: 'Invalid lab ID' });
+    }
+
+    // ✅ SHOW ONLY ONLINE SYSTEMS (kiosk login screen or logged-in students)
+    const systems = await SystemRegistry.find({
+      labId
+    })
+      .sort({ systemNumber: 1 })
+      .lean();
+
+    const now = new Date();
+
+    // Filter to ONLY show systems that are online (heartbeat within 60 seconds)
+    const systemsWithStatus = systems
+      .map(system => {
+        const secondsSinceLastSeen = (now - new Date(system.lastSeen)) / 1000;
+        const isOnline = secondsSinceLastSeen < 60; // Online if seen within last 60 seconds
+
+        return {
+          ...system,
+          isOnline,
+          lastSeenAgo: Math.floor(secondsSinceLastSeen),
+          status: isOnline ? system.status : 'offline'
+        };
+      })
+      .filter(s => s.isOnline); // ✅ ONLY show online systems
+
+    // Calculate stats (only for online systems)
+    const stats = {
+      total: systemsWithStatus.length,
+      online: systemsWithStatus.length, // All returned systems are online
+      offline: 0, // Not showing offline systems
+      loggedIn: systemsWithStatus.filter(s => s.status === 'logged-in').length,
+      available: systemsWithStatus.filter(s => s.status === 'available').length,
+      guest: systemsWithStatus.filter(s => s.status === 'guest').length
+    };
+
+    console.log(`📊 Lab ${labId} online systems: ${stats.online} total, ${stats.loggedIn} logged-in, ${stats.available} at login screen, ${stats.guest} guest`);
+
+    res.json({ success: true, systems: systemsWithStatus, stats });
+  } catch (error) {
+    console.error('❌ Get lab systems error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Shutdown selected systems (works for pre-login AND logged-in systems)
+app.post('/api/shutdown-systems', async (req, res) => {
+  try {
+    const { systemNumbers, labId } = req.body;
+
+    if (!Array.isArray(systemNumbers) || systemNumbers.length === 0) {
+      return res.status(400).json({ success: false, error: 'No systems selected' });
+    }
+
+    if (!labId) {
+      return res.status(400).json({ success: false, error: 'Lab ID required' });
+    }
+
+    console.log(`\n============================================================`);
+    console.log(`🔌 SELECTIVE SHUTDOWN REQUEST`);
+    console.log(`   Lab ID: ${labId}`);
+    console.log(`   Systems: ${systemNumbers.join(', ')}`);
+    console.log(`   Total: ${systemNumbers.length} systems`);
+    console.log(`============================================================\n`);
+
+    // Find systems by systemNumber and labId
+    const systems = await SystemRegistry.find({
+      systemNumber: { $in: systemNumbers.map(String) },
+      labId
+    }).lean();
+
+    let shutdownCount = 0;
+    let offlineCount = 0;
+
+    const now = new Date();
+
+    for (const system of systems) {
+      const secondsSinceLastSeen = (now - new Date(system.lastSeen)) / 1000;
+      const isOnline = secondsSinceLastSeen < 60;
+
+      if (isOnline && system.socketId) {
+        // Send shutdown command via Socket.IO
+        io.to(system.socketId).emit('force-shutdown-system', {
+          systemNumber: system.systemNumber,
+          labId: system.labId,
+          timestamp: new Date().toISOString(),
+          admin: 'Lab Administrator'
+        });
+
+        console.log(`✅ Shutdown signal sent to System ${system.systemNumber} (Socket: ${system.socketId})`);
+        shutdownCount++;
+      } else {
+        console.log(`⚠️ System ${system.systemNumber} is offline (last seen ${Math.floor(secondsSinceLastSeen)}s ago)`);
+        offlineCount++;
+      }
+    }
+
+    // Broadcast shutdown event to all admins
+    io.to('admins').emit('systems-shutdown-initiated', {
+      labId,
+      systemNumbers,
+      shutdownCount,
+      offlineCount,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`\n============================================================`);
+    console.log(`📊 SHUTDOWN SUMMARY`);
+    console.log(`   Requested: ${systemNumbers.length} systems`);
+    console.log(`   Sent: ${shutdownCount} shutdown commands`);
+    console.log(`   Offline: ${offlineCount} systems`);
+    console.log(`============================================================\n`);
+
+    res.json({
+      success: true,
+      shutdownCount,
+      offlineCount,
+      totalRequested: systemNumbers.length,
+      message: `Shutdown command sent to ${shutdownCount} systems${offlineCount > 0 ? ` (${offlineCount} offline)` : ''}`
+    });
+
+  } catch (error) {
+    console.error('❌ Shutdown systems error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// END PRE-LOGIN SYSTEM TRACKING & SELECTIVE SHUTDOWN
+// =============================================================================
+
+// =============================================================================
+// STATIC FILE SERVING (MUST BE LAST - AFTER ALL API ROUTES)
+// =============================================================================
+// Move static file serving to the end to avoid intercepting API routes
+
+// Serve static files from dashboard directory (AFTER all API routes)
+app.use(express.static(path.join(__dirname, '../dashboard')));
+
+// Serve student sign-in system (after API routes)
+app.use('/student-signin', express.static(path.join(__dirname, '../../student-signin')));
+
+// Serve student management system (after API routes)
+app.use('/student-management', express.static(path.join(__dirname, '../../')));
+
+// Direct route for student management system
+app.get('/student-management-system.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../student-management-system.html'));
+});
+
+// Serve admin dashboard (fallback route - must be last)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dashboard/index.html'));
+});
+
+// Guest Access / Bypass Login - Admin initiates guest mode for a kiosk
+app.post('/api/bypass-login', async (req, res) => {
+  try {
+    const { systemId, systemNumber, computerName, labId } = req.body;
+
+    // Validate required fields
+    if (!systemNumber || !computerName || !labId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: systemNumber, computerName, labId'
+      });
+    }
+
+    console.log(`🔓 Bypass login initiated for ${computerName} (System ${systemNumber}) in lab ${labId}`);
+
+    // Broadcast guest mode enabled event to the specific kiosk via Socket.io
+    io.emit('guest-mode-enabled', {
+      systemId,
+      systemNumber,
+      computerName,
+      labId,
+      timestamp: new Date()
+    });
+
+    console.log(`📡 Broadcast guest-mode-enabled to system: ${computerName}`);
+
+    return res.json({
+      success: true,
+      message: `Guest access enabled for ${computerName}`,
+      system: { systemId, systemNumber, computerName, labId }
+    });
+  } catch (error) {
+    console.error('❌ Bypass login error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 404 handler for API routes (after all routes)
+app.use('/api/*', (req, res) => {
+  console.error(`❌ API route not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({
+    success: false,
+    error: `API endpoint not found: ${req.method} ${req.originalUrl}`
+  });
+});
+
+const PORT = process.env.PORT || 7401;
+
+// Function to open browser automatically
+function openBrowser(url) {
+  const start = process.platform === 'win32' ? 'start' :
+    process.platform === 'darwin' ? 'open' : 'xdg-open';
+
+  // Use 'start ""' for Windows to avoid command prompt issues
+  const command = process.platform === 'win32' ? `start "" "${url}"` : `${start} "${url}"`;
+
+  exec(command, (error) => {
+    if (error) {
+      console.log(`⚠️  Could not auto-open browser: ${error.message}`);
+      console.log(`📌 Please manually open: ${url}`);
+    } else {
+      console.log(`🌐 Browser opened automatically: ${url}`);
+    }
+  });
+}
+
+server.listen(PORT, '0.0.0.0', async () => {
+  // Auto-detect and save server IP
+  const serverIp = detectLocalIP();
+  saveServerConfig(serverIp, PORT);
+
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🔐 College Lab Registration System`);
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`📡 Local Access: http://localhost:${PORT}`);
+  console.log(`🌐 Network Access: http://${serverIp}:${PORT}`);
+  console.log(`📊 CSV/Excel Import: http://${serverIp}:${PORT}/import.html`);
+  console.log(`📚 Student Database: Import via CSV/Excel files (ExcelJS - Secure)`);
+  console.log(`🔑 Password reset: Available via DOB verification`);
+  console.log(`📊 API Endpoints: /api/import-students, /api/download-template, /api/stats`);
+  console.log(`🛡️ Security: Using ExcelJS (no prototype pollution vulnerability)`);
+  console.log(`💾 Config saved to: server-config.json`);
+  console.log(`${'='.repeat(60)}\n`);
+
+  // Initialize automatic report schedulers
+  console.log('⏰ Initializing automatic report schedulers...');
+  await setupReportSchedulers();
+
+  // Auto-open admin dashboard in browser (with slight delay to ensure server is ready)
+  setTimeout(() => {
+    const adminDashboardUrl = `http://${serverIp}:${PORT}/admin-dashboard.html`;
+    openBrowser(adminDashboardUrl);
+  }, 1000);
+});
+
