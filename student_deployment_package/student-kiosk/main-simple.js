@@ -10,8 +10,9 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 console.log('🎬 Kiosk application starting...');
 
 // ============================================================
-// Python Key Blocker Integration
-// Blocks Windows key, taskbar, Start button ONLY during login
+// Kiosk Key Blocker - Runs pre-compiled kiosk_blocker.exe
+// Blocks Windows key, Alt+Tab, taskbar ONLY during login screen
+// The exe uses low-level keyboard hook (SetWindowsHookEx)
 // ============================================================
 let keyBlockerProcess = null;
 
@@ -20,15 +21,18 @@ function startKeyBlocker() {
     console.log('ℹ️ Key blocker already running');
     return;
   }
-  
-  // Look for kiosk_key_blocker.py in current directory or parent
+
+  if (process.platform !== 'win32') return;
+
+  // Find kiosk_blocker.exe in known locations
   const blockerPaths = [
-    path.join(__dirname, 'kiosk_key_blocker.py'),
-    path.join(__dirname, '..', 'kiosk_key_blocker.py'),
-    'C:\\StudentKiosk\\kiosk_key_blocker.py',
-    path.join(process.cwd(), 'kiosk_key_blocker.py')
+    path.join(__dirname, 'kiosk_blocker.exe'),
+    path.join(__dirname, '..', 'kiosk_blocker.exe'),
+    'C:\\StudentKiosk\\kiosk_blocker.exe',
+    'C:\\StudentKiosk\\student-kiosk\\kiosk_blocker.exe',
+    path.join(process.cwd(), 'kiosk_blocker.exe')
   ];
-  
+
   let blockerPath = null;
   for (const p of blockerPaths) {
     if (fs.existsSync(p)) {
@@ -36,31 +40,49 @@ function startKeyBlocker() {
       break;
     }
   }
-  
+
   if (!blockerPath) {
-    console.log('⚠️ kiosk_key_blocker.py not found - Windows key blocking unavailable');
+    console.log('⚠️ kiosk_blocker.exe NOT FOUND - Windows key blocking UNAVAILABLE');
     console.log('   Searched:', blockerPaths.join(', '));
     return;
   }
-  
+
+  console.log('📁 Found kiosk_blocker.exe at:', blockerPath);
+
+  // Kill any leftover instance from a previous crash
   try {
-    keyBlockerProcess = spawn('python', [blockerPath], {
-      stdio: 'ignore',
+    const { execSync } = require('child_process');
+    execSync('taskkill /f /im kiosk_blocker.exe', { windowsHide: true, timeout: 3000 });
+  } catch (err) {
+    // Ignore - not running
+  }
+
+  try {
+    keyBlockerProcess = spawn(blockerPath, [], {
+      stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
       windowsHide: true
     });
-    
+
+    keyBlockerProcess.stdout.on('data', (data) => {
+      console.log('🔒 KeyBlocker:', data.toString().trim());
+    });
+
+    keyBlockerProcess.stderr.on('data', (data) => {
+      console.log('❌ KeyBlocker ERROR:', data.toString().trim());
+    });
+
     keyBlockerProcess.on('error', (err) => {
-      console.log('⚠️ Key blocker failed to start:', err.message);
+      console.log('⚠️ Key blocker failed:', err.message);
       keyBlockerProcess = null;
     });
-    
+
     keyBlockerProcess.on('exit', (code) => {
       console.log('ℹ️ Key blocker exited with code:', code);
       keyBlockerProcess = null;
     });
-    
-    console.log('🔒 Python key blocker STARTED - Windows key, taskbar, Start button BLOCKED');
+
+    console.log('🔒 Key blocker STARTED - Windows key, Alt+Tab BLOCKED');
   } catch (err) {
     console.log('⚠️ Could not start key blocker:', err.message);
     keyBlockerProcess = null;
@@ -68,17 +90,24 @@ function startKeyBlocker() {
 }
 
 function stopKeyBlocker() {
-  if (!keyBlockerProcess) {
-    return;
+  if (keyBlockerProcess) {
+    try {
+      keyBlockerProcess.kill();
+      console.log('🔓 Key blocker process killed');
+    } catch (err) {
+      console.log('⚠️ Error stopping key blocker:', err.message);
+    }
+    keyBlockerProcess = null;
   }
-  
+
+  // Force kill kiosk_blocker.exe (covers detached/leftover instances)
   try {
-    keyBlockerProcess.kill();
-    console.log('🔓 Python key blocker STOPPED - Windows key, taskbar RESTORED');
+    const { execSync } = require('child_process');
+    execSync('taskkill /f /im kiosk_blocker.exe', { windowsHide: true, timeout: 3000 });
+    console.log('🔓 kiosk_blocker.exe killed');
   } catch (err) {
-    console.log('⚠️ Error stopping key blocker:', err.message);
+    // Ignore - may not be running
   }
-  keyBlockerProcess = null;
 }
 
 // ✅ INSTANT LAUNCH: Disable GPU acceleration and other delays for faster startup
@@ -215,7 +244,31 @@ function getLocalIP() {
 }
 
 const LAB_ID = detectLabFromIP();
-const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || `${LAB_ID}-${String(Math.floor(Math.random() * 10) + 1).padStart(2, '0')}`;
+
+// ✅ DETECT SYSTEM NUMBER FROM COMPUTER NAME (last digits of hostname)
+function detectSystemNumber() {
+  try {
+    const hostname = os.hostname().toUpperCase(); // e.g., "SDC-CC-69"
+    console.log(`🖥️ Computer hostname: ${hostname}`);
+    
+    // Try to extract number from hostname (e.g., "SDC-CC-69" → "69")
+    const match = hostname.match(/CC-?(\d+)/i) || hostname.match(/(\d+)$/);
+    
+    if (match && match[1]) {
+      const sysNum = match[1].padStart(2, '0'); // Ensure 2 digits (e.g., "01", "69")
+      console.log(`✅ System number detected from hostname: ${sysNum}`);
+      return `${LAB_ID}-${sysNum}`;
+    } else {
+      console.warn(`⚠️ Could not extract system number from hostname: ${hostname}`);
+      return `${LAB_ID}-01`; // Default fallback
+    }
+  } catch (error) {
+    console.error('⚠️ Error detecting system number:', error.message);
+    return `${LAB_ID}-01`;
+  }
+}
+
+const SYSTEM_NUMBER = process.env.SYSTEM_NUMBER || detectSystemNumber();
 
 // Kiosk mode configuration
 // ✅ PRODUCTION: Full kiosk lock enabled from startup
@@ -310,7 +363,21 @@ function createWindow() {
     return true;
   });
 
+  // ✅ CRITICAL FIX: Auto-select screen WITHOUT showing picker dialog
+  // Without this, getDisplayMedia shows a system dialog that kiosk blocks → 20s timeout → no WebRTC answer
+  mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      // Auto-select the first (primary) screen — no user interaction needed
+      console.log('🖥️ Auto-selecting screen source for display media:', sources[0]?.name);
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(err => {
+      console.error('❌ Error in setDisplayMediaRequestHandler:', err);
+      callback({}); // Fallback: let Electron handle it
+    });
+  });
+
   mainWindow.loadFile('student-interface.html');
+
   
   // 🔒 CRITICAL: Show window IMMEDIATELY (don't wait for ready-to-show)
   // This ensures kiosk appears within 1ms of launch
@@ -1446,6 +1513,7 @@ app.whenReady().then(() => {
     function sendSystemHeartbeat() {
       const systemInfo = {
         systemNumber: SYSTEM_NUMBER,
+        computerName: os.hostname(),
         labId: LAB_ID,
         ipAddress: getLocalIP(),
         timestamp: new Date().toISOString()

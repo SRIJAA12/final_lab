@@ -1199,8 +1199,14 @@
                             monitoringConnections.delete(sessionId);
                         }
                         
-                        // Start immediately - no setTimeout delay
-                        startMonitoring(sessionId);
+                        // ⏳ TIMING FIX: Wait 1.5s before sending first offer
+                        // The server emits session-created and session-login-success at the same time.
+                        // The kiosk needs to receive session-login-success and re-register with sessionId
+                        // BEFORE we send our offer. Otherwise server has no kiosk socket to forward to → dropped.
+                        console.log('⏳ Waiting 1.5s for kiosk to re-register with sessionId before sending offer...');
+                        setTimeout(() => {
+                            startMonitoring(sessionId);
+                        }, 1500);
                     } else {
                         console.log('✅ Monitoring already active for:', sessionId);
                     }
@@ -1275,19 +1281,30 @@
                 
                 screenReadySessions.add(data.sessionId);
                 
-                // ✅ FIX: Check if monitoring is already working, if not start immediately
-                // Don't wait for video container or connectedStudents - just verify the connection state
                 const pc = monitoringConnections.get(data.sessionId);
                 const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+                const isChecking = pc && (pc.iceConnectionState === 'checking' || pc.connectionState === 'connecting');
                 const videoContainer = document.getElementById(`video-${data.sessionId}`);
                 const hasActiveVideo = videoContainer && 
                                       videoContainer.querySelector('video')?.srcObject &&
                                       videoContainer.querySelector('video')?.srcObject.active;
                 
-                if (!monitoringConnections.has(data.sessionId) || (!isConnected && !hasActiveVideo)) {
+                // ✅ RACE CONDITION FIX: Don't restart if a connection was created recently (within 10s)
+                // The kiosk-screen-ready event fires BEFORE the answer arrives on the wire.
+                // Restarting here tears down the active PC, the answer lands on a closed PC → new/new forever.
+                const pcAge = connectionStartTime.has(data.sessionId) ? (Date.now() - connectionStartTime.get(data.sessionId)) : Infinity;
+                const isRecentConnection = pcAge < 10000; // 10 second grace period
+                
+                if (isConnected || hasActiveVideo) {
+                    console.log('✅ Monitoring already active and working for:', data.sessionId);
+                } else if (isRecentConnection || isChecking) {
+                    // PC was just created or is actively negotiating — the answer is in flight
+                    // Do NOT restart — just wait for the answer to arrive
+                    console.log(`⏳ KIOSK READY but PC is still young (${(pcAge/1000).toFixed(1)}s) / checking — NOT restarting. Waiting for WebRTC answer...`);
+                } else if (!monitoringConnections.has(data.sessionId) || (!isConnected && !hasActiveVideo)) {
                     console.log(`🎥 ⚡ KIOSK READY - Starting monitoring for:`, data.sessionId);
                     
-                    // Clean up failed connection if exists
+                    // Clean up stale connection (older than 10s that never connected)
                     if (pc && !isConnected) {
                         try { pc.close(); } catch(e) {}
                         monitoringConnections.delete(data.sessionId);
@@ -1301,10 +1318,9 @@
                             console.warn('⚠️ Video container not ready yet, will be started by auto-monitor');
                         }
                     }, 100);
-                } else {
-                    console.log('✅ Monitoring already active and working for:', data.sessionId, '- connection:', pc?.connectionState, '- ICE:', pc?.iceConnectionState);
                 }
             });
+
             
             // WebRTC signaling
             socket.on('webrtc-answer', ({ answer, sessionId }) => {
@@ -1363,7 +1379,7 @@
                 
                 // Show notification banner
                 if (alertData.type === 'hardware_disconnect') {
-                    showNotification(`⚠️ ${alertData.deviceType} disconnected on ${alertData.systemNumber}`, 'danger');
+                    showNotification(`⚠️ ${alertData.deviceType} disconnected on ${alertData.computerName}`, 'danger');
                 }
             });
 
@@ -1623,13 +1639,13 @@
             console.log('📋 All received sessions:', sessions?.map(s => {
                 const id = s._id || s.sessionId || s.id || 'no-id';
                 const sid = s.studentId || 'no-studentId';
-                const sys = s.systemNumber || 'no-system';
+                const sys = s.computerName || 'no-computer';
                 return `${id.substring(0, 8)}... (${sid} @ ${sys})`;
             }).join(', ') || 'none');
             console.log('📋 Filtered student sessions:', actualStudentSessions.map(s => {
                 const id = s._id || s.sessionId || s.id || 'no-id';
                 const sid = s.studentId || 'no-studentId';
-                const sys = s.systemNumber || 'no-system';
+                const sys = s.computerName || 'no-computer';
                 return `${id.substring(0, 8)}... (${sid} @ ${sys})`;
             }).join(', ') || 'none');
             
@@ -1793,7 +1809,7 @@
                         ${isGuest ? '<div class="guest-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-top: 5px; display: inline-block;">GUEST MODE</div>' : ''}
                         <div class="student-details">
                             <div><strong>ID:</strong> ${sessionData.studentId}</div>
-                            <div><strong>System:</strong> ${sessionData.systemNumber}</div>
+                            <div><strong>Computer:</strong> ${sessionData.computerName}</div>
                             <div><strong>Login:</strong> ${loginTime}</div>
                         </div>
                     `;
@@ -1830,7 +1846,7 @@
                     ${isGuest ? '<div class="guest-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-top: 5px; display: inline-block;">GUEST MODE</div>' : ''}
                     <div class="student-details">
                         <div><strong>ID:</strong> ${sessionData.studentId}</div>
-                        <div><strong>System:</strong> ${sessionData.systemNumber}</div>
+                        <div><strong>Computer:</strong> ${sessionData.computerName}</div>
                         <div><strong>Login:</strong> ${loginTime}</div>
                     </div>
                 </div>
@@ -1971,14 +1987,11 @@
                 videoContainer.appendChild(video);
                 console.log('✅ Created fresh video element for session:', sessionId);
                 
-                // ✅ FIX: LAN-OPTIMIZED WebRTC - No external STUN/TURN needed on same network
-                // DTLS failures were caused by overloaded public TURN servers
-                // On same LAN (10.10.46.x), host candidates connect directly
+                // ✅ LAN-ONLY WebRTC - No STUN needed (stun.l.google.com:19302 is blocked by college firewall)
+                // All 69 machines are on the same 10.10.46.x subnet, so host candidates connect directly
                 const peerConnection = new RTCPeerConnection({
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' }
-                    ],
-                    iceCandidatePoolSize: 2,
+                    iceServers: [],            // LAN-only: STUN is blocked, not needed on same subnet
+                    iceCandidatePoolSize: 0,   // No pre-gathering needed without STUN
                     iceTransportPolicy: 'all',
                     bundlePolicy: 'max-bundle',
                     rtcpMuxPolicy: 'require'
@@ -2228,13 +2241,18 @@
                 console.log('✅ ADMIN: Offer created and local description set');
                 
                 // Send offer to kiosk
-                console.log('📤 ADMIN: Sending offer to kiosk for session:', sessionId);
+                // ✅ FIX: Include systemNumber (from PC hostname) so server can find kiosk
+                // even if session-login-success hasn't fired yet (delayed by DB pool)
+                const _sessionDataForOffer = connectedStudents.get(sessionId);
+                const _systemNumber = _sessionDataForOffer?.systemNumber || _sessionDataForOffer?.computerName || null;
+                console.log('📤 ADMIN: Sending offer to kiosk for session:', sessionId, '| system:', _systemNumber);
                 socket.emit('admin-offer', {
                     offer: offer,
                     sessionId: sessionId,
-                    adminSocketId: socket.id
+                    adminSocketId: socket.id,
+                    systemNumber: _systemNumber  // ✅ FIX: PC hostname-derived system number (e.g. 'CC1-05')
                 });
-                console.log('✅ ADMIN: Offer sent to kiosk for session:', sessionId);
+                console.log('✅ ADMIN: Offer sent to kiosk for session:', sessionId, 'systemNumber:', _systemNumber);
                 
                 // Update status
                 const statusDiv = document.getElementById(`status-${sessionId}`);
@@ -2413,7 +2431,7 @@
             const studentData = connectedStudents.get(sessionId);
             if (studentData) {
                 document.getElementById('fullscreen-student-name').textContent = studentData.studentName || 'Unknown Student';
-                document.getElementById('fullscreen-student-details').textContent = `Roll: ${studentData.studentId} | System: ${studentData.systemNumber}`;
+                document.getElementById('fullscreen-student-details').textContent = `Roll: ${studentData.studentId} | Computer: ${studentData.computerName}`;
             }
             
             // Remove old event handlers to prevent duplicates
@@ -2502,7 +2520,7 @@
             const sessionId = fullscreenVideo.dataset.sessionId;
             const studentData = connectedStudents.get(sessionId);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            const filename = `snapshot_${studentData ? studentData.systemNumber : 'unknown'}_${timestamp}.png`;
+            const filename = `snapshot_${studentData ? (studentData.computerName || studentData.systemNumber || 'unknown') : 'unknown'}_${timestamp}.png`;
             
             console.log('📸 Converting canvas to blob...');
             
@@ -2637,13 +2655,15 @@
                     'available': '🖥️ Login Screen'
                 };
                 const statusLabel = statusLabels[system.status] || system.status;
-                
+                // Use computerName for display (actual hostname), fallback to systemNumber
+                const displayName = system.computerName || system.systemNumber || system.name || 'Unknown';
                 return `
                     <div style="border: 3px solid ${statusColor}; border-radius: 8px; padding: 12px; background: white;">
                         <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 10px; color: ${statusColor};">
-                            <input type="checkbox" class="system-checkbox" value="${system.systemNumber}" 
+                            <input type="checkbox" class="system-checkbox" value="${system.systemNumber || displayName}" 
+                                   data-computer-name="${displayName}"
                                    style="margin-right: 8px; transform: scale(1.3);">
-                            System ${system.systemNumber}
+                            ${displayName}
                         </div>
                         <div style="font-size: 0.85rem; color: ${statusColor}; font-weight: 600; margin-bottom: 5px;">
                             ${statusLabel}
@@ -2685,6 +2705,8 @@
                 return;
             }
             
+            const selectedNames = Array.from(document.querySelectorAll('.system-checkbox:checked'))
+                .map(cb => cb.dataset.computerName || cb.value);
             const confirmMsg = `⚠️⚠️⚠️ CRITICAL WARNING ⚠️⚠️⚠️\n\n` +
                 `You are about to COMPLETELY SHUTDOWN ${selectedSystems.length} computer(s).\n\n` +
                 `This will:\n` +
@@ -2692,7 +2714,7 @@
                 `• Log out any active students\n` +
                 `• Turn off computers completely\n` +
                 `• Require manual power button press to restart\n\n` +
-                `Systems to shutdown: ${selectedSystems.join(', ')}\n\n` +
+                `Computers to shutdown: ${selectedNames.join(', ')}\n\n` +
                 `Are you absolutely sure?`;
             
             if (!confirm(confirmMsg)) {
@@ -2713,7 +2735,7 @@
             statusDiv.style.color = '#856404';
             statusDiv.innerHTML = `
                 <strong>⏳ SENDING SHUTDOWN COMMAND...</strong><br>
-                Systems: ${selectedSystems.join(', ')}<br>
+                Systems: ${selectedNames.join(', ')}<br>
                 <small>Shutdown command being sent to ${selectedSystems.length} systems...</small>
             `;
             
@@ -2823,8 +2845,8 @@
             connectedStudents.forEach((data, sessionId) => {
                 // ✅ FIX: Only count valid student entries (not empty or undefined)
                 // FIXED: Changed data.name to data.studentName to match actual session data structure
-                if (data && data.studentId && data.systemNumber && data.studentName) {
-                    uniqueStudents.add(`${data.studentId}-${data.systemNumber}`);
+                if (data && data.studentId && data.studentName) {
+                    uniqueStudents.add(`${data.studentId}-${data.computerName || data.systemNumber}`);
                 }
             });
             
@@ -3419,7 +3441,7 @@
             // Add student data headers
             const headers = [
                 'Sr. No',
-                'System No',
+                'Computer Name',
                 'Student Name', 
                 'Roll Number', 
                 'Login Time', 
@@ -3437,7 +3459,7 @@
                 
                 const row = [
                     index + 1,
-                    `"${record.systemNumber || '-'}"`,
+                    `"${record.computerName || record.systemNumber || '-'}"`,
                     `"${record.studentName || '-'}"`,
                     `"${record.studentId || '-'}"`,
                     `"${loginTime}"`,
@@ -3492,17 +3514,17 @@ Lab Session Start Time: ${data.debug.labSession?.startTime || 'Not found'}
 
 Recent Sessions (last 10):
 ${data.debug.recentSessions.map((s, i) => 
-    `${i+1}. ${s.studentName} (${s.studentId}) - ${s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
+    `${i+1}. ${s.studentName} (${s.studentId}) - ${s.computerName || s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
 ).join('\n')}
 
 Active Sessions:
 ${data.debug.activeSessions.map((s, i) => 
-    `${i+1}. ${s.studentName} (${s.studentId}) - ${s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
+    `${i+1}. ${s.studentName} (${s.studentId}) - ${s.computerName || s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
 ).join('\n')}
 
 Lab Session Student Records:
 ${data.debug.labSessionStudentRecords?.map((s, i) => 
-    `${i+1}. ${s.studentName} (${s.studentId}) - ${s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
+    `${i+1}. ${s.studentName} (${s.studentId}) - ${s.computerName || s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
 ).join('\n') || 'None found'}
                     `;
                     
@@ -3823,7 +3845,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                             <span style="font-size: 24px;">${icon}</span>
                             <div style="flex: 1;">
                                 <strong style="font-size: 1rem;">${alert.deviceType}</strong><br>
-                                <small style="color: #333;">${alert.studentName} (${alert.systemNumber})</small><br>
+                                <small style="color: #333;">${alert.studentName} (${alert.computerName || alert.systemNumber})</small><br>
                                 <small style="color: #666;">${time}</small>
                                 ${!alert.acknowledged ? `
                                     <button onclick="acknowledgeAlert('${alert._id}')" style="margin-top: 5px; background: #007bff; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
@@ -3866,7 +3888,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     <span style="font-size: 24px;">${icon}</span>
                     <div style="flex: 1;">
                         <strong style="font-size: 1rem;">${alertData.deviceType}</strong><br>
-                        <small style="color: #333;">${alertData.studentName} (${alertData.systemNumber})</small><br>
+                        <small style="color: #333;">${alertData.studentName} (${alertData.computerName || alertData.systemNumber})</small><br>
                         <small style="color: #666;">${time}</small>
                         <button onclick="acknowledgeAlert('${alertData.alertId}')" style="margin-top: 5px; background: #007bff; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
                             ✓ Acknowledge

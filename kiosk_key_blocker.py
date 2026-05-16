@@ -329,7 +329,7 @@ def start_blocker():
     print()
     print("🔒 Blocking: Windows key, Start button, Ctrl+Esc")
     print("🔒 Blocking: Win+D, Win+E, Win+R, Win+L, Win+Tab")
-    print("🔒 Hiding: Taskbar")
+    print("🔒 Hiding: Taskbar") 
     print("WARNING: Run as Administrator for strongest Windows key blocking!")
     print("Press Ctrl+C to stop and restore normal function.")
     print()

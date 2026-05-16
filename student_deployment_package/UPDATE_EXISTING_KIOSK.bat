@@ -39,13 +39,28 @@ echo [2/5] Backing up old files...
 if not exist "C:\StudentKiosk\backup" mkdir "C:\StudentKiosk\backup"
 copy /Y "C:\StudentKiosk\main-simple.js" "C:\StudentKiosk\backup\main-simple.js.backup" >nul 2>&1
 
-echo [3/5] Updating main-simple.js with security fixes...
+echo [3/5] Updating kiosk files with screen mirroring fixes...
+
+REM Copy main process
 copy /Y "%~dp0student-kiosk\main-simple.js" "C:\StudentKiosk\main-simple.js"
 if %errorLevel% neq 0 (
-    echo ERROR: Failed to copy updated file!
+    echo ERROR: Failed to copy main-simple.js!
     pause
     exit /b 1
 )
+echo    ✅ main-simple.js updated (screen auto-select fix)
+
+REM Copy renderer (screen capture + WebRTC)
+copy /Y "%~dp0student-kiosk\renderer.js" "C:\StudentKiosk\renderer.js"
+echo    ✅ renderer.js updated (LAN-only WebRTC, reduced resolution)
+
+REM Copy kiosk interface HTML (screen capture + WebRTC)
+copy /Y "%~dp0student-kiosk\student-interface.html" "C:\StudentKiosk\student-interface.html"
+echo    ✅ student-interface.html updated
+
+REM Copy renderer-fixed.js
+copy /Y "%~dp0student-kiosk\renderer-fixed.js" "C:\StudentKiosk\renderer-fixed.js"
+echo    ✅ renderer-fixed.js updated
 
 echo [4/5] Installing startup scripts...
 copy /Y "%~dp0student-kiosk\START_KIOSK_SILENT.vbs" "C:\StudentKiosk\START_KIOSK_SILENT.vbs"
