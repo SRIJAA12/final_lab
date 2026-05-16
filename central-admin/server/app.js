@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 
 const express = require('express');
@@ -41,8 +42,8 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: { origin: "*" },
   maxHttpBufferSize: 1e7,        // ✅ FIX: 10MB buffer for large SDP offer/answer messages
-  pingTimeout: 60000,            // ✅ FIX: 60s timeout (default 20s too short for 70+ systems)
-  pingInterval: 25000,           // Keep-alive every 25s
+  pingTimeout: 90000,            // ✅ FIX: 90s timeout (increased from 60s for 60+ systems stability)
+  pingInterval: 30000,           // Keep-alive every 30s (increased from 25s)
   transports: ['websocket', 'polling']  // Prefer WebSocket for low-latency signaling
 });
 
@@ -89,7 +90,7 @@ mongoose.connect(MONGODB_URI, {
 })
   .then(async () => {
     console.log("✅ MongoDB connected successfully");
-    
+
     // Clean up any lingering active sessions from previous server runs
     await cleanupStaleSessions();
   })
@@ -151,6 +152,7 @@ const labSessionSchema = new mongoose.Schema({
   studentRecords: [{
     studentName: String,
     studentId: String,
+    email: String,     // Student email stored for reports
     systemNumber: String,
     loginTime: Date,
     logoutTime: Date,
@@ -168,40 +170,40 @@ const LabSession = mongoose.model('LabSession', labSessionSchema);
 async function cleanupStaleSessions() {
   try {
     const staleSessions = await Session.find({ status: 'active' });
-    
+
     if (staleSessions.length > 0) {
       console.log(`🧹 Cleaning up ${staleSessions.length} stale active session(s) from previous server run...`);
-      
+
       const now = new Date();
       await Session.updateMany(
         { status: 'active' },
-        { 
+        {
           status: 'completed',
           logoutTime: now,
           duration: 0, // Can't calculate accurate duration for interrupted sessions
           notes: 'Auto-closed: Server restart'
         }
       );
-      
+
       console.log(`✅ Cleaned up ${staleSessions.length} stale session(s)`);
     } else {
       console.log(`✅ No stale sessions found - database is clean`);
     }
-    
+
     // Also cleanup any active lab sessions
     const staleLabSessions = await LabSession.find({ status: 'active' });
     if (staleLabSessions.length > 0) {
       console.log(`🧹 Cleaning up ${staleLabSessions.length} stale active lab session(s)...`);
-      
+
       const now = new Date();
       await LabSession.updateMany(
         { status: 'active' },
-        { 
+        {
           status: 'completed',
           endTime: now
         }
       );
-      
+
       console.log(`✅ Cleaned up ${staleLabSessions.length} stale lab session(s)`);
     }
   } catch (error) {
@@ -313,7 +315,7 @@ const systemRegistrySchema = new mongoose.Schema({
 });
 
 // Update lastSeen on every registry update
-systemRegistrySchema.pre('save', function(next) {
+systemRegistrySchema.pre('save', function (next) {
   this.lastSeen = new Date();
   next();
 });
@@ -343,7 +345,7 @@ try {
       rejectUnauthorized: false // Allow self-signed certificates
     }
   });
-  
+
   // Test the connection
   emailTransporter.verify((error, success) => {
     if (error) {
@@ -355,7 +357,7 @@ try {
       console.log(`📧 Email configured: ${EMAIL_USER}`);
     }
   });
-  
+
 } catch (error) {
   console.log('❌ Failed to create email transporter:', error.message);
   console.log('📧 OTP emails will be logged to console only');
@@ -380,7 +382,7 @@ async function sendOTPEmail(email, otp, studentName) {
   console.log(`🔢 OTP CODE: ${otp}`);
   console.log(`⏰ Valid for: 10 minutes`);
   console.log(`${'='.repeat(60)}\n`);
-  
+
   // If email is not configured, just log the OTP to console
   if (!emailTransporter) {
     console.log(`⚠️ EMAIL NOT CONFIGURED - OTP logged above for manual testing`);
@@ -391,7 +393,7 @@ async function sendOTPEmail(email, otp, studentName) {
   // Try to send actual email
   try {
     console.log(`📤 Attempting to send email to: ${email}`);
-    
+
     const mailOptions = {
       from: `"College Lab System" <${EMAIL_USER}>`,
       to: email,
@@ -403,17 +405,17 @@ async function sendOTPEmail(email, otp, studentName) {
               <h1 style="color: #28a745; margin: 0;">🔐 Password Reset Request</h1>
               <p style="color: #6c757d; margin: 10px 0 0 0;">College Lab Management System</p>
             </div>
-            
+           
             <div style="background: #e8f5e9; border-radius: 10px; padding: 20px; margin: 20px 0;">
               <p style="margin: 0; color: #2c3e50;">Dear <strong>${studentName}</strong>,</p>
               <p style="margin: 10px 0 0 0; color: #2c3e50;">You have requested to reset your password for the College Lab System.</p>
             </div>
-            
+           
             <div style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 25px; text-align: center; margin: 25px 0; border-radius: 12px;">
               <p style="margin: 0; font-size: 16px; opacity: 0.9;">Your OTP Code:</p>
               <h1 style="margin: 10px 0 0 0; font-size: 3rem; letter-spacing: 8px; font-weight: bold;">${otp}</h1>
             </div>
-            
+           
             <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 5px;">
               <p style="margin: 0; color: #856404;"><strong>⏰ Important:</strong></p>
               <ul style="margin: 10px 0 0 0; color: #856404;">
@@ -422,7 +424,7 @@ async function sendOTPEmail(email, otp, studentName) {
                 <li>Do not share this OTP with anyone</li>
               </ul>
             </div>
-            
+           
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef;">
               <p style="margin: 0; color: #6c757d; font-size: 14px;">
                 If you did not request this password reset, please ignore this email.<br>
@@ -438,14 +440,14 @@ async function sendOTPEmail(email, otp, studentName) {
     console.log(`✅ Email sent successfully!`);
     console.log(`📧 Message ID: ${info.messageId}`);
     console.log(`📬 Email delivered to: ${email}`);
-    
+
     return true;
-    
+
   } catch (error) {
     console.log(`❌ Failed to send email: ${error.message}`);
     console.log(`📧 Falling back to console logging`);
     console.log(`🚨 BACKUP MODE: Copy this OTP → ${otp}`);
-    
+
     // Don't fail the process, just continue with console logging
     return true;
   }
@@ -465,7 +467,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
@@ -476,7 +478,7 @@ const upload = multer({
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     ];
-    
+
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -502,24 +504,24 @@ async function processExcelFile(filePath) {
   try {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
-    
+
     const worksheet = workbook.getWorksheet(1); // First worksheet
     const jsonData = [];
-    
+
     // Get headers from first row
     const headerRow = worksheet.getRow(1);
     const headers = [];
     headerRow.eachCell((cell, colNumber) => {
       headers[colNumber] = cell.value ? cell.value.toString().trim() : '';
     });
-    
+
     // Process data rows (skip header row)
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // Skip header row
-      
+
       const rowData = {};
       let hasData = false;
-      
+
       row.eachCell((cell, colNumber) => {
         if (headers[colNumber]) {
           let cellValue = '';
@@ -537,13 +539,13 @@ async function processExcelFile(filePath) {
           rowData[headers[colNumber]] = cellValue;
         }
       });
-      
+
       // Only add row if it has data
       if (hasData && Object.values(rowData).some(val => val && val.length > 0)) {
         jsonData.push(rowData);
       }
     });
-    
+
     return jsonData;
   } catch (error) {
     throw new Error('Error processing Excel file: ' + error.message);
@@ -555,10 +557,10 @@ function validateStudentData(rawData) {
   const validatedStudents = [];
   const seenIds = new Set();
   const seenEmails = new Set();
-  
+
   for (let i = 0; i < rawData.length; i++) {
     const row = rawData[i];
-    
+
     try {
       const student = {
         name: cleanString(row.name || row.Name || row.student_name || row['Student Name'] || row['Full Name']),
@@ -573,67 +575,67 @@ function validateStudentData(rawData) {
         registeredAt: new Date(),
         updatedAt: new Date()
       };
-      
+
       // Validate required fields
       if (!student.name || student.name.length < 2) {
         console.warn(`⚠️ Row ${i + 1}: Invalid or missing name - got: "${student.name}"`);
         continue;
       }
-      
+
       if (!student.studentId || student.studentId.length < 3) {
         console.warn(`⚠️ Row ${i + 1}: Invalid or missing student ID - got: "${student.studentId}"`);
         continue;
       }
-      
+
       if (!student.dateOfBirth || student.dateOfBirth.getFullYear() < 1980) {
         console.warn(`⚠️ Row ${i + 1}: Invalid date of birth - got: ${student.dateOfBirth}`);
         continue;
       }
-      
+
       if (!student.department || student.department.length < 2) {
         console.warn(`⚠️ Row ${i + 1}: Invalid or missing department - got: "${student.department}"`);
         continue;
       }
-      
+
       // Check for duplicates in current batch
       if (seenIds.has(student.studentId.toUpperCase())) {
         console.warn(`⚠️ Row ${i + 1}: Duplicate student ID ${student.studentId}`);
         continue;
       }
-      
+
       // Generate email if missing or invalid
       if (!student.email || !student.email.includes('@') || !student.email.includes('.')) {
         student.email = `${student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')}@college.edu`;
       }
-      
+
       // Check for duplicate emails in current batch
       if (seenEmails.has(student.email.toLowerCase())) {
         // Generate unique email
         student.email = `${student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')}.${Date.now()}@college.edu`;
       }
-      
+
       // Validate and normalize year
       if (isNaN(student.year) || student.year < 1 || student.year > 4) {
         student.year = 1;
       }
-      
+
       // Normalize department names
       student.department = normalizeDepartment(student.department);
-      
+
       // Normalize student ID (uppercase)
       student.studentId = student.studentId.toUpperCase();
-      
+
       // Add to tracking sets
       seenIds.add(student.studentId);
       seenEmails.add(student.email.toLowerCase());
-      
+
       validatedStudents.push(student);
-      
+
     } catch (error) {
       console.warn(`⚠️ Row ${i + 1}: Validation error:`, error.message);
     }
   }
-  
+
   return validatedStudents;
 }
 
@@ -645,35 +647,35 @@ function cleanString(str) {
 
 function parseDate(dateString) {
   if (!dateString) return new Date('2000-01-01');
-  
+
   // Handle Excel date serial numbers
   if (typeof dateString === 'number' && dateString > 25000 && dateString < 50000) {
     // Excel serial date to JS date
     const date = new Date((dateString - 25569) * 86400 * 1000);
     if (!isNaN(date.getTime())) return date;
   }
-  
+
   const formats = [
     dateString.toString(),
     dateString.toString().replace(/[-/]/g, '-'),
     dateString.toString().replace(/[-/]/g, '/'),
   ];
-  
+
   for (let format of formats) {
     const parsed = new Date(format);
-    if (!isNaN(parsed.getTime()) && 
-        parsed.getFullYear() > 1980 && 
-        parsed.getFullYear() < 2020) {  // Changed from 2015 to 2020 to accept students born 2000-2019
+    if (!isNaN(parsed.getTime()) &&
+      parsed.getFullYear() > 1980 &&
+      parsed.getFullYear() < 2020) {  // Changed from 2015 to 2020 to accept students born 2000-2019
       return parsed;
     }
   }
-  
+
   return new Date('2000-01-01');
 }
 
 function normalizeDepartment(dept) {
   if (!dept) return 'General';
-  
+
   const deptMap = {
     'cs': 'Computer Science',
     'cse': 'Computer Science',
@@ -701,7 +703,7 @@ function normalizeDepartment(dept) {
     'computer science and business systems': 'CSBS',
     'cs&bs': 'CSBS'
   };
-  
+
   const normalized = dept.toLowerCase().trim();
   return deptMap[normalized] || dept;
 }
@@ -711,16 +713,16 @@ async function importStudentsToDatabase(students) {
   let successful = 0;
   let failed = 0;
   const errors = [];
-  
+
   for (let student of students) {
     try {
-      const existing = await Student.findOne({ 
+      const existing = await Student.findOne({
         $or: [
           { studentId: student.studentId },
           { email: student.email }
         ]
       });
-      
+
       if (existing) {
         // Update existing student (except password fields)
         await Student.findByIdAndUpdate(existing._id, {
@@ -741,14 +743,14 @@ async function importStudentsToDatabase(students) {
         successful++;
         console.log(`✅ Added new student: ${student.studentId}`);
       }
-      
+
     } catch (error) {
       failed++;
       errors.push(`${student.studentId || 'Unknown'}: ${error.message}`);
       console.error(`❌ Failed to import ${student.studentId}:`, error.message);
     }
   }
-  
+
   return { successful, failed, errors };
 }
 
@@ -757,15 +759,15 @@ async function importStudentsToDatabase(students) {
 app.post('/api/restore-sample-data', async (req, res) => {
   try {
     console.log('🗑️ Clearing all existing data...');
-    
+
     // Clear all collections
     await Student.deleteMany({});
     await Session.deleteMany({});
     await OneTimePassword.deleteMany({});
     await OTP.deleteMany({});
-    
+
     console.log('📊 Setting up sample student data...');
-    
+
     // Sample student data including TEST2025001
     const sampleStudents = [
       {
@@ -829,12 +831,12 @@ app.post('/api/restore-sample-data', async (req, res) => {
         isPasswordSet: false
       }
     ];
-    
+
     // Insert sample students
     const insertedStudents = await Student.insertMany(sampleStudents);
-    
+
     console.log(`✅ Sample data restored: ${insertedStudents.length} students added`);
-    
+
     res.json({
       success: true,
       message: 'Sample data restored successfully',
@@ -846,7 +848,7 @@ app.post('/api/restore-sample-data', async (req, res) => {
         department: s.department
       }))
     });
-    
+
   } catch (error) {
     console.error('❌ Sample data restore error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -857,15 +859,15 @@ app.post('/api/restore-sample-data', async (req, res) => {
 app.post('/api/setup-sample-data', async (req, res) => {
   try {
     console.log('🗑️ Clearing all existing data...');
-    
+
     // Clear all collections
     await Student.deleteMany({});
     await Session.deleteMany({});
     await OneTimePassword.deleteMany({});
     await OTP.deleteMany({});
-    
+
     console.log('📊 Setting up sample student data...');
-    
+
     // Sample student data
     const sampleStudents = [
       {
@@ -929,12 +931,12 @@ app.post('/api/setup-sample-data', async (req, res) => {
         isPasswordSet: false
       }
     ];
-    
+
     // Insert sample students
     const insertedStudents = await Student.insertMany(sampleStudents);
-    
+
     console.log(`✅ Sample data setup complete: ${insertedStudents.length} students added`);
-    
+
     res.json({
       success: true,
       message: 'Sample data setup complete',
@@ -946,7 +948,7 @@ app.post('/api/setup-sample-data', async (req, res) => {
         department: s.department
       }))
     });
-    
+
   } catch (error) {
     console.error('❌ Sample data setup error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -957,42 +959,42 @@ app.post('/api/setup-sample-data', async (req, res) => {
 app.post('/api/generate-one-time-password', async (req, res) => {
   try {
     const { studentId } = req.body;
-    
+
     if (!studentId) {
       return res.status(400).json({ success: false, error: 'Student ID is required' });
     }
-    
+
     // Check if student exists
     const student = await Student.findOne({ studentId: studentId.toUpperCase() });
     if (!student) {
       return res.status(404).json({ success: false, error: 'Student not found' });
     }
-    
+
     // Check if student already has a password set
     if (student.isPasswordSet) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student already has a password set. Use password reset instead.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Student already has a password set. Use password reset instead.'
       });
     }
-    
+
     // Generate one-time password
     const oneTimePass = generateOneTimePassword();
-    
+
     // Remove any existing one-time password for this student
     await OneTimePassword.deleteMany({ studentId: studentId.toUpperCase() });
-    
+
     // Create new one-time password
     const otpRecord = new OneTimePassword({
       studentId: studentId.toUpperCase(),
       password: oneTimePass,
       isUsed: false
     });
-    
+
     await otpRecord.save();
-    
+
     console.log(`✅ One-time password generated for ${studentId}: ${oneTimePass}`);
-    
+
     res.json({
       success: true,
       message: 'One-time password generated successfully',
@@ -1001,7 +1003,7 @@ app.post('/api/generate-one-time-password', async (req, res) => {
       oneTimePassword: oneTimePass,
       expiresAt: otpRecord.expiresAt
     });
-    
+
   } catch (error) {
     console.error('❌ One-time password generation error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1012,51 +1014,51 @@ app.post('/api/generate-one-time-password', async (req, res) => {
 app.post('/api/use-one-time-password', async (req, res) => {
   try {
     const { studentId, oneTimePassword, newPassword } = req.body;
-    
+
     if (!studentId || !oneTimePassword || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student ID, one-time password, and new password are required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID, one-time password, and new password are required'
       });
     }
-    
+
     // Find the one-time password record
-    const otpRecord = await OneTimePassword.findOne({ 
+    const otpRecord = await OneTimePassword.findOne({
       studentId: studentId.toUpperCase(),
       password: oneTimePassword.toUpperCase(),
       isUsed: false
     });
-    
+
     if (!otpRecord) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid or expired one-time password' 
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired one-time password'
       });
     }
-    
+
     // Check if expired
     if (otpRecord.expiresAt < new Date()) {
       await OneTimePassword.deleteOne({ _id: otpRecord._id });
-      return res.status(400).json({ 
-        success: false, 
-        error: 'One-time password has expired' 
+      return res.status(400).json({
+        success: false,
+        error: 'One-time password has expired'
       });
     }
-    
+
     // Find the student
     const student = await Student.findOne({ studentId: studentId.toUpperCase() });
     if (!student) {
       return res.status(404).json({ success: false, error: 'Student not found' });
     }
-    
+
     // Validate new password
     if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'New password must be at least 6 characters long' 
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters long'
       });
     }
-    
+
     // Hash the new password and update student
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
     await Student.findByIdAndUpdate(student._id, {
@@ -1064,13 +1066,13 @@ app.post('/api/use-one-time-password', async (req, res) => {
       isPasswordSet: true,
       updatedAt: new Date()
     });
-    
+
     // Mark one-time password as used
     otpRecord.isUsed = true;
     await otpRecord.save();
-    
+
     console.log(`✅ One-time password used successfully for ${studentId}`);
-    
+
     res.json({
       success: true,
       message: 'Password set successfully using one-time password',
@@ -1081,7 +1083,7 @@ app.post('/api/use-one-time-password', async (req, res) => {
         department: student.department
       }
     });
-    
+
   } catch (error) {
     console.error('❌ One-time password usage error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1093,9 +1095,9 @@ app.get('/api/debug-students', async (req, res) => {
   try {
     // Get all students with all necessary fields, no limit
     const students = await Student.find({}, 'studentId name email isPasswordSet department year dateOfBirth labId createdAt').sort({ createdAt: -1 });
-    
+
     console.log(`📊 Fetching all students: ${students.length} students found`);
-    
+
     res.json({
       success: true,
       count: students.length,
@@ -1111,34 +1113,34 @@ app.get('/api/debug-students', async (req, res) => {
 app.post('/api/check-student-eligibility', async (req, res) => {
   try {
     const { studentId } = req.body;
-    
+
     if (!studentId) {
-      return res.status(400).json({ 
-        eligible: false, 
-        reason: 'Student ID is required' 
+      return res.status(400).json({
+        eligible: false,
+        reason: 'Student ID is required'
       });
     }
-    
+
     // Find student by ID
-    const student = await Student.findOne({ 
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase()
     });
-    
+
     if (!student) {
-      return res.status(400).json({ 
-        eligible: false, 
-        reason: 'Student ID not found in our records. Please contact admin.' 
+      return res.status(400).json({
+        eligible: false,
+        reason: 'Student ID not found in our records. Please contact admin.'
       });
     }
-    
+
     // Check if password is already set
     if (student.passwordHash && student.isPasswordSet) {
-      return res.status(400).json({ 
-        eligible: false, 
-        reason: 'Password already set for this account. Use regular login or "Forgot Password".' 
+      return res.status(400).json({
+        eligible: false,
+        reason: 'Password already set for this account. Use regular login or "Forgot Password".'
       });
     }
-    
+
     res.json({
       eligible: true,
       studentName: student.name,
@@ -1146,7 +1148,7 @@ app.post('/api/check-student-eligibility', async (req, res) => {
       year: student.year,
       labId: student.labId
     });
-    
+
   } catch (error) {
     console.error('❌ Student eligibility check error:', error);
     res.status(500).json({ eligible: false, reason: 'Server error. Please try again.' });
@@ -1157,30 +1159,30 @@ app.post('/api/check-student-eligibility', async (req, res) => {
 app.post('/api/add-student', async (req, res) => {
   try {
     const { studentId, name, email, dateOfBirth, department, section, year, labId } = req.body;
-    
+
     // Validate required fields (labId and section are optional)
     if (!studentId || !name || !email || !dateOfBirth || !department || !year) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'All fields are required: studentId, name, email, dateOfBirth, department, year' 
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: studentId, name, email, dateOfBirth, department, year'
       });
     }
-    
+
     // Check if student ID already exists
-    const existingStudent = await Student.findOne({ 
+    const existingStudent = await Student.findOne({
       $or: [
         { studentId: studentId.toUpperCase() },
         { email: email.toLowerCase() }
       ]
     });
-    
+
     if (existingStudent) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student ID or email already exists' 
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID or email already exists'
       });
     }
-    
+
     // Create new student
     const newStudent = new Student({
       studentId: studentId.toUpperCase(),
@@ -1193,11 +1195,11 @@ app.post('/api/add-student', async (req, res) => {
       labId: labId ? labId.toUpperCase() : 'ALL', // Default to 'ALL' if not provided
       isPasswordSet: false
     });
-    
+
     await newStudent.save();
-    
+
     console.log(`✅ New student added: ${newStudent.name} (${newStudent.studentId})`);
-    
+
     res.json({
       success: true,
       message: 'Student added successfully',
@@ -1211,7 +1213,7 @@ app.post('/api/add-student', async (req, res) => {
         labId: newStudent.labId
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Add student error:', error);
     if (error.code === 11000) {
@@ -1227,27 +1229,27 @@ app.put('/api/update-student/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
     const { name, email, department, year } = req.body;
-    
+
     // Find and update student
     const student = await Student.findOne({ studentId: studentId.toUpperCase() });
-    
+
     if (!student) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Student not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found'
       });
     }
-    
+
     // Update fields if provided
     if (name) student.name = name.trim();
     if (email) student.email = email.toLowerCase();
     if (department) student.department = department.trim();
     if (year) student.year = parseInt(year);
-    
+
     await student.save();
-    
+
     console.log(`✅ Student updated: ${student.name} (${student.studentId})`);
-    
+
     res.json({
       success: true,
       message: 'Student updated successfully',
@@ -1259,7 +1261,7 @@ app.put('/api/update-student/:studentId', async (req, res) => {
         year: student.year
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Update student error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1270,25 +1272,25 @@ app.put('/api/update-student/:studentId', async (req, res) => {
 app.delete('/api/delete-student/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    
+
     // Find and delete student
     const student = await Student.findOneAndDelete({ studentId: studentId.toUpperCase() });
-    
+
     if (!student) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Student not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found'
       });
     }
-    
+
     console.log(`🗑️ Student deleted: ${student.name} (${student.studentId})`);
-    
+
     res.json({
       success: true,
       message: 'Student deleted successfully',
       studentId: student.studentId
     });
-    
+
   } catch (error) {
     console.error('❌ Delete student error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1299,15 +1301,15 @@ app.delete('/api/delete-student/:studentId', async (req, res) => {
 app.delete('/api/clear-all-students', async (req, res) => {
   try {
     const result = await Student.deleteMany({});
-    
+
     console.log(`🗑️ Cleared all students: ${result.deletedCount} deleted`);
-    
+
     res.json({
       success: true,
       message: 'All students deleted successfully',
       deletedCount: result.deletedCount
     });
-    
+
   } catch (error) {
     console.error('❌ Clear all students error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1318,46 +1320,46 @@ app.delete('/api/clear-all-students', async (req, res) => {
 app.post('/api/authenticate', async (req, res) => {
   try {
     const { studentId, password } = req.body;
-    
+
     if (!studentId || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student ID and password are required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID and password are required'
       });
     }
-    
+
     // Find student by ID
-    const student = await Student.findOne({ 
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase()
     });
-    
+
     if (!student) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid student ID or password' 
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid student ID or password'
       });
     }
-    
+
     // Check if password is set
     if (!student.passwordHash || !student.isPasswordSet) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Password not set. Please complete first-time sign-in online first.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Password not set. Please complete first-time sign-in online first.'
       });
     }
-    
+
     // Verify password
     const passwordMatch = await bcrypt.compare(password, student.passwordHash);
-    
+
     if (!passwordMatch) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid student ID or password' 
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid student ID or password'
       });
     }
-    
+
     console.log(`✅ Student authenticated: ${student.name} (${student.studentId})`);
-    
+
     res.json({
       success: true,
       message: 'Authentication successful',
@@ -1370,7 +1372,7 @@ app.post('/api/authenticate', async (req, res) => {
         labId: student.labId
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Authentication error:', error);
     res.status(500).json({ success: false, error: 'Server error during authentication' });
@@ -1381,57 +1383,57 @@ app.post('/api/authenticate', async (req, res) => {
 app.post('/api/student-first-signin', async (req, res) => {
   try {
     const { name, studentId, dateOfBirth, password } = req.body;
-    
+
     if (!name || !studentId || !dateOfBirth || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'All fields are required: name, student ID, date of birth, and password' 
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: name, student ID, date of birth, and password'
       });
     }
-    
+
     // Find student by ID
-    const student = await Student.findOne({ 
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase()
     });
-    
+
     if (!student) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student not found in our records' 
+      return res.status(400).json({
+        success: false,
+        error: 'Student not found in our records'
       });
     }
-    
+
     // Verify date of birth
     const providedDate = new Date(dateOfBirth);
     const storedDate = new Date(student.dateOfBirth);
-    
+
     if (providedDate.toDateString() !== storedDate.toDateString()) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Date of birth does not match our records' 
+      return res.status(400).json({
+        success: false,
+        error: 'Date of birth does not match our records'
       });
     }
-    
+
     // Check if password is already set
     if (student.passwordHash && student.isPasswordSet) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Password already set for this account. Use "Forgot Password" if you need to reset it.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Password already set for this account. Use "Forgot Password" if you need to reset it.'
       });
     }
-    
+
     // Hash the new password
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
-    
+
     // Update student with new password and name
     student.name = name; // Allow name update during first signin
     student.passwordHash = passwordHash;
     student.isPasswordSet = true;
     await student.save();
-    
+
     console.log(`✅ First-time sign-in completed via web for: ${student.name} (${student.studentId})`);
-    
+
     res.json({
       success: true,
       message: 'Password set successfully. You can now login at lab computers.',
@@ -1442,7 +1444,7 @@ app.post('/api/student-first-signin', async (req, res) => {
         labId: student.labId
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Student first-time sign-in error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1453,73 +1455,73 @@ app.post('/api/student-first-signin', async (req, res) => {
 app.post('/api/first-time-signin', async (req, res) => {
   try {
     const { studentId, email, dateOfBirth, newPassword } = req.body;
-    
+
     if (!studentId || !email || !dateOfBirth || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'All fields are required: Student ID, email, date of birth, and password' 
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: Student ID, email, date of birth, and password'
       });
     }
-    
+
     // Find student by ID, email, and date of birth
     console.log(`🔍 First-time signin attempt for: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
-    
-    const student = await Student.findOne({ 
+
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase(),
       email: email.toLowerCase()
     });
-    
+
     if (!student) {
       console.log(`❌ Student not found for first-time signin: ${studentId.toUpperCase()}`);
-      
+
       // Try to find by studentId only to give better error message
       const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
       if (studentById) {
         console.log(`⚠️ Student ID exists but email mismatch. Expected: ${studentById.email}, Got: ${email.toLowerCase()}`);
-        return res.status(400).json({ 
-          success: false, 
-          error: `Email does not match our records. Registered email: ${studentById.email}` 
+        return res.status(400).json({
+          success: false,
+          error: `Email does not match our records. Registered email: ${studentById.email}`
         });
       }
-      
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student not found with this ID and email combination' 
+
+      return res.status(400).json({
+        success: false,
+        error: 'Student not found with this ID and email combination'
       });
     }
-    
+
     console.log(`✅ Student found for first-time signin: ${student.name} (${student.studentId})`);
-    
+
     // Verify date of birth
     const providedDate = new Date(dateOfBirth);
     const storedDate = new Date(student.dateOfBirth);
-    
+
     if (providedDate.toDateString() !== storedDate.toDateString()) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Date of birth does not match our records' 
+      return res.status(400).json({
+        success: false,
+        error: 'Date of birth does not match our records'
       });
     }
-    
+
     // Check if password is already set
     if (student.passwordHash && student.isPasswordSet) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Password already set for this account. Use "Forgot Password" if you need to reset it.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Password already set for this account. Use "Forgot Password" if you need to reset it.'
       });
     }
-    
+
     // Hash the new password
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(newPassword, saltRounds);
-    
+
     // Update student with new password
     student.passwordHash = passwordHash;
     student.isPasswordSet = true;
     await student.save();
-    
+
     console.log(`✅ First-time sign-in completed for: ${student.name} (${student.studentId})`);
-    
+
     res.json({
       success: true,
       message: 'Password set successfully. You can now login.',
@@ -1530,7 +1532,7 @@ app.post('/api/first-time-signin', async (req, res) => {
         department: student.department
       }
     });
-    
+
   } catch (error) {
     console.error('❌ First-time sign-in error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1541,12 +1543,12 @@ app.post('/api/first-time-signin', async (req, res) => {
 app.post('/api/check-student-exists', async (req, res) => {
   try {
     const { studentId, email } = req.body;
-    
+
     console.log(`🔍 Checking student: ${studentId} with email: ${email}`);
-    
+
     // Search by student ID only
     const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
-    
+
     if (!studentById) {
       return res.json({
         success: false,
@@ -1555,10 +1557,10 @@ app.post('/api/check-student-exists', async (req, res) => {
         suggestion: 'Please add this student via Admin Dashboard → Student Management'
       });
     }
-    
+
     // Student found, check email match
     const emailMatch = studentById.email.toLowerCase() === email.toLowerCase();
-    
+
     res.json({
       success: true,
       found: true,
@@ -1569,16 +1571,16 @@ app.post('/api/check-student-exists', async (req, res) => {
       emailMatch: emailMatch,
       isPasswordSet: studentById.isPasswordSet,
       department: studentById.department,
-      message: emailMatch 
-        ? `✅ Student found! Email matches.` 
+      message: emailMatch
+        ? `✅ Student found! Email matches.`
         : `⚠️ Student found but email DOES NOT match. Registered: ${studentById.email}, Provided: ${email}`,
-      action: !emailMatch 
-        ? `Use the registered email: ${studentById.email}` 
-        : studentById.isPasswordSet 
-          ? 'Use Forgot Password to reset' 
+      action: !emailMatch
+        ? `Use the registered email: ${studentById.email}`
+        : studentById.isPasswordSet
+          ? 'Use Forgot Password to reset'
           : 'Use First-Time Signin to set password'
     });
-    
+
   } catch (error) {
     console.error('❌ Check student error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1589,31 +1591,31 @@ app.post('/api/check-student-exists', async (req, res) => {
 app.post('/api/forgot-password-initiate', async (req, res) => {
   try {
     const { studentId } = req.body;
-    
+
     if (!studentId) {
       return res.status(400).json({ success: false, error: 'Student ID (Roll Number) is required' });
     }
-    
+
     // Find student
     const student = await Student.findOne({ studentId: studentId.toUpperCase() });
     if (!student) {
       return res.status(404).json({ success: false, error: 'Student not found with this roll number' });
     }
-    
+
     if (!student.isPasswordSet) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No password set for this student. Please use first-time sign-in instead.' 
+      return res.status(400).json({
+        success: false,
+        error: 'No password set for this student. Please use first-time sign-in instead.'
       });
     }
-    
+
     res.json({
       success: true,
       message: 'Student verified. Please provide email for OTP.',
       studentName: student.name,
       maskedEmail: student.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') // Mask email for security
     });
-    
+
   } catch (error) {
     console.error('❌ Forgot password initiate error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1624,23 +1626,23 @@ app.post('/api/forgot-password-initiate', async (req, res) => {
 app.post('/api/forgot-password-send-otp', async (req, res) => {
   try {
     const { studentId, email } = req.body;
-    
+
     if (!studentId || !email) {
       return res.status(400).json({ success: false, error: 'Student ID and email are required' });
     }
-    
+
     // Find student first
-    const student = await Student.findOne({ 
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase()
     });
-    
+
     if (!student) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Student ID not found in our records' 
+      return res.status(400).json({
+        success: false,
+        error: 'Student ID not found in our records'
       });
     }
-    
+
     // For testing purposes, allow any email but warn if it doesn't match
     if (student.email.toLowerCase() !== email.toLowerCase()) {
       console.log(`⚠️ Email mismatch for ${studentId}:`);
@@ -1648,34 +1650,34 @@ app.post('/api/forgot-password-send-otp', async (req, res) => {
       console.log(`   Provided: ${email}`);
       console.log(`   Proceeding with OTP send for testing...`);
     }
-    
+
     // Generate OTP
     const otp = generateOTP();
-    
+
     // Remove any existing OTPs for this student
     await OTP.deleteMany({ studentId: studentId.toUpperCase() });
-    
+
     // Create new OTP record
     const otpRecord = new OTP({
       studentId: studentId.toUpperCase(),
       email: email.toLowerCase(),
       otp: otp
     });
-    
+
     await otpRecord.save();
-    
+
     // Send OTP email
     const emailSent = await sendOTPEmail(email, otp, student.name);
-    
+
     if (!emailSent) {
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Failed to send OTP email. Please try again.' 
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to send OTP email. Please try again.'
       });
     }
-    
+
     console.log(`✅ OTP sent to ${email} for student ${studentId}`);
-    
+
     res.json({
       success: true,
       message: 'OTP sent to your email address',
@@ -1683,7 +1685,7 @@ app.post('/api/forgot-password-send-otp', async (req, res) => {
       email: email,
       expiresIn: '10 minutes'
     });
-    
+
   } catch (error) {
     console.error('❌ OTP send error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1694,14 +1696,14 @@ app.post('/api/forgot-password-send-otp', async (req, res) => {
 app.post('/api/forgot-password-verify-otp', async (req, res) => {
   try {
     const { studentId, email, otp, newPassword } = req.body;
-    
+
     if (!studentId || !email || !otp || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'All fields are required: Student ID, email, OTP, and new password' 
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required: Student ID, email, OTP, and new password'
       });
     }
-    
+
     // Find and verify OTP
     const otpRecord = await OTP.findOne({
       studentId: studentId.toUpperCase(),
@@ -1709,72 +1711,72 @@ app.post('/api/forgot-password-verify-otp', async (req, res) => {
       otp: otp,
       isUsed: false
     });
-    
+
     if (!otpRecord) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid OTP or OTP already used' 
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid OTP or OTP already used'
       });
     }
-    
+
     // Check if OTP expired
     if (otpRecord.expiresAt < new Date()) {
       await OTP.deleteOne({ _id: otpRecord._id });
-      return res.status(400).json({ 
-        success: false, 
-        error: 'OTP has expired. Please request a new one.' 
+      return res.status(400).json({
+        success: false,
+        error: 'OTP has expired. Please request a new one.'
       });
     }
-    
+
     // Validate new password
     if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'New password must be at least 6 characters long' 
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters long'
       });
     }
-    
+
     // Find student and update password
     console.log(`🔍 Searching for student: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
-    
-    const student = await Student.findOne({ 
+
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase(),
       email: email.toLowerCase()
     });
-    
+
     if (!student) {
       console.log(`❌ Student not found for: ${studentId.toUpperCase()} with email: ${email.toLowerCase()}`);
-      
+
       // Try to find by studentId only to give better error message
       const studentById = await Student.findOne({ studentId: studentId.toUpperCase() });
       if (studentById) {
-        return res.status(404).json({ 
-          success: false, 
-          error: `Student ID found but email does not match. Registered email: ${studentById.email}` 
+        return res.status(404).json({
+          success: false,
+          error: `Student ID found but email does not match. Registered email: ${studentById.email}`
         });
       }
-      
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Student not found with this ID and email combination' 
+
+      return res.status(404).json({
+        success: false,
+        error: 'Student not found with this ID and email combination'
       });
     }
-    
+
     console.log(`✅ Student found: ${student.name} (${student.studentId})`);
-    
+
     // Hash new password and update
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
     await Student.findByIdAndUpdate(student._id, {
       passwordHash,
       updatedAt: new Date()
     });
-    
+
     // Mark OTP as used
     otpRecord.isUsed = true;
     await otpRecord.save();
-    
+
     console.log(`✅ Password reset successful for ${studentId} via OTP`);
-    
+
     res.json({
       success: true,
       message: 'Password reset successful! You can now login with your new password.',
@@ -1784,7 +1786,7 @@ app.post('/api/forgot-password-verify-otp', async (req, res) => {
         email: student.email
       }
     });
-    
+
   } catch (error) {
     console.error('❌ OTP verification error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -1794,7 +1796,7 @@ app.post('/api/forgot-password-verify-otp', async (req, res) => {
 // Upload and Import Students from CSV/Excel
 app.post('/api/import-students', upload.single('studentFile'), async (req, res) => {
   let filePath = null;
-  
+
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
@@ -1802,49 +1804,49 @@ app.post('/api/import-students', upload.single('studentFile'), async (req, res) 
 
     filePath = req.file.path;
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
-    
+
     console.log(`📁 Processing file: ${req.file.originalname} (${fileExtension})`);
-    
+
     let studentsData = [];
-    
+
     if (fileExtension === '.csv') {
       studentsData = await processCSVFile(filePath);
     } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
       studentsData = await processExcelFile(filePath);
     } else {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Unsupported file format. Please use CSV or Excel files.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Unsupported file format. Please use CSV or Excel files.'
       });
     }
-    
+
     console.log(`📊 Raw data extracted: ${studentsData.length} rows`);
     if (studentsData.length > 0) {
       console.log('📋 First row sample:', JSON.stringify(studentsData[0], null, 2));
     }
-    
+
     const validatedStudents = validateStudentData(studentsData);
-    
+
     console.log(`✅ Validated students: ${validatedStudents.length} records`);
-    
+
     if (validatedStudents.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No valid student records found in file. Please check the format and required fields.' 
+      return res.status(400).json({
+        success: false,
+        error: 'No valid student records found in file. Please check the format and required fields.'
       });
     }
-    
+
     const clearExisting = req.body.clearExisting === 'true';
     if (clearExisting) {
       const deletedCount = await Student.countDocuments();
       await Student.deleteMany({});
       console.log(`🗑️ Cleared ${deletedCount} existing student records`);
     }
-    
+
     const importResult = await importStudentsToDatabase(validatedStudents);
-    
+
     console.log(`✅ Import completed: ${importResult.successful} successful, ${importResult.failed} failed`);
-    
+
     res.json({
       success: true,
       message: 'Students imported successfully',
@@ -1856,12 +1858,12 @@ app.post('/api/import-students', upload.single('studentFile'), async (req, res) 
         errors: importResult.errors.slice(0, 10) // Limit error messages
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Import error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: `Import failed: ${error.message}` 
+    res.status(500).json({
+      success: false,
+      error: `Import failed: ${error.message}`
     });
   } finally {
     // Clean up uploaded file
@@ -1924,12 +1926,12 @@ app.get('/api/download-template', (req, res) => {
       'Lab ID': 'LAB-05'
     }
   ];
-  
+
   // Create CSV content
   const headers = Object.keys(sampleData[0]).join(',');
   const rows = sampleData.map(row => Object.values(row).join(',')).join('\n');
   const csvContent = headers + '\n' + rows;
-  
+
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="student-template.csv"');
   res.send(csvContent);
@@ -1942,7 +1944,7 @@ app.get('/api/download-template', (req, res) => {
 // Upload and Import Timetable from CSV
 app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, res) => {
   let filePath = null;
-  
+
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
@@ -1963,16 +1965,16 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
       try {
         // Parse date (format: YYYY-MM-DD)
         const sessionDate = new Date(row['Session Date'] || row.sessionDate);
-        
+
         // Get and validate lab ID
         const rawLabId = row['Lab ID'] || row.labId || 'CC1';
         const labId = String(rawLabId).toUpperCase();
-        
+
         // Validate lab ID exists in configuration
         if (!isValidLabId(labId)) {
           throw new Error(`Invalid Lab ID: ${labId}. Must be one of: ${Object.keys(getAllLabConfigs()).join(', ')}`);
         }
-        
+
         // Create timetable entry
         const timetableEntry = new TimetableEntry({
           sessionDate: sessionDate,
@@ -2016,31 +2018,31 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
     console.log(`   ❌ Failed: ${errorCount}`);    // ✅ CRITICAL FIX: Immediately check if any uploaded sessions should start NOW
     // Don't wait for the next cron cycle - check synchronously before sending response
     console.log('\n🚀 Checking if any sessions should start immediately...');
-    
+
     try {
       const now = new Date();
       const currentDate = now.toISOString().split('T')[0];
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
       const currentMinutes = currentHour * 60 + currentMinute;
-      
+
       console.log(`⏰ Current time: ${currentHour}:${currentMinute} (${currentMinutes} minutes from midnight)`);
-      
+
       const startOfDay = new Date(currentDate);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(currentDate);
       endOfDay.setHours(23, 59, 59, 999);
-      
+
       const todayEntries = await TimetableEntry.find({
         isActive: true,
         isProcessed: false,
         sessionDate: { $gte: startOfDay, $lte: endOfDay }
       });
-      
+
       console.log(`📋 Found ${todayEntries.length} unprocessed entries for today`);
-      
+
       let immediateStartCount = 0;
-      
+
       for (const entry of todayEntries) {
         // ✅ FIX: Normalize time format to handle "0:00" and "00:00"
         const normalizeTime = (timeStr) => {
@@ -2050,20 +2052,20 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
           const minutes = String(parts[1] || '0').padStart(2, '0');
           return `${hours}:${minutes}`;
         };
-        
+
         const normalizedStartTime = normalizeTime(entry.startTime);
         const normalizedEndTime = normalizeTime(entry.endTime);
-        
+
         const [startHour, startMin] = normalizedStartTime.split(':').map(Number);
         const [endHour, endMin] = normalizedEndTime.split(':').map(Number);
         const startMinutes = startHour * 60 + startMin;
         const endMinutes = endHour * 60 + endMin;
-        
+
         console.log(`\n📅 Checking entry: ${entry.subject}`);
         console.log(`   Start: ${normalizedStartTime} (${startMinutes} min) | End: ${normalizedEndTime} (${endMinutes} min)`);
         console.log(`   Current: ${currentHour}:${currentMinute} (${currentMinutes} min)`);
         console.log(`   Should start? ${currentMinutes >= startMinutes && currentMinutes < endMinutes}`);
-        
+
         // ✅ FIX: If current time is between start and end time, start immediately
         if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
           console.log(`\n🚀 IMMEDIATE START TRIGGERED!`);
@@ -2072,7 +2074,7 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
           console.log(`   Scheduled: ${normalizedStartTime} - ${normalizedEndTime}`);
           console.log(`   Uploaded at: ${now.toLocaleTimeString()}`);
           console.log(`   Time difference: ${currentMinutes - startMinutes} minutes late`);
-          
+
           const result = await autoStartLabSession(entry);
           if (result.success) {
             console.log(`✅ Session auto-started immediately: ${entry.subject}`);
@@ -2082,9 +2084,9 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
           }
         }
       }
-      
+
       console.log(`\n✅ Immediate start check complete: ${immediateStartCount} session(s) started\n`);
-      
+
     } catch (err) {
       console.error('❌ Error in immediate session check:', err);
     }
@@ -2099,12 +2101,12 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
 
   } catch (error) {
     console.error('❌ Timetable upload error:', error);
-    
+
     // Clean up file on error
     if (filePath && fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
-    
+
     res.status(500).json({
       success: false,
       error: error.message
@@ -2116,9 +2118,9 @@ app.post('/api/upload-timetable', upload.single('timetableFile'), async (req, re
 app.get('/api/timetable', async (req, res) => {
   try {
     const { date, labId, upcoming } = req.query;
-    
+
     let filter = { isActive: true };
-    
+
     // Filter by specific date
     if (date) {
       const startDate = new Date(date);
@@ -2127,12 +2129,12 @@ app.get('/api/timetable', async (req, res) => {
       endDate.setHours(23, 59, 59, 999);
       filter.sessionDate = { $gte: startDate, $lte: endDate };
     }
-    
+
     // Filter by lab ID
     if (labId) {
       filter.labId = labId.toUpperCase();
     }
-      // Only upcoming sessions
+    // Only upcoming sessions
     if (upcoming === 'true') {
       // ✅ FIX: Compare date only, not datetime (to show today's pending sessions)
       const today = new Date();
@@ -2140,11 +2142,11 @@ app.get('/api/timetable', async (req, res) => {
       filter.sessionDate = { $gte: today };
       filter.isProcessed = false;
     }
-    
+
     const entries = await TimetableEntry.find(filter)
       .sort({ sessionDate: 1, startTime: 1 })
       .limit(100);
-    
+
     res.json({ success: true, count: entries.length, entries });
   } catch (error) {
     console.error('Error fetching timetable:', error);
@@ -2181,48 +2183,48 @@ app.post('/api/timetable/clear-all', async (req, res) => {
 app.post('/api/manual-start-session', async (req, res) => {
   try {
     const { entryId } = req.body;
-    
+
     if (!entryId) {
       return res.status(400).json({ success: false, error: 'Entry ID is required' });
     }
-    
+
     console.log(`🚀 Manual start requested for timetable entry: ${entryId}`);
-    
+
     // Find the timetable entry
     const entry = await TimetableEntry.findById(entryId);
-    
+
     if (!entry) {
       return res.status(404).json({ success: false, error: 'Timetable entry not found' });
     }
-    
+
     console.log(`📋 Found entry: ${entry.subject} by ${entry.faculty}`);
-    
+
     // Check if already processed
     if (entry.isProcessed) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'This session has already been started' 
+      return res.status(400).json({
+        success: false,
+        error: 'This session has already been started'
       });
     }
-    
+
     // Start the session
     const result = await autoStartLabSession(entry);
-    
+
     if (result.success) {
       console.log(`✅ Manual start successful: ${entry.subject}`);
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: `Session started: ${entry.subject}`,
         sessionId: result.labSession._id
       });
     } else {
       console.error(`❌ Manual start failed: ${result.error}`);
-      res.status(500).json({ 
-        success: false, 
-        error: result.error || 'Failed to start session' 
+      res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to start session'
       });
     }
-    
+
   } catch (error) {
     console.error('❌ Manual start session error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -2245,7 +2247,7 @@ app.get('/api/timetable-template', (req, res) => {
 app.post('/api/student-register', async (req, res) => {
   try {
     const { name, studentId, email, password, dateOfBirth, department, year, labId } = req.body;
-    
+
     if (!name || !studentId || !email || !password || !dateOfBirth || !department || !year || !labId) {
       return res.status(400).json({ success: false, error: "Missing required fields." });
     }
@@ -2256,21 +2258,21 @@ app.post('/api/student-register', async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
-    const student = new Student({ 
-      name, 
-      studentId, 
-      email, 
-      passwordHash, 
-      dateOfBirth, 
-      department, 
-      year, 
+    const student = new Student({
+      name,
+      studentId,
+      email,
+      passwordHash,
+      dateOfBirth,
+      department,
+      year,
       labId,
       isPasswordSet: true
     });
-    
+
     await student.save();
     console.log(`✅ Student registered: ${studentId}`);
-    
+
     res.json({ success: true, message: "Student registered successfully." });
   } catch (error) {
     console.error("Registration error:", error);
@@ -2282,16 +2284,16 @@ app.post('/api/student-register', async (req, res) => {
 app.post('/api/student-authenticate', async (req, res) => {
   try {
     const { studentId, password, labId } = req.body;
-    
+
     const student = await Student.findOne({ studentId, labId });
     if (!student) {
       return res.status(400).json({ success: false, error: "Invalid student or lab" });
     }
 
     if (!student.isPasswordSet || !student.passwordHash) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Password not set. Please complete first-time signin first." 
+      return res.status(400).json({
+        success: false,
+        error: "Password not set. Please complete first-time signin first."
       });
     }
 
@@ -2302,9 +2304,9 @@ app.post('/api/student-authenticate', async (req, res) => {
 
     console.log(`✅ Authentication successful: ${studentId}`);
 
-    res.json({ 
-      success: true, 
-      student: { 
+    res.json({
+      success: true,
+      student: {
         name: student.name,
         studentId: student.studentId,
         email: student.email,
@@ -2323,12 +2325,12 @@ app.post('/api/student-authenticate', async (req, res) => {
 app.post('/api/student-first-signin', async (req, res) => {
   try {
     const { name, studentId, dateOfBirth, password } = req.body;
-    
+
     if (!name || !studentId || !dateOfBirth || !password) {
       return res.status(400).json({ success: false, error: "All fields are required" });
     }
 
-    const student = await Student.findOne({ 
+    const student = await Student.findOne({
       studentId: studentId.toUpperCase(),
       name: { $regex: new RegExp(name.trim(), 'i') }
     });
@@ -2343,21 +2345,21 @@ app.post('/api/student-first-signin', async (req, res) => {
 
     const providedDOB = new Date(dateOfBirth);
     const studentDOB = new Date(student.dateOfBirth);
-    
+
     if (providedDOB.toDateString() !== studentDOB.toDateString()) {
       return res.status(400).json({ success: false, error: "Date of birth does not match our records" });
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
-    await Student.findByIdAndUpdate(student._id, { 
+    await Student.findByIdAndUpdate(student._id, {
       passwordHash,
       isPasswordSet: true,
       updatedAt: new Date()
     });
 
     console.log(`✅ First-time signin completed for: ${studentId}`);
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Password set successfully! You can now login at kiosk.",
       student: {
         name: student.name,
@@ -2377,7 +2379,7 @@ app.post('/api/student-first-signin', async (req, res) => {
 app.post('/api/reset-password', async (req, res) => {
   try {
     const { studentId, dateOfBirth, newPassword } = req.body;
-    
+
     if (!studentId || !dateOfBirth || !newPassword) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
     }
@@ -2388,15 +2390,15 @@ app.post('/api/reset-password', async (req, res) => {
     }
 
     if (!student.isPasswordSet) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "No password set yet. Please complete first-time signin first." 
+      return res.status(400).json({
+        success: false,
+        error: "No password set yet. Please complete first-time signin first."
       });
     }
 
     const providedDate = new Date(dateOfBirth);
     const studentDOB = new Date(student.dateOfBirth);
-    
+
     if (providedDate.toDateString() !== studentDOB.toDateString()) {
       return res.status(400).json({ success: false, error: "Date of birth does not match our records" });
     }
@@ -2406,14 +2408,14 @@ app.post('/api/reset-password', async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
-    await Student.findByIdAndUpdate(student._id, { 
+    await Student.findByIdAndUpdate(student._id, {
       passwordHash,
       updatedAt: new Date()
     });
 
     console.log(`✅ Password reset successful for: ${studentId}`);
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Password reset successful! You can now login with your new password.",
       student: {
         name: student.name,
@@ -2439,21 +2441,21 @@ app.post('/api/student-login', async (req, res) => {
       if (existingSessions.length > 0) {
         console.log(`🧹 Ending ${existingSessions.length} existing active session(s) for student ${studentId}`);
         await Session.updateMany(
-          { studentId, status: 'active' }, 
+          { studentId, status: 'active' },
           { status: 'completed', logoutTime: new Date() }
         );
       }
     }
-    
+
     // End any existing session for this computer/system to prevent duplicates
     await Session.updateMany(
-      { systemNumber, status: 'active' }, 
+      { systemNumber, status: 'active' },
       { status: 'completed', logoutTime: new Date() }
     );
-    
+
     // Also end any other sessions on this computer name
     await Session.updateMany(
-      { computerName, status: 'active' }, 
+      { computerName, status: 'active' },
       { status: 'completed', logoutTime: new Date() }
     );
 
@@ -2463,20 +2465,20 @@ app.post('/api/student-login', async (req, res) => {
       clientIP = clientIP.substring(7); // Remove '::ffff:' prefix
     }
 
-    const newSession = new Session({ 
-      studentName: isGuest ? 'Guest User' : studentName, 
-      studentId: isGuest ? 'GUEST' : studentId, 
-      computerName, 
-      labId, 
+    const newSession = new Session({
+      studentName: isGuest ? 'Guest User' : studentName,
+      studentId: isGuest ? 'GUEST' : studentId,
+      computerName,
+      labId,
       systemNumber,
       ipAddress: clientIP, // Save cleaned IP for system matching
-      loginTime: new Date(), 
+      loginTime: new Date(),
       status: 'active',
       isGuest: isGuest || false
     });
-    
+
     await newSession.save();
-    
+
     // Update system registry with student login info - CRITICAL FOR SCREEN MIRRORING
     try {
       await SystemRegistry.findOneAndUpdate(
@@ -2499,40 +2501,52 @@ app.post('/api/student-login', async (req, res) => {
     } catch (regError) {
       console.error('❌ Error updating system registry:', regError);
     }
-    
+
     // Save session to CSV file
     await saveSessionToCSV(newSession);
-    
+
     // Update active lab session with this student record
     try {
-      const activeLabSession = await LabSession.findOne({ 
+      const activeLabSession = await LabSession.findOne({
         status: 'active',
-        labId: labId 
+        labId: labId
       });
       if (activeLabSession) {
         console.log(`📚 Found active lab session: ${activeLabSession.subject} (ID: ${activeLabSession._id})`);
-        
+
         // Remove any existing record for this system to prevent duplicates
         activeLabSession.studentRecords = activeLabSession.studentRecords.filter(
           record => record.systemNumber !== systemNumber
         );
-        
+
         // Also remove any existing record for this student to prevent duplicates
         if (!isGuest && studentId) {
           activeLabSession.studentRecords = activeLabSession.studentRecords.filter(
             record => record.studentId !== studentId
           );
         }
-        
+
+        // Look up student email for embedding in the record
+        let studentEmail = '';
+        if (!isGuest && studentId) {
+          try {
+            const studentDoc = await Student.findOne({ studentId }, { email: 1, _id: 0 }).lean();
+            if (studentDoc) studentEmail = studentDoc.email || '';
+          } catch (emailErr) {
+            console.warn(`⚠️ Could not look up email for ${studentId}:`, emailErr.message);
+          }
+        }
+
         // Add new student record
         activeLabSession.studentRecords.push({
           studentName,
           studentId,
+          email: studentEmail,
           systemNumber,
           loginTime: newSession.loginTime,
           status: 'active'
         });
-        
+
         await activeLabSession.save();
         console.log(`📚 Added ${studentName} to lab session: ${activeLabSession.subject}`);
       } else {
@@ -2542,23 +2556,23 @@ app.post('/api/student-login', async (req, res) => {
       console.error(`❌ Error updating lab session:`, labSessionError);
       // Continue with student login even if lab session update fails
     }
-    
+
     console.log(`✅ Session created: ${newSession._id} for ${studentName}`);
 
     // Notify admins of new session
-    io.to('admins').emit('session-created', { 
+    io.to('admins').emit('session-created', {
       _id: newSession._id,
-      sessionId: newSession._id, 
-      studentName, 
-      studentId, 
-      computerName, 
-      labId, 
-      systemNumber, 
-      loginTime: newSession.loginTime 
+      sessionId: newSession._id,
+      studentName,
+      studentId,
+      computerName,
+      labId,
+      systemNumber,
+      loginTime: newSession.loginTime
     });
 
     // CRITICAL: Notify kiosk to re-register with sessionId for screen mirroring
-    io.emit('session-login-success', { 
+    io.emit('session-login-success', {
       sessionId: newSession._id,
       systemNumber,
       labId,
@@ -2575,75 +2589,92 @@ app.post('/api/student-login', async (req, res) => {
   }
 });
 
-// Student Logout (End Session)
-app.post('/api/student-logout', async (req, res) => {
+// Helper for server-side logout
+async function performServerSideLogout(sessionId) {
   try {
-    const { sessionId } = req.body;
-    
     const session = await Session.findById(sessionId);
-    if (session) {
-      session.status = 'completed';
-      session.logoutTime = new Date();
-      session.duration = Math.floor((session.logoutTime - session.loginTime) / 1000);
-      await session.save();
+    if (!session || session.status === 'completed') return false; // Already logged out
 
-      // Update system registry - mark as available again
-      try {
-        await SystemRegistry.findOneAndUpdate(
-          { systemNumber: session.systemNumber },
-          {
-            status: 'available',
-            currentSessionId: null,
-            currentStudentId: null,
-            currentStudentName: null,
-            isGuest: false,
-            lastSeen: new Date()
-            // computerName is not changed on logout
-          }
-        );
-        console.log(`✅ System ${session.systemNumber} marked as available`);
-      } catch (regError) {
-        console.error('❌ Error updating system registry on logout:', regError);
-      }
+    session.status = 'completed';
+    session.logoutTime = new Date();
+    session.duration = Math.floor((session.logoutTime - session.loginTime) / 1000);
+    await session.save();
 
-      // Update session in CSV file
+    // Update system registry - mark as available again
+    try {
+      await SystemRegistry.findOneAndUpdate(
+        { systemNumber: session.systemNumber },
+        {
+          status: 'available',
+          currentSessionId: null,
+          currentStudentId: null,
+          currentStudentName: null,
+          isGuest: false,
+          lastSeen: new Date()
+          // computerName is not changed on logout
+        }
+      );
+      console.log(`✅ System ${session.systemNumber} marked as available (Server-Side Logout)`);
+    } catch (regError) {
+      console.error('❌ Error updating system registry on logout:', regError);
+    }
+
+    // Update session in CSV file
+    try {
       await updateSessionInCSV(session);
+    } catch (csvError) {
+      console.error('❌ Error updating CSV on logout:', csvError);
+    }
 
-      // Update active lab session with logout info
-      const activeLabSession = await LabSession.findOne({ 
+    // Update active lab session with logout info
+    try {
+      const activeLabSession = await LabSession.findOne({
         status: 'active',
-        labId: session.labId 
+        labId: session.labId
       });
       if (activeLabSession) {
         const studentRecord = activeLabSession.studentRecords.find(
           record => record.systemNumber === session.systemNumber && record.status === 'active'
         );
-        
+
         if (studentRecord) {
           studentRecord.logoutTime = session.logoutTime;
           studentRecord.duration = session.duration;
           studentRecord.status = 'completed';
-          
+
           await activeLabSession.save();
           console.log(`📚 Updated logout for ${session.studentName} in lab session: ${activeLabSession.subject}`);
         }
       }
-
-      console.log(`✅ Session ended: ${sessionId} - Duration: ${session.duration}s`);
-
-      // Notify admins of session end
-      io.to('admins').emit('session-ended', { 
-        sessionId, 
-        studentName: session.studentName, 
-        computerName: session.computerName, 
-        systemNumber: session.systemNumber,
-        logoutTime: session.logoutTime, 
-        duration: session.duration 
-      });
-
-      io.emit('stop-live-stream', { sessionId });
+    } catch (labErr) {
+      console.error('❌ Error updating lab session on logout:', labErr);
     }
-    
+
+    console.log(`✅ Session ended: ${sessionId} - Duration: ${session.duration}s`);
+
+    // Notify admins of session end
+    io.to('admins').emit('session-ended', {
+      sessionId,
+      studentName: session.studentName,
+      computerName: session.computerName,
+      systemNumber: session.systemNumber,
+      logoutTime: session.logoutTime,
+      duration: session.duration
+    });
+
+    io.emit('stop-live-stream', { sessionId });
+    return true;
+  } catch (error) {
+    console.error("Server-side logout error:", error);
+    return false;
+  }
+}
+
+// Student Logout (End Session)
+app.post('/api/student-logout', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    await performServerSideLogout(sessionId);
     res.json({ success: true });
   } catch (error) {
     console.error("Session logout error:", error);
@@ -2668,7 +2699,7 @@ app.post('/api/update-screenshot', async (req, res) => {
 app.get('/api/debug-lab-session', async (req, res) => {
   try {
     const activeLabSession = await LabSession.findOne({ status: 'active' });
-    
+
     if (activeLabSession) {
       console.log('🔍 DEBUG - Active Lab Session Found:');
       console.log('   ID:', activeLabSession._id);
@@ -2679,7 +2710,7 @@ app.get('/api/debug-lab-session', async (req, res) => {
       console.log('   Section:', activeLabSession.section);
       console.log('   Periods:', activeLabSession.periods);
       console.log('   Students:', activeLabSession.studentRecords.length);
-      
+
       res.json({
         success: true,
         session: activeLabSession
@@ -2702,11 +2733,11 @@ app.get('/api/active-sessions/:labId', async (req, res) => {
   try {
     const labIdParam = req.params.labId.toLowerCase();
     let filter = { status: 'active' };
-    
+
     if (labIdParam !== 'all') {
       filter.labId = labIdParam.toUpperCase();
     }
-    
+
     const sessions = await Session.find(filter).sort({ loginTime: -1 });
     res.json({ success: true, sessions });
   } catch (error) {
@@ -2737,21 +2768,21 @@ app.get('/api/guest-password', (req, res) => {
     // Generate 4-digit password based on current date
     const today = new Date();
     const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
+
     // Create hash from date
     const hash = crypto.createHash('sha256').update(dateString).digest('hex');
-    
+
     // Convert first 8 characters of hash to 4-digit number (0000-9999)
     const password = (parseInt(hash.substring(0, 8), 16) % 10000).toString().padStart(4, '0');
-    
+
     // Format date for display
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const formattedDate = `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
-    
+
     console.log(`🔑 Guest password generated: ${password} for ${formattedDate}`);
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       password: password,
       date: dateString,
       formattedDate: formattedDate
@@ -2766,17 +2797,17 @@ app.get('/api/guest-password', (req, res) => {
 app.post('/api/guest-authenticate', (req, res) => {
   try {
     const { password } = req.body;
-    
+
     if (!password || password.length !== 4) {
       return res.status(400).json({ success: false, error: 'Invalid password format' });
     }
-    
+
     // Generate today's password
     const today = new Date();
     const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
     const hash = crypto.createHash('sha256').update(dateString).digest('hex');
     const expectedPassword = (parseInt(hash.substring(0, 8), 16) % 10000).toString().padStart(4, '0');
-    
+
     // Verify password
     if (password === expectedPassword) {
       console.log(`✅ Guest authentication successful: ${password}`);
@@ -2806,23 +2837,23 @@ app.get('/api/labs', (req, res) => {
 app.get('/api/systems/:labId', async (req, res) => {
   try {
     const { labId } = req.params;
-    
+
     if (!isValidLabId(labId)) {
       return res.status(400).json({ success: false, error: 'Invalid lab ID' });
     }
-    
+
     // Get all registered (connected) systems for this lab from registry
     // ONLY show systems with logged-in or guest status (actively being used)
-    const systems = await SystemRegistry.find({ 
+    const systems = await SystemRegistry.find({
       labId,
       status: { $in: ['logged-in', 'guest'] } // Only show systems with active students
     })
       .sort({ systemNumber: 1 })
       .lean();
-    
+
     // Get lab configuration for metadata
     const labConfig = getLabConfig(labId);
-    
+
     // Create list with only logged-in/guest systems
     const systemList = systems.map(system => ({
       systemNumber: system.systemNumber,
@@ -2836,7 +2867,7 @@ app.get('/api/systems/:labId', async (req, res) => {
       isGuest: system.isGuest || false,
       sessionId: system.currentSessionId || null
     }));
-    
+
     // Calculate statistics
     const stats = {
       totalSystems: systemList.length,
@@ -2845,11 +2876,11 @@ app.get('/api/systems/:labId', async (req, res) => {
       guestSystems: systemList.filter(s => s.status === 'guest').length,
       offlineSystems: 0 // Not showing offline systems
     };
-    
+
     console.log(`📊 Systems for ${labId} (logged-in only):`, stats);
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       labId,
       labName: labConfig.labName,
       systems: systemList,
@@ -2880,17 +2911,17 @@ app.get('/api/stats', async (req, res) => {
     const totalStudents = await Student.countDocuments();
     const passwordsSet = await Student.countDocuments({ isPasswordSet: true });
     const pendingPasswords = await Student.countDocuments({ isPasswordSet: false });
-    
+
     const departmentStats = await Student.aggregate([
       { $group: { _id: "$department", count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]);
-    
+
     const yearStats = await Student.aggregate([
       { $group: { _id: "$year", count: { $sum: 1 } } },
       { $sort: { _id: 1 } }
     ]);
-    
+
     res.json({
       success: true,
       stats: {
@@ -2918,7 +2949,7 @@ app.get('/api/students/search/:query', async (req, res) => {
         { email: { $regex: query, $options: 'i' } }
       ]
     }, '-passwordHash').sort({ studentId: 1 }).limit(50);
-    
+
     res.json({ success: true, students, count: students.length });
   } catch (error) {
     console.error("Error searching students:", error);
@@ -2930,33 +2961,33 @@ app.get('/api/students/search/:query', async (req, res) => {
 app.get('/api/export-sessions', async (req, res) => {
   try {
     const { startDate, endDate, labId, status } = req.query;
-    
+
     // Build filter query
     let filter = {};
-    
+
     if (startDate && endDate) {
       filter.loginTime = {
         $gte: new Date(startDate),
         $lte: new Date(endDate + 'T23:59:59.999Z')
       };
     }
-    
+
     if (labId && labId !== 'all') {
       filter.labId = labId.toUpperCase();
     }
-    
+
     if (status && status !== 'all') {
       filter.status = status;
     }
-    
+
     console.log('📊 Exporting sessions with filter:', filter);
-    
+
     const sessions = await Session.find(filter)
       .sort({ loginTime: -1 })
       .lean();
-    
+
     console.log(`📊 Found ${sessions.length} sessions to export`);
-    
+
     // Prepare CSV data
     const csvData = sessions.map(session => ({
       'Session ID': session._id.toString(),
@@ -2988,26 +3019,26 @@ app.get('/api/export-sessions', async (req, res) => {
       'Status': session.status || 'unknown',
       'Date': session.loginTime ? new Date(session.loginTime).toLocaleDateString('en-IN') : 'N/A'
     }));
-    
+
     // Convert to CSV
     const csvHeaders = Object.keys(csvData[0] || {}).join(',') + '\n';
-    const csvRows = csvData.map(row => 
+    const csvRows = csvData.map(row =>
       Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')
     ).join('\n');
-    
+
     const csvContent = csvHeaders + csvRows;
-    
+
     // Set response headers for file download
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `lab-sessions-${timestamp}.csv`;
-    
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-    
+
     console.log(`✅ Exporting ${sessions.length} sessions as ${filename}`);
     res.send(csvContent);
-    
+
   } catch (error) {
     console.error('❌ Export sessions error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3017,11 +3048,11 @@ app.get('/api/export-sessions', async (req, res) => {
 // Helper function to format duration
 function formatDuration(seconds) {
   if (!seconds || seconds === 0) return '00:00:00';
-  
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  
+
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
@@ -3029,35 +3060,35 @@ function formatDuration(seconds) {
 app.get('/api/session-history', async (req, res) => {
   try {
     const { page = 1, limit = 50, labId, status, startDate, endDate } = req.query;
-    
+
     let filter = {};
-    
+
     if (labId && labId !== 'all') {
       filter.labId = labId.toUpperCase();
     }
-    
+
     if (status && status !== 'all') {
       filter.status = status;
     }
-    
+
     if (startDate && endDate) {
       filter.loginTime = {
         $gte: new Date(startDate),
         $lte: new Date(endDate + 'T23:59:59.999Z')
       };
     }
-    
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+
     const sessions = await Session.find(filter)
       .sort({ loginTime: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
-    
+
     const totalSessions = await Session.countDocuments(filter);
     const totalPages = Math.ceil(totalSessions / parseInt(limit));
-    
+
     res.json({
       success: true,
       sessions,
@@ -3069,7 +3100,7 @@ app.get('/api/session-history', async (req, res) => {
         hasPrev: parseInt(page) > 1
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Session history error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3080,24 +3111,24 @@ app.get('/api/session-history', async (req, res) => {
 app.post('/api/clear-all-sessions', async (req, res) => {
   try {
     console.log('🗑️ Clearing all sessions from database...');
-    
+
     const result = await Session.deleteMany({});
-    
+
     console.log(`✅ Cleared ${result.deletedCount} sessions from database`);
-    
+
     // Emit event to all connected clients
-    io.emit('sessions-cleared', { 
+    io.emit('sessions-cleared', {
       message: 'All sessions have been cleared',
       deletedCount: result.deletedCount,
       timestamp: new Date()
     });
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: `Successfully cleared ${result.deletedCount} sessions`,
       deletedCount: result.deletedCount
     });
-    
+
   } catch (error) {
     console.error('❌ Clear sessions error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3113,34 +3144,34 @@ app.post('/api/clear-all-sessions', async (req, res) => {
 app.post('/api/start-lab-session', async (req, res) => {
   try {
     const { subject, faculty, year, department, section, periods, startTime, expectedDuration, labId } = req.body;
-    
+
     // 🔧 MULTI-LAB: Detect lab from admin IP or use provided labId
     const adminIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for']?.split(',')[0];
     const detectedLabId = labId || detectLabFromIP(adminIP);
-    
+
     console.log(`🏢 Starting lab session for Lab: ${detectedLabId} (Admin IP: ${adminIP})`);
-    
-    // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
-    console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);    
+
     // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
     console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);
-    
+    // 🗑️ NEW: Clear all old student sessions for THIS LAB before starting new lab session
+    console.log(`🧹 Clearing all old student sessions for Lab ${detectedLabId}...`);
+
     // End all active student sessions for this lab only
     const activeSessionsCount = await Session.countDocuments({ status: 'active', labId: detectedLabId });
     if (activeSessionsCount > 0) {
       await Session.updateMany(
-        { status: 'active', labId: detectedLabId }, 
-        { 
-          status: 'completed', 
+        { status: 'active', labId: detectedLabId },
+        {
+          status: 'completed',
           logoutTime: new Date(),
           endReason: 'New lab session started - auto logout'
         }
       );
       console.log(`🗑️ Cleared ${activeSessionsCount} old student sessions for Lab ${detectedLabId}`);
     }
-    
+
     // Clean up any incomplete lab sessions for this lab
-    await LabSession.deleteMany({ 
+    await LabSession.deleteMany({
       labId: detectedLabId,
       $or: [
         { subject: { $exists: false } },
@@ -3148,15 +3179,15 @@ app.post('/api/start-lab-session', async (req, res) => {
         { periods: { $exists: false } }
       ]
     });
-    
+
     // End any existing active lab sessions for THIS LAB ONLY
     await LabSession.updateMany(
       { status: 'active', labId: detectedLabId },
       { status: 'completed', endTime: new Date() }
     );
-    
+
     console.log(`✅ Ready to start new lab session for Lab ${detectedLabId}...`);
-    
+
     // Create new lab session with labId
     const newLabSession = new LabSession({
       labId: detectedLabId, // 🔧 MULTI-LAB: Include lab identifier
@@ -3171,16 +3202,16 @@ app.post('/api/start-lab-session', async (req, res) => {
       status: 'active',
       studentRecords: []
     });
-    
+
     await newLabSession.save();
-    
+
     // Check how many student sessions are still active
     const activeStudentSessions = await Session.countDocuments({ status: 'active' });
-    console.log(`🚀 Lab session started: ${subject} by ${faculty} - ${year}${year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th'} Year ${department} ${section !== 'None' ? 'Section ' + section : ''}`);    
+    console.log(`🚀 Lab session started: ${subject} by ${faculty} - ${year}${year === 1 ? 'st' : year === 2 ? 'nd' : year === 3 ? 'rd' : 'th'} Year ${department} ${section !== 'None' ? 'Section ' + section : ''}`);
     console.log(`📊 Active student sessions preserved: ${activeStudentSessions}`);
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       session: {
         _id: newLabSession._id,
         subject: newLabSession.subject,
@@ -3195,7 +3226,7 @@ app.post('/api/start-lab-session', async (req, res) => {
       },
       message: 'Lab session started successfully'
     });
-    
+
   } catch (error) {
     console.error('Error starting lab session:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3206,7 +3237,7 @@ app.post('/api/start-lab-session', async (req, res) => {
 app.post('/api/end-lab-session', async (req, res) => {
   try {
     const { sessionId } = req.body;
-    
+
     // Handle force clear
     if (sessionId === 'force-clear' || sessionId === 'clear-all') {
       await LabSession.deleteMany({});
@@ -3214,25 +3245,25 @@ app.post('/api/end-lab-session', async (req, res) => {
       console.log('🧹 Force cleared all lab sessions');
       return res.json({ success: true, message: 'All lab sessions force cleared' });
     }
-    
+
     const labSession = await LabSession.findById(sessionId);
     if (!labSession) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Lab session not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
       });
     }
-    
+
     // 🔧 MULTI-LAB: Clear all individual student sessions for THIS LAB ONLY
     const activeSessions = await Session.find({ status: 'active', labId: labSession.labId });
     const currentTime = new Date();
-    
+
     console.log(`🛑 Ending ${activeSessions.length} active sessions for Lab ${labSession.labId}`);
-    
+
     for (const session of activeSessions) {
       const durationMs = currentTime - session.loginTime;
       const durationSeconds = Math.floor(durationMs / 1000);
-      
+
       await Session.findByIdAndUpdate(session._id, {
         status: 'completed',
         logoutTime: currentTime,
@@ -3254,32 +3285,45 @@ app.post('/api/end-lab-session', async (req, res) => {
         console.error('⚠️ Error notifying kiosk about session end:', notifyErr.message || notifyErr);
       }
     }
-    
+
     console.log(`🛑 Updated ${activeSessions.length} active sessions to completed`);
-    
-    // 🔧 FIX: Update labSession.studentRecords with final logout times and durations
+
+    // 🔧 ENHANCED: Update labSession.studentRecords with comprehensive data from Session collection
+    // This ensures ALL user activity is captured regardless of session start method
     // Set end time first
     labSession.endTime = new Date();
-    
+
     // Get ALL sessions (active + completed) for this lab during THIS session period ONLY
-    // Use both start and end time to avoid picking up future sessions
+    // This captures students, guests, and faculties - all user activity
     const allSessionsForThisLab = await Session.find({
       labId: labSession.labId,
-      loginTime: { 
+      loginTime: {
         $gte: labSession.startTime,
-        $lte: labSession.endTime  // 🔧 FIX: Add upper limit to avoid future sessions
+        $lte: labSession.endTime  // Use the actual end time to avoid future sessions
       }
     }).sort({ loginTime: 1 });
-    
+
+    console.log(`📊 COMPREHENSIVE DATA COLLECTION for session end:`);
     console.log(`📊 Found ${allSessionsForThisLab.length} total sessions for this lab session`);
     console.log(`📊 Session period: ${labSession.startTime} to ${labSession.endTime}`);
-    
+    console.log(`📊 Session started by: ${labSession.createdBy || 'unknown'}`);
+
     if (allSessionsForThisLab.length > 0) {
       console.log(`📊 First session: ${allSessionsForThisLab[0].studentName} at ${allSessionsForThisLab[0].loginTime}`);
-      console.log(`📊 Last session: ${allSessionsForThisLab[allSessionsForThisLab.length-1].studentName} at ${allSessionsForThisLab[allSessionsForThisLab.length-1].loginTime}`);
+      console.log(`📊 Last session: ${allSessionsForThisLab.length > 1 ? allSessionsForThisLab[allSessionsForThisLab.length - 1].studentName : 'N/A'} at ${allSessionsForThisLab.length > 1 ? allSessionsForThisLab[allSessionsForThisLab.length - 1].loginTime : 'N/A'}`);
+     
+      // Count different user types
+      const studentSessions = allSessionsForThisLab.filter(s => s.studentId && !s.studentId.includes('GUEST'));
+      const guestSessions = allSessionsForThisLab.filter(s => !s.studentId || s.studentId.includes('GUEST'));
+      const activeSessions = allSessionsForThisLab.filter(s => s.status === 'active');
+      const completedSessions = allSessionsForThisLab.filter(s => s.status === 'completed');
+     
+      console.log(`📊 User breakdown: ${studentSessions.length} students, ${guestSessions.length} guests`);
+      console.log(`📊 Status breakdown: ${completedSessions.length} completed, ${activeSessions.length} active`);
     }
-    
-    // Update studentRecords with complete data from Session collection
+
+    // 🔧 ENHANCED: Update studentRecords with comprehensive data from Session collection
+    // This ensures the lab session has complete record of ALL user activity
     labSession.studentRecords = allSessionsForThisLab.map(session => ({
       studentName: session.studentName,
       studentId: session.studentId,
@@ -3289,9 +3333,9 @@ app.post('/api/end-lab-session', async (req, res) => {
       duration: session.duration || 0,
       status: session.status
     }));
-    
-    console.log(`📊 Updated studentRecords array with ${labSession.studentRecords.length} records`);
-    
+
+    console.log(`📊 COMPREHENSIVE: Updated studentRecords array with ${labSession.studentRecords.length} records`);
+
     // Log sample records for debugging
     if (labSession.studentRecords.length > 0) {
       console.log(`📊 Sample record:`, {
@@ -3301,13 +3345,13 @@ app.post('/api/end-lab-session', async (req, res) => {
         duration: labSession.studentRecords[0].duration
       });
     }
-    
+
     // Update lab session status
     labSession.status = 'completed';
     await labSession.save();
-    
+
     console.log(`✅ Lab session saved with ${labSession.studentRecords.length} student records`);
-    
+
     // 🔧 FIX: Mark timetable entry as processed/completed when session ends
     try {
       const timetableEntry = await TimetableEntry.findOne({ labSessionId: labSession._id });
@@ -3320,18 +3364,18 @@ app.post('/api/end-lab-session', async (req, res) => {
       console.error('⚠️ Error updating timetable entry:', timetableErr.message);
       // Don't fail the entire operation if timetable update fails
     }
-    
+
     console.log(`🛑 Lab session ended: ${labSession.subject}`);
-    
+
     // Generate lab session CSV report
     const csvResult = await generateLabSessionCSV(labSession._id);
-    
+
     if (csvResult.success) {
       // Save to manual reports folder
       const filepath = path.join(MANUAL_REPORT_DIR, csvResult.filename);
       fs.writeFileSync(filepath, csvResult.csvContent, 'utf8');
       console.log(`💾 Lab session CSV saved: ${csvResult.filename}`);
-      
+
       // Notify all admins with CSV download link
       io.to('admins').emit('lab-session-ended', {
         sessionId: labSession._id,
@@ -3348,14 +3392,14 @@ app.post('/api/end-lab-session', async (req, res) => {
         clearedSessions: activeSessions.length
       });
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Lab session ended and all data cleared successfully',
       csvGenerated: csvResult.success,
       csvFilename: csvResult.success ? csvResult.filename : null
     });
-    
+
   } catch (error) {
     console.error('Error ending lab session:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3366,47 +3410,132 @@ app.post('/api/end-lab-session', async (req, res) => {
 app.post('/api/update-session-duration', async (req, res) => {
   try {
     const { sessionId, periods, expectedDuration } = req.body;
-    
+
     if (!sessionId || !periods || !expectedDuration) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Session ID, periods, and expected duration are required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Session ID, periods, and expected duration are required'
       });
     }
-    
+
     // Validate periods (1-6)
     if (periods < 1 || periods > 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Periods must be between 1 and 6' 
+      return res.status(400).json({
+        success: false,
+        error: 'Periods must be between 1 and 6'
       });
     }
-    
+
     // Find and update the lab session
     const labSession = await LabSession.findById(sessionId);
     if (!labSession) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Lab session not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
       });
     }
-    
+
     // Update the duration
     labSession.periods = periods;
     labSession.expectedDuration = expectedDuration;
     labSession.updatedAt = new Date();
     await labSession.save();
-    
+
     console.log(`⏱️ Session duration updated: ${labSession.subject} - ${periods} periods (${expectedDuration} min)`);
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Session duration updated successfully',
       session: labSession
     });
-    
+
   } catch (error) {
     console.error('Error updating session duration:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Extend active session time - allows extending the end time of an active session
+app.post('/api/extend-session-time', async (req, res) => {
+  try {
+    const { sessionId, extendMinutes } = req.body;
+
+    if (!sessionId || !extendMinutes) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session ID and extend minutes are required'
+      });
+    }
+
+    // Validate extension (1-240 minutes max)
+    if (extendMinutes < 1 || extendMinutes > 240) {
+      return res.status(400).json({
+        success: false,
+        error: 'Extension time must be between 1 and 240 minutes'
+      });
+    }
+
+    // Find the lab session
+    const labSession = await LabSession.findById(sessionId);
+    if (!labSession) {
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
+      });
+    }
+
+    // Check if session is still active
+    if (labSession.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        error: 'Can only extend active sessions'
+      });
+    }
+
+    // Calculate new end time (extend from now or from existing end time)
+    const currentTime = new Date();
+    const newEndTime = new Date(currentTime.getTime() + (extendMinutes * 60 * 1000));
+   
+    // Update session end time and duration
+    const oldEndTime = labSession.endTime;
+    labSession.endTime = newEndTime;
+    labSession.expectedDuration = Math.floor((newEndTime - labSession.startTime) / (1000 * 60)); // in minutes
+    labSession.updatedAt = new Date();
+    await labSession.save();
+
+    console.log(`⏰ Session time extended: ${labSession.subject}`);
+    console.log(`   Old end time: ${oldEndTime || 'Not set'}`);
+    console.log(`   New end time: ${newEndTime}`);
+    console.log(`   Extended by: ${extendMinutes} minutes`);
+    console.log(`   New expected duration: ${labSession.expectedDuration} minutes`);
+
+    // Notify admins about session extension
+    if (io) {
+      io.to('admins').emit('session-time-extended', {
+        sessionId: labSession._id,
+        subject: labSession.subject,
+        oldEndTime: oldEndTime,
+        newEndTime: newEndTime,
+        extendMinutes: extendMinutes,
+        expectedDuration: labSession.expectedDuration
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Session time extended by ${extendMinutes} minutes`,
+      session: {
+        _id: labSession._id,
+        subject: labSession.subject,
+        oldEndTime: oldEndTime,
+        newEndTime: newEndTime,
+        extendMinutes: extendMinutes,
+        expectedDuration: labSession.expectedDuration
+      }
+    });
+
+  } catch (error) {
+    console.error('Error extending session time:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -3415,30 +3544,30 @@ app.post('/api/update-session-duration', async (req, res) => {
 app.post('/api/force-clear-all', async (req, res) => {
   try {
     console.log('🚨 EMERGENCY: Force clearing ALL data...');
-    
+
     // Delete all lab sessions
     const labResult = await LabSession.deleteMany({});
-    
+
     // Set all individual sessions to completed with proper duration
     const activeSessionsForClear = await Session.find({ status: 'active' });
     const clearTime = new Date();
-    
+
     for (const session of activeSessionsForClear) {
       const durationMs = clearTime - session.loginTime;
       const durationSeconds = Math.floor(durationMs / 1000);
-      
+
       await Session.findByIdAndUpdate(session._id, {
         status: 'completed',
         logoutTime: clearTime,
         duration: durationSeconds
       });
     }
-    
+
     const sessionResult = { modifiedCount: activeSessionsForClear.length };
-    
+
     console.log(`🧹 Deleted ${labResult.deletedCount} lab sessions`);
     console.log(`🧹 Completed ${sessionResult.modifiedCount} individual sessions`);
-    
+
     res.json({
       success: true,
       message: `Emergency clear completed: ${labResult.deletedCount} lab sessions deleted, ${sessionResult.modifiedCount} individual sessions completed`,
@@ -3465,9 +3594,9 @@ app.post('/api/cleanup-lab-sessions', async (req, res) => {
         { section: { $exists: false } }
       ]
     });
-    
+
     console.log(`🧹 Cleaned up ${result.deletedCount} problematic lab sessions`);
-    
+
     res.json({
       success: true,
       message: `Cleaned up ${result.deletedCount} problematic lab sessions`,
@@ -3485,7 +3614,7 @@ app.get('/api/debug-current-session', async (req, res) => {
     const activeLabSession = await LabSession.findOne({ status: 'active' });
     const allSessions = await Session.find({}).sort({ loginTime: -1 }).limit(10);
     const activeSessions = await Session.find({ status: 'active' });
-    
+
     res.json({
       success: true,
       debug: {
@@ -3509,11 +3638,11 @@ app.get('/api/debug-current-session', async (req, res) => {
 app.get('/api/debug-session-data/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    
+
     const labSession = await LabSession.findById(sessionId);
     const allSessions = await Session.find({}).sort({ loginTime: -1 }).limit(10);
     const activeSessions = await Session.find({ status: 'active' });
-    
+
     res.json({
       success: true,
       debug: {
@@ -3532,21 +3661,21 @@ app.get('/api/debug-session-data/:sessionId', async (req, res) => {
 app.get('/api/export-session-data/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    
+
     const labSession = await LabSession.findById(sessionId);
     if (!labSession) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Lab session not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Lab session not found'
       });
     }
-    
+
     console.log(`📊 Lab session found: ${labSession.subject} - Start time: ${labSession.startTime}`);
     console.log(`📊 Lab session embedded student records: ${labSession.studentRecords ? labSession.studentRecords.length : 0}`);
-    
+
     // PRIORITY 1: Use embedded student records from lab session (most reliable)
     let finalStudentRecords = [];
-    
+
     if (labSession.studentRecords && labSession.studentRecords.length > 0) {
       console.log(`📊 Using embedded student records from lab session: ${labSession.studentRecords.length}`);
       finalStudentRecords = labSession.studentRecords;
@@ -3557,11 +3686,11 @@ app.get('/api/export-session-data/:sessionId', async (req, res) => {
         loginTime: { $gte: labSession.startTime },
         ...(labSession.endTime && { loginTime: { $lte: labSession.endTime } })
       }).sort({ loginTime: 1 });
-      
+
       console.log(`📊 Found ${studentRecords.length} individual session records`);
       finalStudentRecords = studentRecords;
     }
-    
+
     // PRIORITY 3: If still no records, get ALL active sessions (fallback)
     if (finalStudentRecords.length === 0) {
       console.log(`📊 No records found, using ALL active sessions as fallback...`);
@@ -3569,10 +3698,25 @@ app.get('/api/export-session-data/:sessionId', async (req, res) => {
       console.log(`📊 Found ${allActiveSessions.length} active sessions as fallback`);
       finalStudentRecords = allActiveSessions;
     }
-    
+
     console.log(`📊 FINAL: Will export ${finalStudentRecords.length} student records`);
     console.log(`📊 Student names in export:`, finalStudentRecords.map(r => r.studentName));
-    
+
+    // 🔧 EMAIL ENRICHMENT: Look up student emails from Student collection
+    const studentIdsForEmail = finalStudentRecords
+      .filter(r => !r.email)
+      .map(r => r.studentId)
+      .filter(Boolean);
+
+    let emailLookup = {};
+    if (studentIdsForEmail.length > 0) {
+      const studentsWithEmail = await Student.find(
+        { studentId: { $in: studentIdsForEmail } },
+        { studentId: 1, email: 1, _id: 0 }
+      ).lean();
+      studentsWithEmail.forEach(s => { emailLookup[s.studentId] = s.email; });
+    }
+
     res.json({
       success: true,
       sessionData: {
@@ -3589,14 +3733,16 @@ app.get('/api/export-session-data/:sessionId', async (req, res) => {
       studentRecords: finalStudentRecords.map(record => ({
         studentName: record.studentName,
         studentId: record.studentId,
+        email: record.email || emailLookup[record.studentId] || 'N/A',
         systemNumber: record.systemNumber,
+        computerName: record.computerName,
         loginTime: record.loginTime,
         logoutTime: record.logoutTime,
         duration: record.duration,
         status: record.status
       }))
     });
-    
+
   } catch (error) {
     console.error('Error exporting session data:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3611,17 +3757,17 @@ const pendingOffers = new Map(); // sessionId -> { offer, adminSocketId } — qu
 
 io.on('connection', (socket) => {
   console.log("✅ Socket connected:", socket.id);
-  
+
   // Get client IP address for lab detection
   const clientIP = socket.handshake.address.replace('::ffff:', ''); // Remove IPv6 prefix if present
   console.log('🌐 Client IP:', clientIP);
 
-  socket.on('computer-online', (data) => { 
-    console.log("💻 Computer online:", data); 
+  socket.on('computer-online', (data) => {
+    console.log("💻 Computer online:", data);
   });
 
-  socket.on('screen-share', (data) => { 
-    socket.broadcast.emit('live-screen', data); 
+  socket.on('screen-share', (data) => {
+    socket.broadcast.emit('live-screen', data);
   });
 
   // ========================================================================
@@ -3638,34 +3784,36 @@ io.on('connection', (socket) => {
         labId: detectedLabId,
         ipAddress: ipAddress || clientIP
       });
-      
+
       // Register by session ID if available (after login)
       if (sessionId) {
         kioskSockets.set(sessionId, socket.id);
         socket.join(`session-${sessionId}`);
-        
+
         // ✅ TIMING FIX: Flush any pending offer that arrived before kiosk registered
         if (pendingOffers.has(sessionId)) {
           const pending = pendingOffers.get(sessionId);
           pendingOffers.delete(sessionId);
-          console.log(`📤 FLUSHING pending offer for session ${sessionId} to newly-registered kiosk ${socket.id}`);
-          socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId });
+          console.log(`📤 FLUSHING pending offer for session ${sessionId} to newly-registered kiosk ${socket.id} (nonce: ${pending.nonce})`);
+          // 🔥 FIX: Include nonce so admin can correlate answer to offer
+          socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId, nonce: pending.nonce });
         }
       }
-      
+
       // Always register by system number (works before and after login)
       if (systemNumber) {
         kioskSystemSockets.set(systemNumber, socket.id);
         console.log(`✅ Registered kiosk by system number: ${systemNumber} -> ${socket.id}`);
-        
+
         // ✅ FIX 6: Flush pending offer keyed by systemNumber (when admin sent offer before kiosk registered by sessionId)
         if (!sessionId && pendingOffers.has(systemNumber)) {
           const pending = pendingOffers.get(systemNumber);
           pendingOffers.delete(systemNumber);
-          console.log(`📤 FLUSHING pending offer for systemNumber ${systemNumber} to newly-registered kiosk ${socket.id}`);
-          socket.emit('admin-offer', { offer: pending.offer, sessionId: pending.sessionId || null, adminSocketId: pending.adminSocketId });
+          console.log(`📤 FLUSHING pending offer for systemNumber ${systemNumber} to newly-registered kiosk ${socket.id} (nonce: ${pending.nonce})`);
+          // 🔥 FIX: Include nonce so admin can correlate answer to offer
+          socket.emit('admin-offer', { offer: pending.offer, sessionId: pending.sessionId || null, adminSocketId: pending.adminSocketId, nonce: pending.nonce });
         }
-        
+
         // Update system registry in database
         await SystemRegistry.findOneAndUpdate(
           { systemNumber },
@@ -3680,49 +3828,50 @@ io.on('connection', (socket) => {
           },
           { upsert: true, new: true }
         );
-        
+
         console.log(`✅ System registry updated: ${systemNumber} in lab ${detectedLabId}`);
-        
+
         // Broadcast updated system list to all admins
         const availableSystems = await SystemRegistry.find({ status: { $ne: 'offline' } })
           .sort({ systemNumber: 1 })
           .lean();
-        
+
         io.to('admins').emit('systems-registry-update', {
           systems: availableSystems,
           timestamp: new Date().toISOString()
         });
       }
-      
+
       socket.join(`lab-${detectedLabId}`); // Join lab-specific room
-      
+
     } catch (error) {
       console.error('❌ Error in register-kiosk:', error);
     }
   });
-  
+
   // Handle kiosk screen ready event
   socket.on('kiosk-screen-ready', ({ sessionId, hasVideo, timestamp }) => {
     console.log('🎉 KIOSK SCREEN READY:', sessionId, 'Has Video:', hasVideo);
-    
+
     // ✅ FIX 7: Flush any pending offer now that kiosk's screen is confirmed ready
     if (sessionId && pendingOffers.has(sessionId)) {
       const pending = pendingOffers.get(sessionId);
       pendingOffers.delete(sessionId);
-      console.log(`📤 FLUSHING pending offer on kiosk-screen-ready for session ${sessionId}`);
-      socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId });
+      console.log(`📤 FLUSHING pending offer on kiosk-screen-ready for session ${sessionId} (nonce: ${pending.nonce})`);
+      // 🔥 FIX: Include nonce so kiosk can echo it back and admin can validate the answer
+      socket.emit('admin-offer', { offer: pending.offer, sessionId, adminSocketId: pending.adminSocketId, nonce: pending.nonce });
     }
-    
+
     // Notify all admins that this kiosk's screen is ready for monitoring
-    io.to('admins').emit('kiosk-screen-ready', { 
-      sessionId, 
-      hasVideo, 
+    io.to('admins').emit('kiosk-screen-ready', {
+      sessionId,
+      hasVideo,
       timestamp,
       kioskSocketId: socket.id
     });
     console.log('📡 Notified admins: Kiosk screen ready for session:', sessionId);
   });
-  
+
   // Handle system heartbeat via Socket.IO (real-time socketId updates)
   socket.on('system-heartbeat', async ({ systemNumber, computerName, labId, ipAddress, timestamp, status }) => {
     try {
@@ -3730,7 +3879,7 @@ io.on('connection', (socket) => {
         console.warn('⚠️ Invalid heartbeat: missing systemNumber or labId');
         return;
       }
-      
+
       // Update registry with current socket ID
       await SystemRegistry.findOneAndUpdate(
         { systemNumber, labId },
@@ -3745,80 +3894,83 @@ io.on('connection', (socket) => {
         },
         { upsert: true, new: true }
       );
-      
+
       // Also track in kioskSystemSockets for quick lookup
       kioskSystemSockets.set(systemNumber, socket.id);
-      
+
     } catch (error) {
       console.error('❌ Socket heartbeat error:', error);
     }
   });
 
-  socket.on('admin-offer', ({ offer, sessionId, adminSocketId, systemNumber }) => {
+  socket.on('admin-offer', ({ offer, sessionId, adminSocketId, systemNumber, nonce }) => {
     // Try to find kiosk by sessionId first (after login)
     let kioskSocketId = sessionId ? kioskSockets.get(sessionId) : null;
-    
+
     // If not found by sessionId, try by systemNumber (before login or guest mode)
     if (!kioskSocketId && systemNumber) {
       kioskSocketId = kioskSystemSockets.get(systemNumber);
       console.log(`📹 Kiosk found by system number: ${systemNumber} -> ${kioskSocketId}`);
     }
-    
+
     const isModal = adminSocketId && adminSocketId.includes('-modal');
-    console.log('📹 Admin offer for session:', sessionId || 'PRE-LOGIN', 'System:', systemNumber, '-> Kiosk:', kioskSocketId, 'Modal:', isModal);
-    
+    console.log('📹 Admin offer for session:', sessionId || 'PRE-LOGIN', 'System:', systemNumber, '-> Kiosk:', kioskSocketId, 'Modal:', isModal, 'Nonce:', nonce);
+
     // Track admin for this session/system
     // 🔥 FIX: Replace the admin list entirely on each new offer so stale IDs don't accumulate.
     // Old IDs from previous failed attempts would route answers/ICE to disconnected sockets.
     const trackingKey = sessionId || systemNumber;
     adminSockets.set(trackingKey, adminSocketId ? [adminSocketId] : []);
     console.log(`📹 Admin registered for key "${trackingKey}": ${adminSocketId}`);
-    
+
     if (kioskSocketId) {
       console.log('📤 Forwarding offer to kiosk:', kioskSocketId);
       console.log('📤 Offer params:', {
         hasOffer: !!offer,
         sessionId: sessionId || null,
         adminSocketId: adminSocketId,
-        kioskSocketId: kioskSocketId
+        kioskSocketId: kioskSocketId,
+        nonce: nonce
       });
-      io.to(kioskSocketId).emit('admin-offer', { offer, sessionId: sessionId || null, adminSocketId });
+      // 🔥 FIX: Forward nonce to kiosk so it can echo it back in the answer
+      io.to(kioskSocketId).emit('admin-offer', { offer, sessionId: sessionId || null, adminSocketId, nonce });
       console.log('✅ Offer emitted to kiosk');
-      } else {
-        // ✅ TIMING FIX: Queue the offer if kiosk hasn't registered with sessionId yet
-        if (sessionId) {
-          console.log(`⏳ Kiosk not found yet for session ${sessionId} — queuing by sessionId for when kiosk registers`);
-          pendingOffers.set(sessionId, { offer, adminSocketId, sessionId });
-          setTimeout(() => { if (pendingOffers.get(sessionId)?.offer === offer) pendingOffers.delete(sessionId); }, 120000);
-        }
-        // ✅ FIX 6: ALSO queue by systemNumber — covers the case where kiosk reconnects before login
-        // When kiosk boots and calls register-kiosk with just systemNumber, flush fires
-        if (systemNumber) {
-          console.log(`⏳ ALSO queuing by systemNumber ${systemNumber} for when kiosk re-registers`);
-          pendingOffers.set(systemNumber, { offer, adminSocketId, sessionId: sessionId || null });
-          setTimeout(() => { if (pendingOffers.get(systemNumber)?.offer === offer) pendingOffers.delete(systemNumber); }, 120000);
-        }
-        if (!sessionId && !systemNumber) {
-          console.warn('⚠️ No sessionId or systemNumber — cannot queue offer, kiosk unreachable');
-          if (adminSocketId) {
-            const targetSocketId = adminSocketId.replace('-modal', '');
-            io.to(targetSocketId).emit('webrtc-error', { sessionId, error: 'Student not connected' });
-          }
+    } else {
+      // ✅ TIMING FIX: Queue the offer if kiosk hasn't registered with sessionId yet
+      if (sessionId) {
+        console.log(`⏳ Kiosk not found yet for session ${sessionId} — queuing by sessionId for when kiosk registers`);
+        pendingOffers.set(sessionId, { offer, adminSocketId, sessionId, nonce });
+        setTimeout(() => { if (pendingOffers.get(sessionId)?.offer === offer) pendingOffers.delete(sessionId); }, 120000);
+      }
+      // ✅ FIX 6: ALSO queue by systemNumber — covers the case where kiosk reconnects before login
+      // When kiosk boots and calls register-kiosk with just systemNumber, flush fires
+      if (systemNumber) {
+        console.log(`⏳ ALSO queuing by systemNumber ${systemNumber} for when kiosk re-registers`);
+        pendingOffers.set(systemNumber, { offer, adminSocketId, sessionId: sessionId || null, nonce });
+        setTimeout(() => { if (pendingOffers.get(systemNumber)?.offer === offer) pendingOffers.delete(systemNumber); }, 120000);
+      }
+      if (!sessionId && !systemNumber) {
+        console.warn('⚠️ No sessionId or systemNumber — cannot queue offer, kiosk unreachable');
+        if (adminSocketId) {
+          const targetSocketId = adminSocketId.replace('-modal', '');
+          io.to(targetSocketId).emit('webrtc-error', { sessionId, error: 'Student not connected' });
         }
       }
+    }
   });
 
 
-  socket.on('webrtc-answer', ({ answer, adminSocketId, sessionId }) => {
+  socket.on('webrtc-answer', ({ answer, adminSocketId, sessionId, nonce }) => {
     console.log('📹 ✅✅✅ SERVER RECEIVED WebRTC answer from kiosk!');
     console.log('📹 Answer details:', {
       hasAnswer: !!answer,
       answerType: answer?.type,
       adminSocketId: adminSocketId,
       sessionId: sessionId,
+      nonce: nonce,
       kioskSocketId: socket.id
     });
-    
+
     // Use adminSockets registry (same as ICE candidate routing) — more reliable than raw socket ID
     // The raw adminSocketId can be stale if admin browser reconnected since the offer was sent
     // admin-offer registers admins using key = sessionId || systemNumber, so check both
@@ -3832,11 +3984,12 @@ io.on('connection', (socket) => {
       registeredAdmins = adminSockets.get(kioskSystemNum) || [];
       console.log(`📹 Falling back to systemNumber key "${kioskSystemNum}": ${registeredAdmins.length} admin(s)`);
     }
-    
+
     if (registeredAdmins.length > 0) {
       console.log(`📹 Forwarding answer to ${registeredAdmins.length} registered admin(s) for session: ${sessionId}`);
       registeredAdmins.forEach(registeredAdminId => {
-        io.to(registeredAdminId).emit('webrtc-answer', { answer, sessionId, adminSocketId });
+        // 🔥 FIX: Forward nonce so admin can discard stale duplicate answers
+        io.to(registeredAdminId).emit('webrtc-answer', { answer, sessionId, adminSocketId, nonce });
       });
     } else {
       // Fallback: use raw adminSocketId from the offer
@@ -3846,7 +3999,7 @@ io.on('connection', (socket) => {
       }
       console.log('📹 No registered admins in registry, falling back to raw adminSocketId:', targetSocketId);
       if (targetSocketId) {
-        io.to(targetSocketId).emit('webrtc-answer', { answer, sessionId, adminSocketId });
+        io.to(targetSocketId).emit('webrtc-answer', { answer, sessionId, adminSocketId, nonce });
       } else {
         console.error('❌ SERVER: Cannot route webrtc-answer — no adminSocketId and no registered admins for session:', sessionId);
       }
@@ -3940,13 +4093,13 @@ io.on('connection', (socket) => {
 
   // Store admin's lab ID when they register
   let adminLabMap = new Map(); // socket.id -> labId
-  
+
   socket.on('register-admin', (data) => {
     // 🔧 MULTI-LAB: Admin can provide labId or it's auto-detected
     const adminIP = socket.handshake.address || socket.request.connection.remoteAddress;
     const providedLabId = data?.labId;
     const detectedLabId = providedLabId || detectLabFromIP(adminIP);
-    
+
     adminLabMap.set(socket.id, detectedLabId);
     console.log(`👨‍💼 Admin registered: ${socket.id} for Lab: ${detectedLabId} (IP: ${adminIP})`);
     socket.join('admins');
@@ -3957,37 +4110,37 @@ io.on('connection', (socket) => {
   socket.on('grant-guest-access', async ({ systemNumber, labId }) => {
     try {
       console.log(`🔓 Admin requesting guest access for system: ${systemNumber} in lab: ${labId}`);
-      
+
       // Find kiosk by system number (works even before login)
       const kioskSocketId = kioskSystemSockets.get(systemNumber);
-      
+
       if (!kioskSocketId) {
         console.error(`❌ Kiosk not found for system: ${systemNumber}`);
-        socket.emit('guest-access-error', { 
-          systemNumber, 
-          error: `System ${systemNumber} is not connected or not registered` 
+        socket.emit('guest-access-error', {
+          systemNumber,
+          error: `System ${systemNumber} is not connected or not registered`
         });
         return;
       }
-      
+
       console.log(`✅ Found kiosk socket for system ${systemNumber}: ${kioskSocketId}`);
-      
+
       // Send guest access command to kiosk
       io.to(kioskSocketId).emit('guest-access-granted', {
         systemNumber,
         labId: labId || 'CC1',
         timestamp: new Date().toISOString()
       });
-      
+
       console.log(`✅ Guest access command sent to kiosk: ${systemNumber}`);
-      
+
       // Notify admin of success
       socket.emit('guest-access-success', {
         systemNumber,
         labId,
         message: `Guest access granted for ${systemNumber}`
       });
-      
+
     } catch (error) {
       console.error('❌ Error granting guest access:', error);
       socket.emit('guest-access-error', {
@@ -4001,29 +4154,29 @@ io.on('connection', (socket) => {
     try {
       // 🔧 MULTI-LAB: Get labId from admin's stored value or request data
       const adminLabId = adminLabMap.get(socket.id) || data?.labId || 'CC1';
-      
+
       console.log(`📋 Admin requesting active sessions for Lab: ${adminLabId}`);
-      
+
       // Get ALL active sessions first - CRITICAL: Only get sessions with valid studentId (actual logins)
-      const allActiveSessions = await Session.find({ 
+      const allActiveSessions = await Session.find({
         status: 'active',
         studentId: { $ne: null, $ne: '' } // Exclude null or empty studentIds (pre-login kiosks)
       }).sort({ loginTime: -1 });
       console.log(`📊 Total active sessions in DB: ${allActiveSessions.length}`);
-      
+
       // Filter by lab ID (but if none match, return all to avoid empty screen)
       let activeSessions = allActiveSessions.filter(s => s.labId === adminLabId);
-      
+
       // CRITICAL FIX: If no sessions match the lab ID, return ALL active sessions
       // This prevents "empty screen" issue when lab IDs don't match
       if (activeSessions.length === 0 && allActiveSessions.length > 0) {
         console.log(`⚠️ No sessions found for Lab ${adminLabId}, returning ALL active sessions`);
         activeSessions = allActiveSessions;
       }
-      
+
       // Also get active lab session - try specific lab first, then ANY active session
       let activeLabSession = await LabSession.findOne({ status: 'active', labId: adminLabId });
-      
+
       if (!activeLabSession) {
         // If no lab session for this lab, get ANY active lab session
         activeLabSession = await LabSession.findOne({ status: 'active' });
@@ -4031,15 +4184,15 @@ io.on('connection', (socket) => {
           console.log(`ℹ️ Using active lab session from different lab: ${activeLabSession.labId}`);
         }
       }
-      
+
       socket.emit('active-sessions', {
         sessions: activeSessions,
         labSession: activeLabSession,
         labId: adminLabId // Send labId back to admin
       });
-      
+
       console.log(`📊 Sent ${activeSessions.length} sessions for Lab ${adminLabId} and lab session: ${activeLabSession ? activeLabSession.subject : 'none'}`);
-      
+
       // Debug logging
       if (activeSessions.length > 0) {
         activeSessions.forEach(s => {
@@ -4055,12 +4208,12 @@ io.on('connection', (socket) => {
   // Shutdown specific system
   socket.on('shutdown-system', ({ sessionId }) => {
     console.log(`🔌 Shutdown command received for session: ${sessionId}`);
-    
+
     const kioskSocketId = kioskSockets.get(sessionId);
     if (kioskSocketId) {
       io.to(kioskSocketId).emit('execute-shutdown');
       console.log(`✅ Shutdown signal sent to kiosk: ${kioskSocketId}`);
-      
+
       // Log the shutdown action
       Session.findByIdAndUpdate(sessionId, {
         shutdownInitiatedAt: new Date(),
@@ -4075,16 +4228,16 @@ io.on('connection', (socket) => {
   // Shutdown all systems in a lab
   socket.on('shutdown-all-systems', async ({ labId }) => {
     console.log(`🔌 Shutdown ALL systems command received for lab: ${labId}`);
-    
+
     try {
       // Get all active sessions in this lab
-      const activeSessions = await Session.find({ 
-        labId: labId, 
-        status: 'active' 
+      const activeSessions = await Session.find({
+        labId: labId,
+        status: 'active'
       });
-      
+
       console.log(`📋 Found ${activeSessions.length} active sessions in lab ${labId}`);
-      
+
       let shutdownCount = 0;
       for (const session of activeSessions) {
         const kioskSocketId = kioskSockets.get(session._id.toString());
@@ -4092,7 +4245,7 @@ io.on('connection', (socket) => {
           io.to(kioskSocketId).emit('execute-shutdown');
           shutdownCount++;
           console.log(`✅ Shutdown signal sent to session: ${session._id}`);
-          
+
           // Log the shutdown action
           Session.findByIdAndUpdate(session._id, {
             shutdownInitiatedAt: new Date(),
@@ -4100,7 +4253,7 @@ io.on('connection', (socket) => {
           }).catch(err => console.error('❌ Error logging shutdown:', err));
         }
       }
-      
+
       console.log(`✅ Shutdown signal broadcast to ${shutdownCount} systems in lab ${labId}`);
       socket.emit('shutdown-all-complete', { labId, count: shutdownCount });
     } catch (error) {
@@ -4112,11 +4265,11 @@ io.on('connection', (socket) => {
   // ========================================================================
   // HARDWARE MONITORING - Disconnect Detection
   // ========================================================================
-  
+
   // Handle hardware alerts (disconnections and reconnections)
   socket.on('hardware-alert', async (alertData) => {
     console.log('🚨 Hardware alert received:', alertData);
-    
+
     try {
       // Save alert to database
       const alert = new HardwareAlert({
@@ -4129,17 +4282,17 @@ io.on('connection', (socket) => {
         message: alertData.message,
         timestamp: alertData.timestamp || new Date()
       });
-      
+
       await alert.save();
       console.log('✅ Hardware alert saved to database:', alert._id);
-      
+
       // Broadcast alert to all admin dashboards
       io.to('admins').emit('admin-hardware-alert', {
         ...alertData,
         alertId: alert._id,
         savedAt: new Date()
       });
-      
+
       console.log('📡 Alert broadcast to admins:', alertData.deviceType, alertData.type);
     } catch (error) {
       console.error('❌ Error handling hardware alert:', error);
@@ -4149,7 +4302,7 @@ io.on('connection', (socket) => {
   // Handle hardware status reports
   socket.on('hardware-status', (statusData) => {
     console.log('📊 Hardware status received:', statusData);
-    
+
     // Broadcast status to admins (optional - for dashboard monitoring)
     io.to('admins').emit('hardware-status-update', statusData);
   });
@@ -4161,7 +4314,7 @@ io.on('connection', (socket) => {
       const alerts = await HardwareAlert.find(query)
         .sort({ timestamp: -1 })
         .limit(limit);
-      
+
       socket.emit('hardware-alerts-list', alerts);
       console.log(`📋 Sent ${alerts.length} hardware alerts to admin`);
     } catch (error) {
@@ -4178,10 +4331,10 @@ io.on('connection', (socket) => {
         acknowledgedAt: new Date(),
         acknowledgedBy: adminName || 'admin'
       });
-      
+
       console.log(`✅ Alert ${alertId} acknowledged by ${adminName}`);
       socket.emit('alert-acknowledged', { alertId, success: true });
-      
+
       // Notify other admins
       io.to('admins').emit('alert-status-changed', { alertId, acknowledged: true });
     } catch (error) {
@@ -4193,11 +4346,11 @@ io.on('connection', (socket) => {
   // ========================================================================
   // GUEST ACCESS / BYPASS LOGIN
   // ========================================================================
-  
+
   socket.on('admin-enable-guest-access', async ({ systemNumber, adminName, labId }) => {
     try {
       console.log('🔓 Admin enabling guest access for system:', systemNumber);
-      
+
       // Update system registry to mark as guest (even if not yet registered)
       await SystemRegistry.findOneAndUpdate(
         { systemNumber },
@@ -4208,7 +4361,7 @@ io.on('connection', (socket) => {
         },
         { upsert: true, new: true }
       );
-      
+
       // Broadcast to all kiosks - the matching system will respond
       io.emit('enable-guest-access', {
         systemNumber: systemNumber,
@@ -4216,16 +4369,16 @@ io.on('connection', (socket) => {
         enabledBy: adminName || 'admin',
         timestamp: new Date().toISOString()
       });
-      
+
       console.log('✅ Guest access command broadcast for system:', systemNumber);
-      
+
       // Notify admins that guest mode was enabled
       io.to('admins').emit('guest-access-enabled', {
         systemNumber: systemNumber,
         enabledBy: adminName || 'admin',
         timestamp: new Date().toISOString()
       });
-      
+
       // Send updated system list to admins
       const systems = await SystemRegistry.find({ status: { $ne: 'offline' } })
         .sort({ systemNumber: 1 })
@@ -4234,17 +4387,17 @@ io.on('connection', (socket) => {
         systems,
         timestamp: new Date().toISOString()
       });
-      
+
     } catch (error) {
       console.error('❌ Error enabling guest access:', error);
     }
   });
-  
+
   // Kiosk confirms guest access enabled
   socket.on('guest-access-confirmed', async ({ systemNumber, studentInfo }) => {
     try {
       console.log('✅ Guest access confirmed for system:', systemNumber);
-      
+
       // Update system registry
       await SystemRegistry.findOneAndUpdate(
         { systemNumber },
@@ -4257,29 +4410,49 @@ io.on('connection', (socket) => {
         },
         { upsert: true, new: true }
       );
-      
+
       // Notify all admins that this system is now in guest mode
       io.to('admins').emit('system-guest-mode-active', {
         systemNumber: systemNumber,
         guestInfo: studentInfo,
         timestamp: new Date().toISOString()
       });
-      
+
     } catch (error) {
       console.error('❌ Error confirming guest access:', error);
     }
   });
 
-  socket.on('disconnect', () => { 
-    console.log("❌ Socket disconnected:", socket.id); 
-    
+  // ========================================================================
+  // ABRUPT SHUTDOWN / DISCONNECT HANDLING
+  // ========================================================================
+
+  socket.on('kiosk-shutting-down', async ({ sessionId, systemNumber, reason }) => {
+    console.log(`🚨 Kiosk ${systemNumber} is shutting down/exiting. Reason: ${reason}. Session: ${sessionId}`);
+    if (sessionId) {
+      await performServerSideLogout(sessionId);
+    }
+  });
+
+  socket.on('disconnect', async () => {
+    console.log("❌ Socket disconnected:", socket.id);
+
+    // If this socket belonged to a logged-in kiosk, auto-logout the session
     for (const [sessionId, sId] of kioskSockets.entries()) {
       if (sId === socket.id) {
         kioskSockets.delete(sessionId);
-        console.log('🧹 Cleaned up kiosk for session:', sessionId);
+        console.log(`🧹 Cleaned up kiosk for session: ${sessionId}. Triggering auto-logout...`);
+        // We wait a tiny bit to see if they just refreshed vs actually died
+        setTimeout(async () => {
+          // Check if they re-registered (the session ID would exist in the map with a new socket.id)
+          if (!kioskSockets.has(sessionId)) {
+            console.log(`⏳ Session ${sessionId} didn't reconnect. Forcing logout due to disconnect.`);
+            await performServerSideLogout(sessionId);
+          }
+        }, 5000);
       }
     }
-    
+
     // ✅ FIX 5: Also clean kioskSystemSockets to prevent stale socket IDs causing routing failures
     for (const [sysNum, sId] of kioskSystemSockets.entries()) {
       if (sId === socket.id) {
@@ -4287,7 +4460,7 @@ io.on('connection', (socket) => {
         console.log('🧹 Cleaned up kioskSystemSockets for system:', sysNum);
       }
     }
-    
+
     for (const [sessionId, admins] of adminSockets.entries()) {
       const index = admins.indexOf(socket.id);
       if (index > -1) {
@@ -4318,7 +4491,7 @@ async function saveSessionToCSV(session) {
     const labId = session.labId || 'UNKNOWN';
     const filename = `${labId}_${date}.csv`;
     const filepath = path.join(SESSION_CSV_DIR, filename);
-    
+
     // Prepare session data
     const sessionData = {
       'Session ID': session._id.toString(),
@@ -4332,23 +4505,23 @@ async function saveSessionToCSV(session) {
       'Duration (seconds)': session.duration || 'N/A',
       'Status': session.status || 'unknown'
     };
-    
+
     // Check if file exists
     const fileExists = fs.existsSync(filepath);
-    
+
     if (!fileExists) {
       // Create new file with headers
       const headers = Object.keys(sessionData).join(',') + '\n';
       fs.writeFileSync(filepath, headers, 'utf8');
     }
-    
+
     // Append session data
     const row = Object.values(sessionData)
-      .map(val => `"${String(val).replace(/"/g, '""')}"`)  
+      .map(val => `"${String(val).replace(/"/g, '""')}"`)
       .join(',') + '\n';
-    
+
     fs.appendFileSync(filepath, row, 'utf8');
-    
+
     console.log(`💾 Session saved to CSV: ${filename}`);
     return { success: true, filename, filepath };
   } catch (error) {
@@ -4364,17 +4537,17 @@ async function updateSessionInCSV(session) {
     const labId = session.labId || 'UNKNOWN';
     const filename = `${labId}_${date}.csv`;
     const filepath = path.join(SESSION_CSV_DIR, filename);
-    
+
     if (!fs.existsSync(filepath)) {
       // If file doesn't exist, create it with this session
       return await saveSessionToCSV(session);
     }
-    
+
     // Read existing CSV
     const content = fs.readFileSync(filepath, 'utf8');
     const lines = content.split('\n');
     const sessionId = session._id.toString();
-    
+
     // Find and update the session row
     let updated = false;
     for (let i = 1; i < lines.length; i++) {
@@ -4391,21 +4564,21 @@ async function updateSessionInCSV(session) {
           'Duration (seconds)': session.duration || 'N/A',
           'Status': session.status || 'unknown'
         };
-        
+
         lines[i] = Object.values(sessionData)
           .map(val => `"${String(val).replace(/"/g, '""')}"`)
           .join(',');
-        
+
         updated = true;
         break;
       }
     }
-    
+
     if (updated) {
       fs.writeFileSync(filepath, lines.join('\n'), 'utf8');
       console.log(`💾 Session updated in CSV: ${filename}`);
     }
-    
+
     return { success: true, filename, filepath };
   } catch (error) {
     console.error('❌ Error updating session in CSV:', error);
@@ -4417,12 +4590,12 @@ async function updateSessionInCSV(session) {
 async function generateLabSessionCSV(labSessionId) {
   try {
     const labSession = await LabSession.findById(labSessionId);
-    
+
     if (!labSession) {
       console.error('❌ Lab session not found for ID:', labSessionId);
       return { success: false, error: 'Lab session not found' };
     }
-    
+
     console.log('📊 Generating CSV for lab session:');
     console.log('   Subject:', labSession.subject);
     console.log('   Faculty:', labSession.faculty);
@@ -4430,128 +4603,177 @@ async function generateLabSessionCSV(labSessionId) {
     console.log('   Department:', labSession.department);
     console.log('   Section:', labSession.section);
     console.log('   Periods:', labSession.periods);
-    console.log('   Students:', labSession.studentRecords.length);
-    
-    // 🔧 FALLBACK: If studentRecords is empty, try to get from Session collection
-    let finalStudentRecords = labSession.studentRecords || [];
-    
-    console.log(`📊 LabSession has ${finalStudentRecords.length} studentRecords`);
-    
-    if (finalStudentRecords.length === 0) {
-      console.log('⚠️ No studentRecords found in labSession, fetching from Session collection...');
-      console.log(`⚠️ LabSession details: ID=${labSession._id}, labId=${labSession.labId}, startTime=${labSession.startTime}, endTime=${labSession.endTime}`);
-      
-      // Get all sessions for this lab during this session period
-      const sessionQuery = {
-        labId: labSession.labId,
-        loginTime: { $gte: labSession.startTime }
-      };
-      
-      if (labSession.endTime) {
-        sessionQuery.loginTime.$lte = labSession.endTime;
-      }
-      
-      console.log(`⚠️ Session query:`, JSON.stringify(sessionQuery));
-      
-      const sessions = await Session.find(sessionQuery).sort({ loginTime: 1 });
-      
-      console.log(`📊 Found ${sessions.length} sessions from Session collection`);
-      
-      if (sessions.length > 0) {
-        console.log(`📊 Sample session from DB:`, {
-          name: sessions[0].studentName,
-          id: sessions[0].studentId,
-          system: sessions[0].systemNumber,
-          loginTime: sessions[0].loginTime,
-          labId: sessions[0].labId
-        });
-      }
-      
+    console.log('   Created By:', labSession.createdBy);
+    console.log('   LabSession studentRecords:', labSession.studentRecords.length);
+
+    // 🔧 ENHANCED: Always get the most comprehensive data from Session collection
+    // This ensures we capture ALL user activity including students, guests, and faculties
+    // regardless of how the session was started (automatic or manual)
+   
+    let finalStudentRecords = [];
+   
+    // First, try to get comprehensive data from Session collection
+    console.log('📊 Fetching comprehensive session data from Session collection...');
+    console.log(`📊 LabSession details: ID=${labSession._id}, labId=${labSession.labId}, startTime=${labSession.startTime}, endTime=${labSession.endTime}`);
+
+    // Build comprehensive query to get ALL sessions during this lab session period
+    const sessionQuery = {
+      labId: labSession.labId,
+      loginTime: { $gte: labSession.startTime }
+    };
+
+    // If session has ended, use the end time as upper bound
+    // If session is still active, use current time as upper bound
+    const upperBound = labSession.endTime || new Date();
+    sessionQuery.loginTime.$lte = upperBound;
+
+    console.log(`📊 Session query:`, JSON.stringify(sessionQuery));
+
+    const sessions = await Session.find(sessionQuery).sort({ loginTime: 1 });
+
+    console.log(`📊 Found ${sessions.length} sessions from Session collection for comprehensive report`);
+
+    if (sessions.length > 0) {
+      console.log(`📊 Sample session from DB:`, {
+        name: sessions[0].studentName,
+        id: sessions[0].studentId,
+        system: sessions[0].systemNumber,
+        loginTime: sessions[0].loginTime,
+        logoutTime: sessions[0].logoutTime,
+        status: sessions[0].status,
+        labId: sessions[0].labId
+      });
+
+      // Convert Session records to student record format
       finalStudentRecords = sessions.map(session => ({
         studentName: session.studentName,
         studentId: session.studentId,
+        email: '', // Will be enriched later
         systemNumber: session.systemNumber,
         loginTime: session.loginTime,
         logoutTime: session.logoutTime,
         duration: session.duration || 0,
         status: session.status
       }));
-    } else {
-      console.log(`✅ Using ${finalStudentRecords.length} studentRecords from labSession`);
+
+      console.log(`📊 Converted ${finalStudentRecords.length} Session records to student record format`);
+    }
+
+    // 🔧 FALLBACK: If no sessions found in Session collection, try using labSession.studentRecords
+    if (finalStudentRecords.length === 0 && labSession.studentRecords && labSession.studentRecords.length > 0) {
+      console.log(`⚠️ No sessions found in Session collection, using ${labSession.studentRecords.length} records from labSession.studentRecords`);
+      finalStudentRecords = labSession.studentRecords;
+     
       if (finalStudentRecords.length > 0) {
-        console.log(`✅ Sample record:`, {
+        console.log(`⚠️ Sample labSession record:`, {
           name: finalStudentRecords[0].studentName,
           id: finalStudentRecords[0].studentId,
-          system: finalStudentRecords[0].systemNumber
+          system: finalStudentRecords[0].systemNumber,
+          loginTime: finalStudentRecords[0].loginTime,
+          logoutTime: finalStudentRecords[0].logoutTime
         });
       }
     }
-    
+
+    // Log final data source
+    if (sessions.length > 0) {
+      console.log(`✅ Using comprehensive data from Session collection (${finalStudentRecords.length} records)`);
+    } else if (labSession.studentRecords && labSession.studentRecords.length > 0) {
+      console.log(`⚠️ Using fallback data from labSession.studentRecords (${finalStudentRecords.length} records)`);
+    } else {
+      console.log(`❌ No student activity data found for this session`);
+    }
+
+    // 🔧 EMAIL ENRICHMENT: Look up student emails from Student collection for any records missing email
+    const studentIdsNeedingEmail = finalStudentRecords
+      .filter(r => !r.email)
+      .map(r => r.studentId)
+      .filter(Boolean);
+
+    let emailMap = {};
+    if (studentIdsNeedingEmail.length > 0) {
+      console.log(`📧 Looking up emails for ${studentIdsNeedingEmail.length} students...`);
+      const studentsWithEmail = await Student.find(
+        { studentId: { $in: studentIdsNeedingEmail } },
+        { studentId: 1, email: 1, _id: 0 }
+      ).lean();
+      studentsWithEmail.forEach(s => { emailMap[s.studentId] = s.email; });
+      console.log(`📧 Found emails for ${studentsWithEmail.length} students`);
+    }
+
+    // Enrich records with email
+    finalStudentRecords = finalStudentRecords.map(record => ({
+      ...record,
+      email: record.email || emailMap[record.studentId] || 'N/A'
+    }));
+
     console.log(`📊 Final student records count for CSV: ${finalStudentRecords.length}`);
-    
+
     // Format dates
     const startTime = new Date(labSession.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const endTime = labSession.endTime ? new Date(labSession.endTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active';
-    
+
     // Calculate total duration
-    const totalDuration = labSession.endTime 
+    const totalDuration = labSession.endTime
       ? Math.floor((labSession.endTime - labSession.startTime) / 1000)
       : 0;
-    
+
     const durationMinutes = Math.floor(totalDuration / 60);
-    
+
     // Create CSV content with metadata header
     let csvContent = '';
-    
+
     // Session Metadata Section
     csvContent += '"LAB SESSION REPORT"\n';
     csvContent += '"="\n';
-    csvContent += `"Subject:","${labSession.subject}"\n`;
-    csvContent += `"Faculty:","${labSession.faculty}"\n`;
+    csvContent += `"Session Name (Subject):","${labSession.subject}"\n`;
+    csvContent += `"Handling Faculty:","${labSession.faculty}"\n`;
     csvContent += `"Year:","${labSession.year || 'N/A'}"\n`;
     csvContent += `"Department:","${labSession.department || 'N/A'}"\n`;
     csvContent += `"Section:","${labSession.section || 'N/A'}"\n`;
     csvContent += `"Time Periods:","${labSession.periods} periods"\n`;
     csvContent += `"Expected Duration:","${labSession.expectedDuration} minutes"\n`;
     csvContent += `"Actual Duration:","${durationMinutes} minutes"\n`;
-    csvContent += `"Start Time:","${startTime}"\n`;
-    csvContent += `"End Time:","${endTime}"\n`;
-    csvContent += `"Status:","${labSession.status}"\n`;
-    csvContent += `"Total Students:","${finalStudentRecords.length}"\n`;
+    csvContent += `"Session Start Time:","${startTime}"\n`;
+    csvContent += `"Session End Time:","${endTime}"\n`;
+    csvContent += `"Session Status:","${labSession.status}"\n`;
+    csvContent += `"Total Students Logged In:","${finalStudentRecords.length}"\n`;
     csvContent += '"="\n';
     csvContent += '\n';
-    
+
     // Student Records Section
-    csvContent += '"STUDENT RECORDS"\n';
-    csvContent += '"Student Name","Student ID","System Number","Login Time","Logout Time","Duration (seconds)","Duration (minutes)","Status"\n';
-    
-    finalStudentRecords.forEach(record => {
+    csvContent += '"STUDENT ATTENDANCE RECORDS"\n';
+    csvContent += '"Sr. No","Student Name","Student ID","Email","System Number","Login Time","Logout Time","Duration (seconds)","Duration (minutes)","Status"\n';
+
+    finalStudentRecords.forEach((record, index) => {
       const loginTime = record.loginTime ? new Date(record.loginTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A';
       const logoutTime = record.logoutTime ? new Date(record.logoutTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Active';
       const durationSec = record.duration || 0;
       const durationMin = Math.floor(durationSec / 60);
-      
+
+      csvContent += `"${index + 1}",`;
       csvContent += `"${record.studentName || 'N/A'}",`;
       csvContent += `"${record.studentId || 'N/A'}",`;
+      csvContent += `"${record.email || 'N/A'}",`;
       csvContent += `"${record.systemNumber || 'N/A'}",`;
       csvContent += `"${loginTime}",`;
       csvContent += `"${logoutTime}",`;
       csvContent += `"${durationSec}",`;
       csvContent += `"${durationMin}",`;
-      csvContent += `"${record.status}"\n`;
+      csvContent += `"${record.status === 'active' ? 'Present (Active)' : 'Completed'}"\n`;
     });
-    
+
     // Generate filename
     const dateStr = new Date(labSession.startTime).toISOString().split('T')[0];
     const timeStr = new Date(labSession.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(/[: ]/g, '-');
     const subjectStr = labSession.subject.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 30);
     const filename = `LabSession_${subjectStr}_${dateStr}_${timeStr}.csv`;
-    
+
     console.log(`✅ Lab session CSV generated: ${filename}`);
-    
-    return { 
-      success: true, 
-      csvContent, 
+
+    return {
+      success: true,
+      csvContent,
       filename,
       studentCount: finalStudentRecords.length,
       subject: labSession.subject,
@@ -4569,18 +4791,18 @@ function cleanupOldManualReports() {
     const files = fs.readdirSync(MANUAL_REPORT_DIR);
     const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
     let deletedCount = 0;
-    
+
     files.forEach(file => {
       const filepath = path.join(MANUAL_REPORT_DIR, file);
       const stats = fs.statSync(filepath);
-      
+
       if (stats.mtimeMs < oneDayAgo) {
         fs.unlinkSync(filepath);
         deletedCount++;
         console.log(`🗑️ Deleted old manual report: ${file}`);
       }
     });
-    
+
     if (deletedCount > 0) {
       console.log(`✅ Cleaned up ${deletedCount} old manual reports`);
     }
@@ -4600,19 +4822,19 @@ setInterval(cleanupOldManualReports, 60 * 60 * 1000);
 async function generateScheduledReport(labId) {
   try {
     console.log(`📊 Generating scheduled report for lab: ${labId} at ${new Date().toLocaleString()}`);
-    
+
     const startDate = new Date();
     startDate.setHours(0, 0, 0, 0);
     const endDate = new Date();
     endDate.setHours(23, 59, 59, 999);
-    
+
     const filter = {
       labId: labId,
       loginTime: { $gte: startDate, $lte: endDate }
     };
-    
+
     const sessions = await Session.find(filter).sort({ loginTime: -1 }).lean();
-    
+
     // Format CSV data
     const csvData = sessions.map(session => ({
       'Session ID': session._id.toString(),
@@ -4626,25 +4848,25 @@ async function generateScheduledReport(labId) {
       'Duration (seconds)': session.duration || 'N/A',
       'Status': session.status || 'unknown'
     }));
-    
+
     // Create CSV content
     const csvHeaders = Object.keys(csvData[0] || {}).join(',') + '\n';
-    const csvRows = csvData.map(row => 
+    const csvRows = csvData.map(row =>
       Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')
     ).join('\n');
     const csvContent = csvHeaders + csvRows;
-    
+
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `${labId}-sessions-${timestamp}.csv`;
-    
+
     // Update last generated timestamp
     await ReportSchedule.findOneAndUpdate(
       { labId },
       { lastGenerated: new Date() }
     );
-    
+
     console.log(`✅ Report generated: ${filename}`);
-    
+
     return { success: true, csvContent, filename, count: sessions.length };
   } catch (error) {
     console.error('❌ Error generating scheduled report:', error);
@@ -4657,24 +4879,24 @@ async function setupReportSchedulers() {
   try {
     const schedules = await ReportSchedule.find({});
     let totalSchedules = 0;
-    
+
     for (const schedule of schedules) {
       // Schedule 1
       if (schedule.scheduleTime1 && schedule.enabled1) {
         const [hours1, minutes1] = schedule.scheduleTime1.split(':');
         const cronExpression1 = `${minutes1} ${hours1} * * *`; // Daily at specified time
-        
+
         console.log(`⏰ Scheduling report 1 for ${schedule.labId} at ${schedule.scheduleTime1} (${cronExpression1})`);
-        
+
         const task1 = cron.schedule(cronExpression1, async () => {
           const result = await generateScheduledReport(schedule.labId);
-          
+
           if (result.success && io) {
             // Save automatic report to AUTO_REPORT_DIR
             const autoReportPath = path.join(AUTO_REPORT_DIR, result.filename);
             fs.writeFileSync(autoReportPath, result.csvContent, 'utf8');
             console.log(`💾 Automatic report 1 saved: ${autoReportPath}`);
-            
+
             console.log(`📢 Broadcasting scheduled report 1 for ${schedule.labId}`);
             io.emit('scheduled-report-ready', {
               labId: schedule.labId,
@@ -4688,27 +4910,27 @@ async function setupReportSchedulers() {
         }, {
           timezone: 'Asia/Kolkata'
         });
-        
+
         scheduledTasks.set(`${schedule.labId}-schedule1`, task1);
         totalSchedules++;
       }
-      
+
       // Schedule 2
       if (schedule.scheduleTime2 && schedule.enabled2) {
         const [hours2, minutes2] = schedule.scheduleTime2.split(':');
         const cronExpression2 = `${minutes2} ${hours2} * * *`; // Daily at specified time
-        
+
         console.log(`⏰ Scheduling report 2 for ${schedule.labId} at ${schedule.scheduleTime2} (${cronExpression2})`);
-        
+
         const task2 = cron.schedule(cronExpression2, async () => {
           const result = await generateScheduledReport(schedule.labId);
-          
+
           if (result.success && io) {
             // Save automatic report to AUTO_REPORT_DIR
             const autoReportPath = path.join(AUTO_REPORT_DIR, result.filename);
             fs.writeFileSync(autoReportPath, result.csvContent, 'utf8');
             console.log(`💾 Automatic report 2 saved: ${autoReportPath}`);
-            
+
             console.log(`📢 Broadcasting scheduled report 2 for ${schedule.labId}`);
             io.emit('scheduled-report-ready', {
               labId: schedule.labId,
@@ -4722,21 +4944,21 @@ async function setupReportSchedulers() {
         }, {
           timezone: 'Asia/Kolkata'
         });
-        
+
         scheduledTasks.set(`${schedule.labId}-schedule2`, task2);
         totalSchedules++;
       }
-      
+
       // Legacy support - old single schedule
       if (!schedule.scheduleTime1 && !schedule.scheduleTime2 && schedule.scheduleTime && schedule.enabled) {
         const [hours, minutes] = schedule.scheduleTime.split(':');
         const cronExpression = `${minutes} ${hours} * * *`;
-        
+
         console.log(`⏰ Scheduling legacy report for ${schedule.labId} at ${schedule.scheduleTime}`);
-        
+
         const task = cron.schedule(cronExpression, async () => {
           const result = await generateScheduledReport(schedule.labId);
-          
+
           if (result.success && io) {
             io.emit('scheduled-report-ready', {
               labId: schedule.labId,
@@ -4749,12 +4971,12 @@ async function setupReportSchedulers() {
         }, {
           timezone: 'Asia/Kolkata'
         });
-        
+
         scheduledTasks.set(schedule.labId, task);
         totalSchedules++;
       }
     }
-    
+
     console.log(`✅ ${totalSchedules} report scheduler(s) initialized for ${schedules.length} lab(s)`);
   } catch (error) {
     console.error('❌ Error setting up schedulers:', error);
@@ -4764,13 +4986,13 @@ async function setupReportSchedulers() {
 // Restart all schedulers (called when schedule is updated)
 async function restartReportScheduler() {
   console.log('🔄 Restarting report schedulers...');
-  
+
   // Stop all existing tasks
   for (const [labId, task] of scheduledTasks.entries()) {
     task.stop();
     scheduledTasks.delete(labId);
   }
-  
+
   // Setup new tasks
   await setupReportSchedulers();
 }
@@ -4792,22 +5014,22 @@ async function autoStartLabSession(timetableEntry) {
     console.log(`   Entry ID: ${timetableEntry._id}`);
     console.log(`   Is Processed: ${timetableEntry.isProcessed}`);
     console.log(`${'='.repeat(60)}\n`);
-    
+
     // Check if there's already an active lab session for this lab
-    const existingSession = await LabSession.findOne({ 
+    const existingSession = await LabSession.findOne({
       status: 'active',
-      labId: timetableEntry.labId 
+      labId: timetableEntry.labId
     });
-    
+
     if (existingSession) {
       console.log(`⚠️ Active lab session already exists in ${timetableEntry.labId}: ${existingSession.subject}`);
       console.log(`   Existing Session ID: ${existingSession._id}`);
       console.log(`   Existing Faculty: ${existingSession.faculty}`);
       console.log(`   Existing Start Time: ${existingSession.startTime}`);
-      
+
       // Check if it's the same session (avoid duplicate starts)
-      if (existingSession.subject === timetableEntry.subject && 
-          existingSession.faculty === timetableEntry.faculty) {
+      if (existingSession.subject === timetableEntry.subject &&
+        existingSession.faculty === timetableEntry.faculty) {
         console.log(`ℹ️ Same session already running - skipping duplicate start`);
         timetableEntry.isProcessed = true;
         timetableEntry.labSessionId = existingSession._id;
@@ -4815,15 +5037,15 @@ async function autoStartLabSession(timetableEntry) {
         console.log(`✅ Timetable entry marked as processed`);
         return { success: true, labSession: existingSession, message: 'Session already running' };
       }
-      
+
       // Different session - end the existing one first
       console.log(`   Ending existing session before starting new one...`);
-      
+
       existingSession.status = 'completed';
       existingSession.endTime = new Date();
       await existingSession.save();
       console.log(`✅ Previous session ended: ${existingSession._id}`);
-      
+
       // Generate CSV for old session
       const csvResult = await generateLabSessionCSV(existingSession._id);
       if (csvResult.success) {
@@ -4832,7 +5054,7 @@ async function autoStartLabSession(timetableEntry) {
         console.log(`💾 Previous session CSV saved: ${csvResult.filename}`);
       }
     }
-    
+
     // Create new lab session from timetable
     console.log(`📝 Creating new lab session...`);
     const newLabSession = new LabSession({
@@ -4849,22 +5071,22 @@ async function autoStartLabSession(timetableEntry) {
       createdBy: 'timetable-auto',
       studentRecords: []
     });
-    
+
     await newLabSession.save();
     console.log(`✅ New lab session created: ${newLabSession._id}`);
-    
+
     // Update timetable entry
     timetableEntry.isProcessed = true;
     timetableEntry.labSessionId = newLabSession._id;
     await timetableEntry.save();
     console.log(`✅ Timetable entry marked as processed`);
-    
+
     console.log(`✅ Lab session auto-started successfully!`);
     console.log(`   Session ID: ${newLabSession._id}`);
     console.log(`   Lab ID: ${newLabSession.labId}`);
     console.log(`   Subject: ${newLabSession.subject}`);
     console.log(`   Faculty: ${newLabSession.faculty}`);
-    
+
     // Notify admins via socket
     if (io) {
       console.log(`📢 Notifying admins about new session...`);
@@ -4879,7 +5101,7 @@ async function autoStartLabSession(timetableEntry) {
       });
       console.log(`✅ Admin notification sent`);
     }
-    
+
     return { success: true, labSession: newLabSession };
   } catch (error) {
     console.error('❌ Error auto-starting lab session:', error);
@@ -4896,56 +5118,105 @@ async function autoEndLabSession(timetableEntry) {
     console.log(`   Subject: ${timetableEntry.subject}`);
     console.log(`   Faculty: ${timetableEntry.faculty}`);
     console.log(`${'='.repeat(60)}\n`);
-    
+
     // Find the lab session linked to this timetable entry
     let labSession = await LabSession.findById(timetableEntry.labSessionId);
-    
+
     // If not found by ID, try to find active session matching the subject
     if (!labSession) {
-      labSession = await LabSession.findOne({ 
+      labSession = await LabSession.findOne({
         status: 'active',
         subject: timetableEntry.subject
       });
     }
-    
+
     if (!labSession) {
       console.log(`⚠️ No active lab session found for: ${timetableEntry.subject}`);
       return { success: false, error: 'No active session found' };
     }
-    
-    // End the lab session
-    labSession.status = 'completed';
+
+    // 🔧 ENHANCED: Set end time first, then collect comprehensive data
     labSession.endTime = new Date();
-    await labSession.save();
-    
-    // End all active student sessions
-    const activeSessions = await Session.find({ status: 'active' });
+
+    // End all active student sessions for this lab only
+    const activeSessions = await Session.find({ status: 'active', labId: labSession.labId });
     const currentTime = new Date();
-    
+
+    console.log(`🛑 AUTO-ENDING: Ending ${activeSessions.length} active sessions for Lab ${labSession.labId}`);
+
     for (const session of activeSessions) {
       const durationMs = currentTime - session.loginTime;
       const durationSeconds = Math.floor(durationMs / 1000);
-      
+
       await Session.findByIdAndUpdate(session._id, {
         status: 'completed',
         logoutTime: currentTime,
         duration: durationSeconds
       });
-      
+
       // Update session in CSV
       await updateSessionInCSV(session);
     }
-    
-    console.log(`✅ Ended ${activeSessions.length} student sessions`);
-    
+
+    console.log(`✅ AUTO-ENDING: Ended ${activeSessions.length} student sessions`);
+
+    // 🔧 ENHANCED: Update labSession.studentRecords with comprehensive data from Session collection
+    // This ensures ALL user activity is captured for automatic sessions too
+    // Get ALL sessions (active + completed) for this lab during THIS session period ONLY
+    const allSessionsForThisLab = await Session.find({
+      labId: labSession.labId,
+      loginTime: {
+        $gte: labSession.startTime,
+        $lte: labSession.endTime  // Use the actual end time to avoid future sessions
+      }
+    }).sort({ loginTime: 1 });
+
+    console.log(`📊 AUTO-ENDING: COMPREHENSIVE DATA COLLECTION:`);
+    console.log(`📊 Found ${allSessionsForThisLab.length} total sessions for this lab session`);
+    console.log(`📊 Session period: ${labSession.startTime} to ${labSession.endTime}`);
+    console.log(`📊 Session started by: ${labSession.createdBy || 'timetable-auto'}`);
+
+    if (allSessionsForThisLab.length > 0) {
+      console.log(`📊 First session: ${allSessionsForThisLab[0].studentName} at ${allSessionsForThisLab[0].loginTime}`);
+      console.log(`📊 Last session: ${allSessionsForThisLab.length > 1 ? allSessionsForThisLab[allSessionsForThisLab.length - 1].studentName : 'N/A'} at ${allSessionsForThisLab.length > 1 ? allSessionsForThisLab[allSessionsForThisLab.length - 1].loginTime : 'N/A'}`);
+     
+      // Count different user types
+      const studentSessions = allSessionsForThisLab.filter(s => s.studentId && !s.studentId.includes('GUEST'));
+      const guestSessions = allSessionsForThisLab.filter(s => !s.studentId || s.studentId.includes('GUEST'));
+      const activeSessionsCount = allSessionsForThisLab.filter(s => s.status === 'active');
+      const completedSessions = allSessionsForThisLab.filter(s => s.status === 'completed');
+     
+      console.log(`📊 User breakdown: ${studentSessions.length} students, ${guestSessions.length} guests`);
+      console.log(`📊 Status breakdown: ${completedSessions.length} completed, ${activeSessionsCount.length} active`);
+    }
+
+    // 🔧 ENHANCED: Update studentRecords with comprehensive data from Session collection
+    labSession.studentRecords = allSessionsForThisLab.map(session => ({
+      studentName: session.studentName,
+      studentId: session.studentId,
+      systemNumber: session.systemNumber,
+      loginTime: session.loginTime,
+      logoutTime: session.logoutTime,
+      duration: session.duration || 0,
+      status: session.status
+    }));
+
+    console.log(`📊 AUTO-ENDING: COMPREHENSIVE: Updated studentRecords array with ${labSession.studentRecords.length} records`);
+
+    // Now save the lab session
+    labSession.status = 'completed';
+    await labSession.save();
+
+    console.log(`✅ AUTO-ENDING: Lab session saved with ${labSession.studentRecords.length} student records`);
+
     // Generate lab session CSV report
     const csvResult = await generateLabSessionCSV(labSession._id);
-    
+
     if (csvResult.success) {
       const filepath = path.join(MANUAL_REPORT_DIR, csvResult.filename);
       fs.writeFileSync(filepath, csvResult.csvContent, 'utf8');
       console.log(`💾 Lab session CSV saved: ${csvResult.filename}`);
-      
+
       // Notify admins
       if (io) {
         io.to('admins').emit('lab-session-auto-ended', {
@@ -4957,9 +5228,9 @@ async function autoEndLabSession(timetableEntry) {
         });
       }
     }
-    
+
     console.log(`✅ Lab session auto-ended: ${labSession.subject}`);
-    
+
     return { success: true, labSession, csvFilename: csvResult.filename };
   } catch (error) {
     console.error('❌ Error auto-ending lab session:', error);
@@ -4973,32 +5244,32 @@ cron.schedule('* * * * *', async () => {
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    
+
     console.log(`\n${'='.repeat(60)}`);
     console.log(`⏰ TIMETABLE CHECK AT ${currentTime} (${currentDate})`);
     console.log(`${'='.repeat(60)}`);
-    
+
     // Find timetable entries for today
     const startOfDay = new Date(currentDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(currentDate);
     endOfDay.setHours(23, 59, 59, 999);
-    
+
     console.log(`📅 Checking for entries on: ${currentDate}`);
-    
+
     const todayEntries = await TimetableEntry.find({
       isActive: true,
       sessionDate: { $gte: startOfDay, $lte: endOfDay }
     }).sort({ startTime: 1 });
-    
+
     console.log(`📋 Found ${todayEntries.length} timetable entries for today`);
-    
+
     if (todayEntries.length === 0) {
       console.log(`ℹ️ No timetable entries found for today`);
       console.log(`${'='.repeat(60)}\n`);
       return;
     }
-    
+
     console.log(`\n📋 TODAY'S TIMETABLE ENTRIES:`);
     todayEntries.forEach((e, i) => {
       console.log(`   ${i + 1}. ${e.subject} (${e.faculty})`);
@@ -5007,7 +5278,7 @@ cron.schedule('* * * * *', async () => {
       console.log(`      📊 Processed: ${e.isProcessed ? '✅ Yes' : '❌ No'}`);
     });
     console.log('');
-      for (const entry of todayEntries) {
+    for (const entry of todayEntries) {
       // ✅ FIX: Handle time formats like "0:00" and "11:34" (normalize to HH:MM)
       const normalizeTime = (timeStr) => {
         if (!timeStr) return '00:00';
@@ -5016,25 +5287,25 @@ cron.schedule('* * * * *', async () => {
         const minutes = String(parts[1] || '0').padStart(2, '0');
         return `${hours}:${minutes}`;
       };
-      
+
       const normalizedStartTime = normalizeTime(entry.startTime);
       const normalizedEndTime = normalizeTime(entry.endTime);
-      
+
       // IMPROVED: Start session if current time is AT or AFTER start time but BEFORE end time
       const [startHour, startMin] = normalizedStartTime.split(':').map(Number);
       const [endHour, endMin] = normalizedEndTime.split(':').map(Number);
       const startMinutes = startHour * 60 + startMin;
       const endMinutes = endHour * 60 + endMin;
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      
+
       console.log(`🔍 Checking: ${entry.subject}`);
       console.log(`   Start: ${startMinutes}min (${entry.startTime})`);
       console.log(`   Current: ${currentMinutes}min (${currentTime})`);
       console.log(`   End: ${endMinutes}min (${entry.endTime})`);
       console.log(`   Processed: ${entry.isProcessed}`);
-        const shouldStart = currentMinutes >= startMinutes && currentMinutes < endMinutes && !entry.isProcessed;
+      const shouldStart = currentMinutes >= startMinutes && currentMinutes < endMinutes && !entry.isProcessed;
       console.log(`   Should Start: ${shouldStart ? '✅ YES' : '❌ NO'}`);
-      
+
       // Check if it's time to start the session (between start and end time, not yet processed)
       if (shouldStart) {
         console.log(`\n📅 ✅✅✅ TRIGGER: Starting session for ${entry.subject} ✅✅✅`);
@@ -5047,7 +5318,7 @@ cron.schedule('* * * * *', async () => {
           console.error(`❌ Failed to auto-start session: ${result.error}`);
         }
       }
-      
+
       // Check if it's time to end the session
       if (entry.endTime === currentTime && entry.isProcessed && entry.labSessionId) {
         console.log(`📅 Timetable trigger: Ending session for ${entry.subject} at ${currentTime}`);
@@ -5059,7 +5330,7 @@ cron.schedule('* * * * *', async () => {
         }
       }
     }
-    
+
     console.log(`${'='.repeat(60)}\n`);
   } catch (error) {
     console.error('❌ Timetable monitor error:', error);
@@ -5077,10 +5348,10 @@ app.get('/api/report-schedule/:labId', async (req, res) => {
   try {
     const { labId } = req.params;
     let schedule = await ReportSchedule.findOne({ labId });
-    
+
     if (!schedule) {
-      schedule = new ReportSchedule({ 
-        labId, 
+      schedule = new ReportSchedule({
+        labId,
         scheduleTime1: '13:00',
         enabled1: true,
         scheduleTime2: '18:00',
@@ -5088,7 +5359,7 @@ app.get('/api/report-schedule/:labId', async (req, res) => {
       });
       await schedule.save();
     }
-    
+
     res.json({ success: true, schedule });
   } catch (error) {
     console.error('Error fetching schedule:', error);
@@ -5100,15 +5371,15 @@ app.get('/api/report-schedule/:labId', async (req, res) => {
 app.post('/api/report-schedule', async (req, res) => {
   try {
     const { labId, scheduleTime1, enabled1, scheduleTime2, enabled2 } = req.body;
-    
+
     if (!labId) {
       return res.status(400).json({ success: false, error: 'Lab ID is required' });
     }
-    
+
     if (!scheduleTime1 && !scheduleTime2) {
       return res.status(400).json({ success: false, error: 'At least one schedule time is required' });
     }
-    
+
     // Validate time formats (HH:MM)
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
     if (scheduleTime1 && !timeRegex.test(scheduleTime1)) {
@@ -5117,9 +5388,9 @@ app.post('/api/report-schedule', async (req, res) => {
     if (scheduleTime2 && !timeRegex.test(scheduleTime2)) {
       return res.status(400).json({ success: false, error: 'Invalid time format for Schedule 2. Use HH:MM (24-hour)' });
     }
-    
+
     let schedule = await ReportSchedule.findOne({ labId });
-    
+
     if (schedule) {
       if (scheduleTime1) schedule.scheduleTime1 = scheduleTime1;
       if (enabled1 !== undefined) schedule.enabled1 = enabled1;
@@ -5127,24 +5398,24 @@ app.post('/api/report-schedule', async (req, res) => {
       if (enabled2 !== undefined) schedule.enabled2 = enabled2;
       schedule.updatedAt = new Date();
     } else {
-      schedule = new ReportSchedule({ 
-        labId, 
+      schedule = new ReportSchedule({
+        labId,
         scheduleTime1: scheduleTime1 || '13:00',
         enabled1: enabled1 !== undefined ? enabled1 : true,
         scheduleTime2: scheduleTime2 || '18:00',
         enabled2: enabled2 !== undefined ? enabled2 : true
       });
     }
-    
+
     await schedule.save();
-    
+
     // Restart cron jobs with new schedules
     await restartReportScheduler();
-    
+
     console.log(`✅ Schedules updated for ${labId}:`);
     if (scheduleTime1) console.log(`  - Schedule 1: ${scheduleTime1} (${enabled1 ? 'enabled' : 'disabled'})`);
     if (scheduleTime2) console.log(`  - Schedule 2: ${scheduleTime2} (${enabled2 ? 'enabled' : 'disabled'})`);
-    
+
     res.json({ success: true, schedule, message: 'Schedules updated successfully' });
   } catch (error) {
     console.error('Error updating schedule:', error);
@@ -5156,24 +5427,24 @@ app.post('/api/report-schedule', async (req, res) => {
 app.post('/api/generate-report-now', async (req, res) => {
   try {
     const { labId } = req.body;
-    
+
     if (!labId) {
       return res.status(400).json({ success: false, error: 'Lab ID is required' });
     }
-    
+
     const result = await generateScheduledReport(labId);
-    
+
     if (result.success) {
       // Save manual report to MANUAL_REPORT_DIR
       const manualReportPath = path.join(MANUAL_REPORT_DIR, result.filename);
       fs.writeFileSync(manualReportPath, result.csvContent, 'utf8');
       console.log(`💾 Manual report saved: ${manualReportPath}`);
-      
+
       // Send CSV as download to browser
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
       res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-      
+
       console.log(`📥 Sending report to browser: ${result.filename} (${result.count} sessions)`);
       res.send(result.csvContent);
     } else {
@@ -5206,7 +5477,7 @@ app.get('/api/session-csvs', async (req, res) => {
         };
       })
       .sort((a, b) => b.modified - a.modified);
-    
+
     res.json({ success: true, files: fileList });
   } catch (error) {
     console.error('Error listing session CSVs:', error);
@@ -5219,18 +5490,18 @@ app.get('/api/session-csvs/:filename', async (req, res) => {
   try {
     const { filename } = req.params;
     const filepath = path.join(SESSION_CSV_DIR, filename);
-    
+
     if (!fs.existsSync(filepath)) {
       return res.status(404).json({ success: false, error: 'File not found' });
     }
-    
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-    
+
     const content = fs.readFileSync(filepath, 'utf8');
     res.send(content);
-    
+
     console.log(`📥 Downloaded session CSV: ${filename}`);
   } catch (error) {
     console.error('Error downloading session CSV:', error);
@@ -5247,11 +5518,11 @@ app.get('/api/manual-reports', async (req, res) => {
       .map(file => {
         const filepath = path.join(MANUAL_REPORT_DIR, file);
         const stats = fs.statSync(filepath);
-        
+
         // Determine file type
         const isLabSession = file.startsWith('LabSession_');
         const isDailyReport = !isLabSession;
-        
+
         return {
           filename: file,
           size: stats.size,
@@ -5261,7 +5532,7 @@ app.get('/api/manual-reports', async (req, res) => {
         };
       })
       .sort((a, b) => b.modified - a.modified);
-    
+
     res.json({ success: true, files: fileList });
   } catch (error) {
     console.error('Error listing manual reports:', error);
@@ -5274,18 +5545,18 @@ app.get('/api/manual-reports/:filename', async (req, res) => {
   try {
     const { filename } = req.params;
     const filepath = path.join(MANUAL_REPORT_DIR, filename);
-    
+
     if (!fs.existsSync(filepath)) {
       return res.status(404).json({ success: false, error: 'File not found' });
     }
-    
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-    
+
     const content = fs.readFileSync(filepath, 'utf8');
     res.send(content);
-    
+
     console.log(`📥 Downloaded manual report: ${filename}`);
   } catch (error) {
     console.error('Error downloading manual report:', error);
@@ -5310,14 +5581,14 @@ app.get('/api/manual-reports/:filename', async (req, res) => {
 app.post('/api/system-heartbeat', async (req, res) => {
   try {
     const { systemNumber, computerName, labId, ipAddress, timestamp, status } = req.body;
-    
+
     if (!systemNumber || !labId) {
       return res.status(400).json({ success: false, error: 'Missing systemNumber or labId' });
     }
-    
+
     // Get client IP if not provided
     const clientIP = ipAddress || req.ip || req.connection.remoteAddress;
-    
+
     // Update or create system registry entry
     const updateData = {
       systemNumber,
@@ -5325,20 +5596,20 @@ app.post('/api/system-heartbeat', async (req, res) => {
       ipAddress: clientIP,
       lastSeen: new Date(),
       status: status || 'available',
-      $setOnInsert: { 
+      $setOnInsert: {
         createdAt: new Date()
       }
     };
     if (computerName) updateData.computerName = computerName;
-    
+
     await SystemRegistry.findOneAndUpdate(
       { systemNumber, labId },
       updateData,
       { upsert: true, new: true }
     );
-    
+
     console.log(`💓 Heartbeat: System ${systemNumber} | Lab: ${labId} | IP: ${clientIP} | Status: ${status || 'available'}`);
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('❌ System heartbeat error:', error);
@@ -5350,26 +5621,26 @@ app.post('/api/system-heartbeat', async (req, res) => {
 app.get('/api/lab-systems/:labId', async (req, res) => {
   try {
     const { labId } = req.params;
-    
+
     if (!isValidLabId(labId)) {
       return res.status(400).json({ success: false, error: 'Invalid lab ID' });
     }
-    
+
     // ✅ SHOW ONLY ONLINE SYSTEMS (kiosk login screen or logged-in students)
-    const systems = await SystemRegistry.find({ 
+    const systems = await SystemRegistry.find({
       labId
     })
       .sort({ systemNumber: 1 })
       .lean();
-    
+
     const now = new Date();
-    
+
     // Filter to ONLY show systems that are online (heartbeat within 60 seconds)
     const systemsWithStatus = systems
       .map(system => {
         const secondsSinceLastSeen = (now - new Date(system.lastSeen)) / 1000;
         const isOnline = secondsSinceLastSeen < 60; // Online if seen within last 60 seconds
-        
+
         return {
           ...system,
           isOnline,
@@ -5378,7 +5649,7 @@ app.get('/api/lab-systems/:labId', async (req, res) => {
         };
       })
       .filter(s => s.isOnline); // ✅ ONLY show online systems
-    
+
     // Calculate stats (only for online systems)
     const stats = {
       total: systemsWithStatus.length,
@@ -5388,9 +5659,9 @@ app.get('/api/lab-systems/:labId', async (req, res) => {
       available: systemsWithStatus.filter(s => s.status === 'available').length,
       guest: systemsWithStatus.filter(s => s.status === 'guest').length
     };
-    
+
     console.log(`📊 Lab ${labId} online systems: ${stats.online} total, ${stats.loggedIn} logged-in, ${stats.available} at login screen, ${stats.guest} guest`);
-    
+
     res.json({ success: true, systems: systemsWithStatus, stats });
   } catch (error) {
     console.error('❌ Get lab systems error:', error);
@@ -5402,37 +5673,37 @@ app.get('/api/lab-systems/:labId', async (req, res) => {
 app.post('/api/shutdown-systems', async (req, res) => {
   try {
     const { systemNumbers, labId } = req.body;
-    
+
     if (!Array.isArray(systemNumbers) || systemNumbers.length === 0) {
       return res.status(400).json({ success: false, error: 'No systems selected' });
     }
-    
+
     if (!labId) {
       return res.status(400).json({ success: false, error: 'Lab ID required' });
     }
-    
+
     console.log(`\n============================================================`);
     console.log(`🔌 SELECTIVE SHUTDOWN REQUEST`);
     console.log(`   Lab ID: ${labId}`);
     console.log(`   Systems: ${systemNumbers.join(', ')}`);
     console.log(`   Total: ${systemNumbers.length} systems`);
     console.log(`============================================================\n`);
-    
+
     // Find systems by systemNumber and labId
     const systems = await SystemRegistry.find({
       systemNumber: { $in: systemNumbers.map(String) },
       labId
     }).lean();
-    
+
     let shutdownCount = 0;
     let offlineCount = 0;
-    
+
     const now = new Date();
-    
+
     for (const system of systems) {
       const secondsSinceLastSeen = (now - new Date(system.lastSeen)) / 1000;
       const isOnline = secondsSinceLastSeen < 60;
-      
+
       if (isOnline && system.socketId) {
         // Send shutdown command via Socket.IO
         io.to(system.socketId).emit('force-shutdown-system', {
@@ -5441,7 +5712,7 @@ app.post('/api/shutdown-systems', async (req, res) => {
           timestamp: new Date().toISOString(),
           admin: 'Lab Administrator'
         });
-        
+
         console.log(`✅ Shutdown signal sent to System ${system.systemNumber} (Socket: ${system.socketId})`);
         shutdownCount++;
       } else {
@@ -5449,7 +5720,7 @@ app.post('/api/shutdown-systems', async (req, res) => {
         offlineCount++;
       }
     }
-    
+
     // Broadcast shutdown event to all admins
     io.to('admins').emit('systems-shutdown-initiated', {
       labId,
@@ -5458,14 +5729,14 @@ app.post('/api/shutdown-systems', async (req, res) => {
       offlineCount,
       timestamp: new Date().toISOString()
     });
-    
+
     console.log(`\n============================================================`);
     console.log(`📊 SHUTDOWN SUMMARY`);
     console.log(`   Requested: ${systemNumbers.length} systems`);
     console.log(`   Sent: ${shutdownCount} shutdown commands`);
     console.log(`   Offline: ${offlineCount} systems`);
     console.log(`============================================================\n`);
-    
+
     res.json({
       success: true,
       shutdownCount,
@@ -5473,7 +5744,7 @@ app.post('/api/shutdown-systems', async (req, res) => {
       totalRequested: systemNumbers.length,
       message: `Shutdown command sent to ${shutdownCount} systems${offlineCount > 0 ? ` (${offlineCount} offline)` : ''}`
     });
-    
+
   } catch (error) {
     console.error('❌ Shutdown systems error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -5512,7 +5783,7 @@ app.get('/', (req, res) => {
 app.post('/api/bypass-login', async (req, res) => {
   try {
     const { systemId, systemNumber, computerName, labId } = req.body;
-    
+
     // Validate required fields
     if (!systemNumber || !computerName || !labId) {
       return res.status(400).json({
@@ -5522,7 +5793,7 @@ app.post('/api/bypass-login', async (req, res) => {
     }
 
     console.log(`🔓 Bypass login initiated for ${computerName} (System ${systemNumber}) in lab ${labId}`);
-    
+
     // Broadcast guest mode enabled event to the specific kiosk via Socket.io
     io.emit('guest-mode-enabled', {
       systemId,
@@ -5533,7 +5804,7 @@ app.post('/api/bypass-login', async (req, res) => {
     });
 
     console.log(`📡 Broadcast guest-mode-enabled to system: ${computerName}`);
-    
+
     return res.json({
       success: true,
       message: `Guest access enabled for ${computerName}`,
@@ -5551,9 +5822,9 @@ app.post('/api/bypass-login', async (req, res) => {
 // 404 handler for API routes (after all routes)
 app.use('/api/*', (req, res) => {
   console.error(`❌ API route not found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ 
-    success: false, 
-    error: `API endpoint not found: ${req.method} ${req.originalUrl}` 
+  res.status(404).json({
+    success: false,
+    error: `API endpoint not found: ${req.method} ${req.originalUrl}`
   });
 });
 
@@ -5561,12 +5832,12 @@ const PORT = process.env.PORT || 7401;
 
 // Function to open browser automatically
 function openBrowser(url) {
-  const start = process.platform === 'win32' ? 'start' : 
-                process.platform === 'darwin' ? 'open' : 'xdg-open';
-  
+  const start = process.platform === 'win32' ? 'start' :
+    process.platform === 'darwin' ? 'open' : 'xdg-open';
+
   // Use 'start ""' for Windows to avoid command prompt issues
   const command = process.platform === 'win32' ? `start "" "${url}"` : `${start} "${url}"`;
-  
+
   exec(command, (error) => {
     if (error) {
       console.log(`⚠️  Could not auto-open browser: ${error.message}`);
@@ -5581,7 +5852,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   // Auto-detect and save server IP
   const serverIp = detectLocalIP();
   saveServerConfig(serverIp, PORT);
-  
+
   console.log(`\n${'='.repeat(60)}`);
   console.log(`🔐 College Lab Registration System`);
   console.log(`✅ Server running on port ${PORT}`);
@@ -5594,14 +5865,15 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🛡️ Security: Using ExcelJS (no prototype pollution vulnerability)`);
   console.log(`💾 Config saved to: server-config.json`);
   console.log(`${'='.repeat(60)}\n`);
-  
+
   // Initialize automatic report schedulers
   console.log('⏰ Initializing automatic report schedulers...');
   await setupReportSchedulers();
-  
+
   // Auto-open admin dashboard in browser (with slight delay to ensure server is ready)
   setTimeout(() => {
     const adminDashboardUrl = `http://${serverIp}:${PORT}/admin-dashboard.html`;
-    openBrowser(adminDashboardUrl); 
+    openBrowser(adminDashboardUrl);
   }, 1000);
 });
+

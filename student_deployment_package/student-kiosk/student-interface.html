@@ -824,11 +824,11 @@
     async function handleAdminOffer(data) {
       console.log('📹 ========================================');
       console.log('📹 KIOSK: Handling admin offer for screen mirroring');
-      const { offer, sessionId, adminSocketId } = data;
+      const { offer, sessionId, adminSocketId, nonce } = data;
       // ✅ FIX 9: Always read systemNumber from DOM so it can be included in ICE candidates and answer
       // This allows server routing to work even when sessionId is null (pre-login / guest flow)
       const mySystemNumber = document.getElementById('systemNumber')?.textContent || null;
-      console.log('📹 KIOSK: Offer params:', { hasOffer: !!offer, sessionId, adminSocketId, mySystemNumber });
+      console.log('📹 KIOSK: Offer params:', { hasOffer: !!offer, sessionId, adminSocketId, mySystemNumber, nonce });
 
       // Set processing flag
       isProcessingOffer = true;
@@ -1100,6 +1100,7 @@
 
         console.log('✅ KIOSK: Video tracks added to peer connection');
 
+
         // Handle screen stop
         if (displayStream.getVideoTracks()[0]) {
           displayStream.getVideoTracks()[0].onended = () => {
@@ -1107,6 +1108,7 @@
             if (pc) pc.close();
           };
         }
+
 
         // Create answer
         console.log('🎬 KIOSK: Creating WebRTC answer...');
@@ -1129,7 +1131,8 @@
           answer: answer,
           adminSocketId: adminSocketId,
           sessionId: sessionId || null,              // ✅ FIX 9: explicit null instead of undefined
-          systemNumber: mySystemNumber               // ✅ FIX 9: include for server routing fallback
+          systemNumber: mySystemNumber,              // ✅ FIX 9: include for server routing fallback
+          nonce: nonce || null                       // 🔥 FIX: echo offer nonce so admin can discard stale duplicates
         });
 
         console.log('✅✅✅ KIOSK: Answer sent to admin with video stream');

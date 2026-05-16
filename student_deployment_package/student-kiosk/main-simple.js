@@ -6,6 +6,96 @@ const { spawn } = require('child_process');
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
+// ============================================================
+// Socket.io client for instant server notification on shutdown
+// ============================================================
+let kioskSocket = null;
+let kioskSocketConnected = false;
+let shutdownNotified = false; // guard: only send once
+
+function connectKioskSocket(serverUrl) {
+  try {
+    const { io } = require('socket.io-client');
+    kioskSocket = io(serverUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      timeout: 5000
+    });
+    kioskSocket.on('connect', () => {
+      kioskSocketConnected = true;
+      console.log('🔌 Kiosk socket connected to server:', kioskSocket.id);
+      // Re-register system number so server can look us up
+      kioskSocket.emit('register-kiosk', {
+        systemNumber: SYSTEM_NUMBER,
+        computerName: os.hostname(),
+        labId: LAB_ID,
+        ipAddress: getLocalIP()
+      });
+    });
+    kioskSocket.on('disconnect', () => {
+      kioskSocketConnected = false;
+      console.log('🔌 Kiosk socket disconnected');
+    });
+    kioskSocket.on('connect_error', (err) => {
+      console.log('🔌 Kiosk socket connection error:', err.message);
+    });
+    console.log('🔌 Kiosk socket.io client initialised');
+  } catch (err) {
+    console.error('⚠️ Could not create kiosk socket (socket.io-client not installed?):', err.message);
+  }
+}
+
+// Notify the server immediately that this kiosk is shutting down.
+// The server will auto-logout the active session and remove the screen mirror.
+function notifyServerShutdown() {
+  if (shutdownNotified) return;
+  shutdownNotified = true;
+
+  if (!sessionActive || !currentSession) {
+    console.log('ℹ️ notifyServerShutdown: no active session, skipping');
+    return;
+  }
+
+  const payload = {
+    sessionId: currentSession.id,
+    systemNumber: SYSTEM_NUMBER,
+    labId: LAB_ID,
+    reason: 'system-shutdown'
+  };
+
+  console.log('🔌 Sending kiosk-shutting-down to server for session:', currentSession.id);
+
+  // 1) Fastest path: socket.io (already connected)
+  if (kioskSocket && kioskSocketConnected) {
+    kioskSocket.emit('kiosk-shutting-down', payload);
+  }
+
+  // 2) Fallback: synchronous HTTP using Node built-in http module
+  // This works even if socket.io-client isn't installed
+  try {
+    const http = require('http');
+    const https = require('https');
+    const url = require('url');
+    const parsed = url.parse(`${SERVER_URL}/api/student-logout`);
+    const body = JSON.stringify({ sessionId: currentSession.id, reason: 'system-shutdown' });
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: parsed.path,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    };
+    const transport = parsed.protocol === 'https:' ? https : http;
+    const req = transport.request(options);
+    req.on('error', () => {}); // ignore errors on exit
+    req.write(body);
+    req.end();
+    console.log('🔌 Sync HTTP logout sent to server');
+  } catch (e) {
+    console.log('⚠️ Sync HTTP logout failed:', e.message);
+  }
+}
+
 // Enable screen capturing - will be set when app is ready
 console.log('🎬 Kiosk application starting...');
 
@@ -1489,6 +1579,7 @@ try {
 app.whenReady().then(() => {
   setupAutoStart();  // ✅ Setup auto-start for production
   setupIPCHandlers();
+  connectKioskSocket(SERVER_URL); // Connect socket.io client to notify server of shutdown
   
   if (KIOSK_MODE) {
     console.log('🔒 KIOSK MODE ENABLED - Full system lockdown');
@@ -1708,29 +1799,47 @@ async function performLogout() {
   }
 }
 
+// Guard to prevent before-quit → app.quit() → before-quit infinite loop
+let isQuitting = false;
+
 function gracefulLogout() {
   if (sessionActive && currentSession) {
+    notifyServerShutdown(); // fast socket + HTTP fallback
     performLogout().finally(() => {
+      isQuitting = true;
       app.quit();
     });
   } else {
+    isQuitting = true;
     app.quit();
   }
 }
 
 process.on('SIGINT', (signal) => {
-  console.log('SIGINT received, logging out and quitting...');
+  console.log('🔌 SIGINT received, logging out and quitting...');
+  notifyServerShutdown();
   gracefulLogout();
 });
 
 process.on('SIGTERM', (signal) => {
-  console.log('SIGTERM received, logging out and quitting...');
+  console.log('🔌 SIGTERM received, logging out and quitting...');
+  notifyServerShutdown();
   gracefulLogout();
 });
 
 app.on('before-quit', (e) => {
-  if (sessionActive) {
+  if (isQuitting) return; // already handled — let the quit proceed
+  if (sessionActive && currentSession) {
     e.preventDefault();
+    notifyServerShutdown();
     gracefulLogout();
   }
+});
+
+// will-quit fires even when Windows forces shutdown (after before-quit is skipped)
+app.on('will-quit', () => {
+  console.log('🔌 will-quit: sending final logout notification to server');
+  notifyServerShutdown();
+  globalShortcut.unregisterAll();
+  stopKeyBlocker();
 });

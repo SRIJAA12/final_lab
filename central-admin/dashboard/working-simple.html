@@ -524,9 +524,12 @@
                 videoContainer.innerHTML = '';
                 videoContainer.appendChild(video);
                 
-                // Create WebRTC peer connection (LAN-only: STUN blocked by college firewall)
+                // Create WebRTC peer connection
                 const peerConnection = new RTCPeerConnection({
-                    iceServers: []   // No STUN needed — all machines on same 10.10.46.x subnet
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 });
                 
                 peerConnections.set(sessionId, peerConnection);

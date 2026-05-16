@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,36 +11,36 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+       
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #f8f9fa;
             color: #333;
         }
-        
+       
         .header {
             background: linear-gradient(135deg, #2c3e50, #3498db);
             color: white;
             padding: 1.5rem 2rem;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        
+       
         .header h1 {
             font-size: 2rem;
             margin-bottom: 0.5rem;
         }
-        
+       
         .header .subtitle {
             opacity: 0.9;
             font-size: 1rem;
         }
-        
+       
         .main-container {
             max-width: 1400px;
             margin: 2rem auto;
             padding: 0 1rem;
         }
-        
+       
         .control-panel {
             background: white;
             border-radius: 12px;
@@ -47,20 +48,20 @@
             margin-bottom: 2rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-        
+       
         .control-panel h2 {
             color: #2c3e50;
             margin-bottom: 1.5rem;
             font-size: 1.4rem;
         }
-        
+       
         .session-controls {
             display: flex;
             gap: 1rem;
             margin-bottom: 2rem;
             flex-wrap: wrap;
         }
-        
+       
         .btn {
             padding: 0.75rem 1.5rem;
             border: none;
@@ -73,61 +74,61 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
+       
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
-        
+       
         .btn-success {
             background: #28a745;
             color: white;
         }
-        
+       
         .btn-success:hover {
             background: #218838;
         }
-        
+       
         .btn-danger {
             background: #dc3545;
             color: white;
         }
-        
+       
         .btn-danger:hover {
             background: #c82333;
         }
-        
+       
         .btn-primary {
             background: #007bff;
             color: white;
         }
-        
+       
         .btn-primary:hover {
             background: #0056b3;
         }
-        
+       
         .btn-secondary {
             background: #6c757d;
             color: white;
         }
-        
+       
         .btn-secondary:hover {
             background: #545b62;
         }
-        
+       
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
-        
+       
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
-        
+       
         .stat-card {
             background: white;
             padding: 1.5rem;
@@ -135,78 +136,78 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             text-align: center;
         }
-        
+       
         .stat-number {
             font-size: 2rem;
             font-weight: bold;
             color: #2c3e50;
             margin-bottom: 0.5rem;
         }
-        
+       
         .stat-label {
             color: #6c757d;
             font-size: 0.9rem;
         }
-        
+       
         .students-section {
             background: white;
             border-radius: 12px;
             padding: 2rem;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-        
+       
         .students-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
             margin-top: 1.5rem;
         }
-        
+       
         .student-card {
             background: #f8f9fa;
             border: 2px solid #e9ecef;
             border-radius: 8px;
-            padding: 1.5rem;
+            padding: 1rem;
             transition: all 0.3s ease;
         }
-        
+       
         .student-card:hover {
             border-color: #007bff;
             box-shadow: 0 4px 8px rgba(0,123,255,0.1);
         }
-        
+       
         .student-card.monitoring {
             border-color: #28a745;
             background: #f8fff9;
         }
-        
+       
         .student-info h3 {
             color: #2c3e50;
             margin-bottom: 0.5rem;
         }
-        
+       
         .student-info p {
             color: #6c757d;
             margin: 0.25rem 0;
             font-size: 0.9rem;
         }
-        
+       
         .video-container {
             width: 100%;
-            height: 180px;
+            height: 140px;
             background: #000;
             border-radius: 6px;
-            margin: 1rem 0;
+            margin: 0.75rem 0;
             position: relative;
             overflow: hidden;
         }
-        
+       
         .video-container video {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-        
+       
         .screen-preview {
             display: flex;
             align-items: center;
@@ -215,26 +216,26 @@
             color: #6c757d;
             font-size: 0.9rem;
         }
-        
+       
         .student-controls {
             display: flex;
             gap: 0.5rem;
             margin-top: 1rem;
             flex-wrap: wrap;
         }
-        
+       
         .student-controls .btn {
             padding: 0.5rem 1rem;
             font-size: 0.85rem;
         }
-        
+       
         .no-students {
             text-align: center;
             color: #6c757d;
             font-style: italic;
             padding: 3rem;
         }
-        
+       
         .status-indicator {
             display: inline-block;
             width: 8px;
@@ -242,15 +243,15 @@
             border-radius: 50%;
             margin-right: 0.5rem;
         }
-        
+       
         .status-online {
             background: #28a745;
         }
-        
+       
         .status-offline {
             background: #dc3545;
         }
-        
+       
         .fullscreen-modal {
             display: none;
             position: fixed;
@@ -263,11 +264,11 @@
             justify-content: center;
             align-items: center;
         }
-        
+       
         .fullscreen-modal.active {
             display: flex;
         }
-        
+       
         .fullscreen-content {
             position: relative;
             width: 90vw;
@@ -276,13 +277,13 @@
             border-radius: 10px;
             overflow: hidden;
         }
-        
+       
         .fullscreen-video {
             width: 100%;
             height: 100%;
             object-fit: contain;
         }
-        
+       
         .close-fullscreen {
             position: absolute;
             top: 20px;
@@ -297,7 +298,7 @@
             cursor: pointer;
             z-index: 11;
         }
-        
+       
         .close-fullscreen:hover {
             background: rgba(255, 255, 255, 0.3);
         }
@@ -311,7 +312,7 @@
             transform: translateY(0);
         }
 
-        
+       
         .btn-expand {
             background: #007bff;
             color: white;
@@ -323,12 +324,12 @@
             transition: all 0.3s ease;
             margin-right: 0.5rem;
         }
-        
+       
         .btn-expand:hover {
             background: #0056b3;
             transform: scale(1.05);
         }
-        
+       
         .student-actions {
             display: flex;
             align-items: center;
@@ -336,14 +337,14 @@
             margin-top: 0.5rem;
             flex-wrap: wrap;
         }
-        
+       
         .connection-status {
             font-size: 0.85rem;
             color: #6c757d;
             flex: 1;
             text-align: right;
         }
-        
+       
         /* Toast notification animations */
         @keyframes slideIn {
             from {
@@ -355,7 +356,7 @@
                 opacity: 1;
             }
         }
-        
+       
         @keyframes slideOut {
             from {
                 transform: translateX(0);
@@ -419,7 +420,7 @@
         // Check if user is authenticated
         (function() {
             const isAuthenticated = sessionStorage.getItem('adminAuthenticated');
-            
+           
             if (isAuthenticated !== 'true') {
                 // Not authenticated, redirect to login
                 console.log('🔒 Access denied - redirecting to login page');
@@ -429,7 +430,7 @@
             }
         })();
     </script>
-    
+   
     <div class="header">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
@@ -445,12 +446,12 @@
 <div class="control-panel">
     <h2>📅 Timetable Management</h2>
     <p>Upload your lab schedule CSV - sessions will start/end automatically</p>
-    
+   
     <form id="timetableForm" enctype="multipart/form-data">
         <input type="file" id="timetableFile" accept=".csv" required>
         <button type="submit" class="btn btn-success">📤 Upload Timetable</button>
     </form>
-    
+   
     <div id="uploadedFileInfo" style="display: none; margin: 15px 0; padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; color: #155724;">
         <strong>📋 Current Timetable:</strong> <span id="uploadedFileName">None</span>
         <br>
@@ -458,11 +459,11 @@
         <br>
         <small><strong>Entries:</strong> <span id="uploadedFileEntries">0</span></small>
     </div>
-    
+   
     <button onclick="downloadTimetableTemplate()" class="btn btn-primary">
         📥 Download Template
     </button>
-    
+   
     <button onclick="clearTimetable()" class="btn btn-danger">
         🗑️ Clear All Timetable
     </button>
@@ -494,7 +495,7 @@
         <!-- Control Panel -->
         <div class="control-panel">
             <h2>📊 Session Control</h2>
-            
+           
             <div class="session-controls">
                 <button class="btn btn-success" id="startSessionBtn" onclick="startLabSession()">
                     🚀 Start Lab Session
@@ -534,11 +535,11 @@
                     <div><strong>Duration:</strong> <span id="current-duration">-</span></div>
                     <div><strong>Started:</strong> <span id="current-start-time">-</span></div>
                 </div>
-                
+               
                 <!-- Duration Control Panel -->
                 <div style="background: white; border-radius: 6px; padding: 1rem; border: 2px solid #20c997;">
                     <h4 style="color: #20c997; margin-bottom: 0.75rem; font-size: 1rem;">⏱️ Adjust Session Duration</h4>
-                    
+                   
                     <!-- Quick Adjust (50 min per period) -->
                     <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
                         <button onclick="adjustSessionDuration(-1)" class="btn btn-warning" style="padding: 0.5rem 1rem;">
@@ -551,7 +552,7 @@
                             ➕ Add 1 Period (50 min)
                         </button>
                     </div>
-                    
+                   
                     <!-- Custom Time Adjustment -->
                     <div style="border-top: 1px solid #dee2e6; padding-top: 1rem;">
                         <label style="display: block; font-weight: 600; color: #2c3e50; margin-bottom: 0.5rem;">Custom Time Adjustment:</label>
@@ -559,7 +560,7 @@
                             <button onclick="adjustSessionByMinutes('decrease')" class="btn btn-warning" style="padding: 0.4rem 0.8rem; font-size: 0.9rem;">
                                 ➖ Decrease
                             </button>
-                            <input type="number" id="custom-time-input" min="5" max="100" step="5" value="10" 
+                            <input type="number" id="custom-time-input" min="5" max="100" step="5" value="10"
                                    style="width: 80px; padding: 0.4rem; border: 2px solid #ced4da; border-radius: 4px; text-align: center; font-weight: 600;">
                             <span style="color: #6c757d; font-weight: 600;">minutes</span>
                             <button onclick="adjustSessionByMinutes('increase')" class="btn btn-success" style="padding: 0.4rem 0.8rem; font-size: 0.9rem;">
@@ -567,7 +568,7 @@
                             </button>
                         </div>
                     </div>
-                    
+                   
                     <small style="color: #6c757d; display: block; margin-top: 0.75rem;">💡 Quick: Use ±1 period (50 min) | Custom: Choose your own time increment</small>
                 </div>
             </div>
@@ -630,7 +631,7 @@
         <div class="control-panel" style="margin-top: 2rem;">
             <h2>📅 Automatic Report Schedule</h2>
             <p style="color: #6c757d; margin-bottom: 1.5rem;">Configure automatic daily report generation times (up to 2 schedules per day). Reports will download to your browser automatically at the scheduled times.</p>
-            
+           
             <div style="background: #f8f9fa; border-radius: 8px; padding: 1.5rem;">
                 <div style="margin-bottom: 2rem;">
                     <div>
@@ -644,7 +645,7 @@
                         </select>
                     </div>
                 </div>
-                
+               
                 <!-- Schedule 1 -->
                 <div style="background: white; border: 2px solid #28a745; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
                     <h4 style="color: #28a745; margin-bottom: 1rem;">🕐 Schedule 1 (Morning/Afternoon)</h4>
@@ -663,7 +664,7 @@
                         </div>
                     </div>
                 </div>
-                
+               
                 <!-- Schedule 2 -->
                 <div style="background: white; border: 2px solid #007bff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
                     <h4 style="color: #007bff; margin-bottom: 1rem;">🕕 Schedule 2 (Evening)</h4>
@@ -682,21 +683,21 @@
                         </div>
                     </div>
                 </div>
-                
+               
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
                     <button onclick="saveSchedule()" class="btn btn-success">
                         💾 Save Schedule
                     </button>
-                    
+                   
                     <button onclick="loadSchedule()" class="btn btn-secondary">
                         🔄 Load Current Schedule
                     </button>
-                    
+                   
                     <button onclick="generateReportNow()" class="btn btn-primary">
                         📊 Generate Report Now (Test)
                     </button>
                 </div>
-                
+               
                 <div id="scheduleStatus" style="margin-top: 15px; padding: 12px; border-radius: 8px; display: none;"></div>
             </div>
         </div>
@@ -706,13 +707,13 @@
     <div class="control-panel" style="margin-top: 2rem;">
         <h2>📊 Lab Session Reports</h2>
         <p style="color: #6c757d; margin-bottom: 1.5rem;">Download complete lab session reports with metadata (subject, faculty, time periods) and all student records. Generated automatically when you end a lab session.</p>
-        
+       
         <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
             <button onclick="loadLabSessionReports()" class="btn btn-primary">
                 🔄 Refresh Reports
             </button>
         </div>
-        
+       
         <div id="labSessionReportsList" style="margin-top: 1rem; background: #f8f9fa; border-radius: 8px; padding: 1.5rem;">
             <p style="color: #6c757d;">Lab session reports will appear here when you end sessions...</p>
         </div>
@@ -737,11 +738,11 @@
     <div id="allSystemsModal" class="fullscreen-modal">
         <div class="fullscreen-content" style="max-width: 1400px; max-height: 90vh; overflow-y: auto; background: white; border-radius: 15px; padding: 30px;">
             <button class="close-fullscreen" onclick="closeAllSystemsModal()">×</button>
-            
+           
             <h2 style="color: #dc3545; margin-bottom: 20px;">
                 🖥️ Online Lab Systems (Shutdown Control)
             </h2>
-            
+           
             <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #dee2e6;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px;">
                     <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 15px; border-radius: 8px; text-align: center;">
@@ -757,7 +758,7 @@
                         <div style="font-size: 0.9rem; opacity: 0.9;">📊 Total Online</div>
                     </div>
                 </div>
-                
+               
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
                     <button onclick="selectAllSystems()" class="btn btn-secondary" style="padding: 12px 24px;">
                         ☑️ Select All
@@ -770,11 +771,11 @@
                     </button>
                 </div>
             </div>
-            
+           
             <div id="allSystemsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px;">
                 <!-- Systems will be populated here -->
             </div>
-            
+           
             <div style="display: flex; gap: 15px; justify-content: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #dee2e6;">
                 <button onclick="shutdownSelectedSystems()" class="btn btn-danger" style="padding: 15px 40px; font-size: 1.2rem; font-weight: bold;">
                     ⚡ Shutdown Selected Systems
@@ -783,7 +784,7 @@
                     ❌ Cancel
                 </button>
             </div>
-            
+           
             <div id="shutdownStatus" style="margin-top: 20px; padding: 15px; border-radius: 8px; display: none;"></div>
         </div>
     </div>
@@ -808,10 +809,12 @@
         let connectionRetryCount = new Map(); // Track retry attempts per session (for exponential backoff)
         let exhaustedRetrySessions = new Set(); // Track sessions that exhausted all retries (don't restart these)
         let pendingStartTimers = new Map(); // Track pending 1.5s INSTANT START timers (sessionId -> timerId) so kiosk-ready can cancel them
-        
+        let offerNonce = new Map(); // 🔥 FIX: Per-session offer nonce to discard stale duplicate answers
+        let iceRestartInProgress = new Set(); // 🔥 ICE RESTART FIX: Track sessions currently doing ICE restart (not full teardown)
+       
         // FIXED SERVER URL - Admin system only (no auto-detection needed)
         const serverUrl = 'http://10.10.46.103:7401';
-        
+       
         let hasShownRestoreNotification = false; // Track if we've shown the restore notification
 
         console.log('🎯 Using fixed server URL:', serverUrl);
@@ -820,7 +823,7 @@
         // ============================================================================
         // SESSION PERSISTENCE - Save/Restore Admin Session State
         // ============================================================================
-        
+       
         function saveAdminSessionState() {
             try {
                 // ✅ FIX: Validate sessionEndTime before converting to ISO string
@@ -836,7 +839,7 @@
                         console.warn('⚠️ Invalid sessionEndTime, skipping:', e);
                     }
                 }
-                
+               
                 const sessionState = {
                     sessionActive,
                     currentLabSession,
@@ -851,7 +854,7 @@
                 console.error('❌ Failed to save admin session state:', e);
             }
         }
-        
+       
         function restoreAdminSessionState() {
             try {
                 const savedState = localStorage.getItem('adminSessionState');
@@ -859,33 +862,33 @@
                     console.log('ℹ️ No saved admin session state found');
                     return false;
                 }
-                
+               
                 const sessionState = JSON.parse(savedState);
                 console.log('📦 Found saved admin session state:', sessionState);
-                
+               
                 // Check if saved state is recent (within last 24 hours)
                 const savedTime = new Date(sessionState.timestamp);
                 const now = new Date();
                 const hoursDiff = (now - savedTime) / (1000 * 60 * 60);
-                
+               
                 if (hoursDiff > 24) {
                     console.log('⏰ Saved session state is too old, clearing...');
                     localStorage.removeItem('adminSessionState');
                     return false;
                 }
-                
+               
                 // Restore session state
                 sessionActive = sessionState.sessionActive;
                 currentLabSession = sessionState.currentLabSession;
                 sessionEndTime = sessionState.sessionEndTime ? new Date(sessionState.sessionEndTime) : null;
                 sessionExported = sessionState.sessionExported;
-                
+               
                 // Restore connected students map
                 if (sessionState.connectedStudents) {
                     connectedStudents = new Map(sessionState.connectedStudents);
                     console.log(`🔄 Restored ${connectedStudents.size} connected students`);
                 }
-                
+               
                 console.log('✅ Admin session state restored from localStorage');
                 return true;
             } catch (e) {
@@ -893,7 +896,7 @@
                 return false;
             }
         }
-        
+       
         function clearAdminSessionState() {
             try {
                 localStorage.removeItem('adminSessionState');
@@ -902,23 +905,23 @@
                 console.error('❌ Failed to clear admin session state:', e);
             }
         }
-        
+       
         // Auto-save session state every 10 seconds
         setInterval(() => {
             if (sessionActive || connectedStudents.size > 0) {
                 saveAdminSessionState();
             }
         }, 10000);
-        
+       
         // ============================================================================
         // RECONNECTION LOGIC - Restore Screen Mirroring After Refresh
         // ============================================================================
-        
+       
         async function reconnectToActiveStudents() {
             console.log('\n============================================================');
             console.log('🔄 RECONNECTING TO ACTIVE STUDENTS');
             console.log('============================================================\n');
-            
+           
             // Wait for socket to be connected
             if (!socket || !socket.connected) {
                 console.log('⏳ Waiting for socket connection...');
@@ -931,23 +934,23 @@
                     }, 100);
                 });
             }
-            
+           
             console.log('✅ Socket connected, requesting active sessions...');
-            
+           
             // Request active sessions from server
             socket.emit('get-active-sessions');
-            
+           
             // ✅ FIX: Reduced wait time from 2000ms to 500ms for faster startup
             await new Promise(resolve => setTimeout(resolve, 500));
-            
+           
             console.log(`🔍 Found ${connectedStudents.size} connected students`);
-            
+           
             // Restart screen mirroring for all connected students
             if (connectedStudents.size > 0) {
                 console.log('🎥 🚀 INSTANT PARALLEL screen mirroring for ALL students...');
-                
+               
                 // ✅ FIX: NO UI WAIT - start immediately
-                
+               
                 // Clear any stale connections first
                 monitoringConnections.forEach((pc, sessionId) => {
                     try {
@@ -958,14 +961,14 @@
                 monitoringConnections.clear();
                 connectionStartTime.clear();
                 connectionDisconnectTime.clear();
-                
+               
                 // ✅ FIX: Start ALL connections in PARALLEL - no delays, no throttling
                 // This allows 60+ systems to connect simultaneously without waiting
                 const startPromises = [];
                 let reconnectCount = 0;
                 for (const [sessionId, sessionData] of connectedStudents.entries()) {
                     console.log(`🎥 🚀 INSTANT reconnect for: ${sessionId} (${sessionData.name})`);
-                    
+                   
                     // Check if video container exists
                     const videoContainer = document.getElementById(`video-${sessionId}`);
                     if (videoContainer) {
@@ -976,14 +979,14 @@
                         console.warn(`⚠️ Video container not found for session: ${sessionId}`);
                     }
                 }
-                
+               
                 // Wait for all connections to start (not complete, just initiated)
                 Promise.allSettled(startPromises).then(() => {
                     console.log(`✅ All ${reconnectCount} connections initiated in parallel`);
                 });
-                
+               
                 console.log(`✅ Initiated parallel reconnection for ${reconnectCount} students`);
-                
+               
                 showNotification(
                     `🔄 SESSION RESTORED\n\n` +
                     `🎥 Reconnecting screen mirroring for ${reconnectCount} students in parallel...`,
@@ -993,7 +996,7 @@
             } else {
                 console.log('ℹ️ No students to reconnect');
             }
-            
+           
             console.log('\n============================================================');
             console.log('✅ RECONNECTION PROCESS COMPLETE');
             console.log('============================================================\n');        }
@@ -1001,13 +1004,13 @@
         // ============================================================================
         // GUEST PASSWORD - Fetch and Display Daily 4-Digit Password
         // ============================================================================
-        
+       
         async function fetchGuestPassword() {
             try {
                 console.log('🔑 Fetching today\'s guest password...');
                 const response = await fetch(`${serverUrl}/api/guest-password`);
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     document.getElementById('guestPasswordDisplay').textContent = data.password;
                     document.getElementById('guestPasswordDate').textContent = `Valid for ${data.formattedDate} | Changes at midnight`;
@@ -1028,29 +1031,29 @@
         async function initializeSocket() {
             console.log('🚀 Admin dashboard loading...');
             console.log('🔗 Connecting to:', serverUrl);
-            
+           
             socket = io(serverUrl);
-            
+           
             socket.on('connect', () => {
                 console.log('✅ Admin dashboard connected:', socket.id);
                 socket.emit('register-admin');
-                
+               
                 // Join admins room for notifications
                 socket.emit('join-room', 'admins');
                 console.log('👥 Joined admins room for notifications');
-                
+               
                 // Try to restore previous session state from localStorage
                 const wasRestored = restoreAdminSessionState();
-                
+               
                 loadActiveStudents();
-                
+               
                 // Always load active sessions and let displayActiveSessions handle monitoring
                 // This ensures screen mirroring starts even after refresh
                 setTimeout(() => {
                     console.log('🔄 Ensuring all sessions have active monitoring...');
                     loadActiveStudents();
                 }, 2000);
-                
+               
                 // Start automatic refresh every 10 seconds to detect new logins
                 if (autoRefreshInterval) {
                     clearInterval(autoRefreshInterval);
@@ -1062,63 +1065,65 @@
                     if (sessionActive || connectedStudents.size > 0) {
                         saveAdminSessionState();
                     }
-                }, 20000); // Increased to 20 seconds to reduce interference with WebRTC
-                console.log('✅ Auto-refresh started (every 20 seconds)');
-                
-                // 🔥 IMPROVED: Connection health monitor - checks every 15 seconds for fast recovery
+                }, 30000); // Increased to 30 seconds to reduce interference with WebRTC
+                console.log('✅ Auto-refresh started (every 30 seconds)');
+               
+                // 🔥 IMPROVED: Connection health monitor - checks every 30 seconds to reduce interference
+                // Increased from 15s to 30s to avoid race conditions with ICE self-recovery (45s window)
                 setInterval(() => {
                     console.log('\n🔍 === CONNECTION HEALTH CHECK ===');
                     console.log(`📊 Total students: ${connectedStudents.size}`);
                     console.log(`📊 Total peer connections: ${monitoringConnections.size}`);
-                    
+                   
                     let connectedCount = 0;
                     let connectingCount = 0;
                     let failedCount = 0;
                     let disconnectedCount = 0;
-                    
+                   
                     const now = Date.now();
-                    
+                   
                     monitoringConnections.forEach((pc, sessionId) => {
                         const state = pc.connectionState;
                         const iceState = pc.iceConnectionState;
                         const hasVideo = document.getElementById(`video-${sessionId}`)?.querySelector('video')?.srcObject;
-                        
+                       
                         // 🛡️ CRITICAL: Use disconnect duration, not connection age
                         const disconnectTime = connectionDisconnectTime.get(sessionId);
                         const disconnectDuration = disconnectTime ? (now - disconnectTime) / 1000 : 0;
-                        
+                        // 🔥 FIX: Threshold raised to 20s (was 10s) to allow WebRTC ICE restart to complete
+                       
                         // 🔥 NEW: Track how long connection has been in "connecting" state
                         const connectingStartTime = connectionStartTime.get(sessionId);
                         const connectingDuration = connectingStartTime ? (now - connectingStartTime) / 1000 : 0;
-                        
+                       
                         // 🔥 DTLS STUCK CHECK: ICE connected but connection state stuck at "connecting"
                         // Check BOTH: connectingDuration >= 20 OR disconnectDuration >= 10 (backdated by DTLS timeout)
-                        const isDtlsStuck = (state === 'connecting' && 
-                                           (iceState === 'connected' || iceState === 'completed') && 
+                        const isDtlsStuck = (state === 'connecting' &&
+                                           (iceState === 'connected' || iceState === 'completed') &&
                                            (connectingDuration >= 20 || disconnectDuration >= 10));
-                        
+                       
                         // 🔥 CRITICAL FIX: Only consider "connected" if BOTH states are healthy
                         // Don't count as connected if ICE is connected but connection state is stuck
                         const isFullyConnected = (state === 'connected' && iceState === 'connected');
                         const isDisconnected = (state === 'disconnected' || iceState === 'disconnected');
                         const isFailed = (state === 'failed' || state === 'closed' || iceState === 'failed');
-                        
+                       
                         console.log(`  Session ${sessionId.substring(0, 8)}...: ${state} / ${iceState} / Video: ${hasVideo ? '✅' : '❌'} / DisconnectDuration: ${disconnectDuration.toFixed(1)}s / ConnectingTime: ${connectingDuration.toFixed(1)}s`);
-                        
+                       
                         // Count states - DTLS stuck counts as connecting, not connected
                         if (isFullyConnected) connectedCount++;
                         else if (state === 'connecting' || state === 'new' || isDtlsStuck) connectingCount++;
                         else if (isFailed) failedCount++;
                         else if (isDisconnected) disconnectedCount++;
-                        
+                       
                         // 🛡️ RACE CONDITION FIX: Don't restart sessions that already exhausted all retries
                         if (exhaustedRetrySessions.has(sessionId)) {
                             console.log(`  ⏭️ Skipping exhausted session: ${sessionId} (already tried 5 times)`);
                             return; // Skip health check restart for this session (forEach callback - use return not continue)
                         }
-                        
-                        // 🛡️ IMPROVED: Restart if failed, disconnected 10+ seconds, OR DTLS stuck
-                        const shouldRestart = isFailed || (isDisconnected && disconnectDuration >= 10) || isDtlsStuck;
+                       
+                        // 🛡️ IMPROVED: Restart if failed, disconnected 45+ seconds, OR DTLS stuck
+                        const shouldRestart = isFailed || (isDisconnected && disconnectDuration >= 45) || isDtlsStuck; // 🔥 FIX: 45s (was 20s)
                           if (shouldRestart) {
                             if (isDtlsStuck) {
                                 console.error(`  ❌ ❌ HEALTH CHECK DETECTED DTLS STUCK for session: ${sessionId}`);
@@ -1138,11 +1143,11 @@
                             setTimeout(() => startMonitoring(sessionId), staggerDelay);
                         } else if (state === 'connecting' || state === 'new') {
                             // 🔥 SPLIT TIMEOUT: 'new/new' (offer dropped) vs 'connecting' (DTLS in progress)
-                            // - new/new: ICE never started = offer never reached kiosk → retry fast (30s)
+                            // - new/new: ICE never started = offer never reached kiosk → retry fast (15s)
                             // - connecting: ICE started but connection not established yet → give more time (60s)
                             const isFullyNew = (state === 'new' && iceState === 'new');
-                            const restartThreshold = isFullyNew ? 30 : 60;
-                            
+                            const restartThreshold = isFullyNew ? 15 : 60; // 🔥 FIX: 15s (was 30s) for new/new
+                           
                             if (connectingDuration >= restartThreshold) {
                                 console.error(`  ❌ ❌ STUCK in ${state}/${iceState} for ${connectingDuration.toFixed(1)}s (threshold: ${restartThreshold}s) - FORCE RESTARTING session: ${sessionId}`);
                                 try { pc.close(); } catch(e) {}
@@ -1153,19 +1158,19 @@
                             } else {
                                 console.log(`  ⏳ Connection establishing for session: ${sessionId} (${connectingDuration.toFixed(1)}s / ${restartThreshold}s threshold, state: ${state}/${iceState})`);
                             }
-                        } else if (isDisconnected && disconnectDuration < 10) {
-                            console.log(`  🔄 Connection disconnected for session: ${sessionId} (${disconnectDuration.toFixed(1)}s) - letting WebRTC auto-reconnect`);
+                        } else if (isDisconnected && disconnectDuration < 45) {
+                            console.log(`  🔄 Connection disconnected for session: ${sessionId} (${disconnectDuration.toFixed(1)}s) - letting WebRTC auto-reconnect (restarts at 45s)`); // 🔥 FIX: 45s threshold
                         }
                     });
-                    
+                   
                     console.log(`📊 Summary: ${connectedCount} connected, ${connectingCount} connecting, ${failedCount} failed, ${disconnectedCount} disconnected`);
                     console.log('🔍 === END HEALTH CHECK ===\n');
-                }, 15000); // Check every 15 seconds for fast recovery
+                }, 30000); // Check every 30 seconds to reduce interference with ICE recovery
             });
-            
+           
             socket.on('disconnect', () => {
                 console.log('❌ Admin dashboard disconnected');
-                
+               
                 // Stop auto-refresh when disconnected
                 if (autoRefreshInterval) {
                     clearInterval(autoRefreshInterval);
@@ -1173,113 +1178,144 @@
                     console.log('🛑 Auto-refresh stopped');
                 }
             });
-            
+           
             socket.on('connect_error', (error) => {
                 console.error('❌ Connection error:', error);
             });
-            
+           
             // Listen for student events
             socket.on('session-created', (sessionData) => {
                 console.log('📱 New session created:', sessionData);
-                
+               
                 // CRITICAL: Only add to grid if this is an actual student login (not pre-login kiosk)
                 if (!sessionData.studentId || !sessionData.studentName) {
                     console.log('⏭️ Skipping session-created for pre-login kiosk (no student data)');
                     return;
                 }
-                
+               
                 const sessionId = sessionData._id || sessionData.sessionId || sessionData.id;
-                
+               
                 // Add to grid and connectedStudents map if not already there
                 if (!connectedStudents.has(sessionId)) {
                     connectedStudents.set(sessionId, sessionData); // ✅ FIX: Add to map immediately
                     addStudentToGrid(sessionData);
                     updateStats();
-                    
+                   
                     // Save session state when new student connects
                     saveAdminSessionState();
                 }
-                
+               
                 // ✅ FIX: Start monitoring IMMEDIATELY for new session (no delay)
                 if (sessionId) {
                     // Check if monitoring is already active
                     const pc = monitoringConnections.get(sessionId);
                     const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
-                    
+                   
                     if (!monitoringConnections.has(sessionId) || !isConnected) {
                         console.log('🎥 ⚡ INSTANT START for NEW session:', sessionId);
-                        
+                       
                         // Clean up failed connection if exists
                         if (pc && !isConnected) {
                             try { pc.close(); } catch(e) {}
                             monitoringConnections.delete(sessionId);
                         }
-                        
-                        // ⏳ TIMING FIX: Wait 1.5s before sending first offer
+                       
+                        // ⏳ TIMING FIX: Staggered delay so kiosk can re-register AND to prevent thundering herd
+                        // 🔥 THUNDERING HERD FIX: 100 students logging in at once → all fire at t=1500ms = flood.
+                        // Stagger: #1→1500ms, #50→4000ms, #100→6500ms — smooth load, all fast.
                         // The server emits session-created and session-login-success at the same time.
                         // The kiosk needs to receive session-login-success and re-register with sessionId
                         // BEFORE we send our offer. Otherwise server has no kiosk socket to forward to → dropped.
                         // 🔥 FIX: Save the timer ID so kiosk-screen-ready can cancel it (prevents dual offer)
-                        console.log('⏳ Waiting 1.5s for kiosk to re-register with sessionId before sending offer...');
+                        const staggerOffset = pendingStartTimers.size * 50; // 50ms per already-queued session
+                        const totalDelay = 1500 + staggerOffset;
+                        console.log(`⏳ Staggered offer delay: ${totalDelay}ms (${pendingStartTimers.size} already pending)`);
                         const instantStartTimer = setTimeout(() => {
-                            pendingStartTimers.delete(sessionId); // Timer fired - remove from map
+                            pendingStartTimers.delete(sessionId);
                             startMonitoring(sessionId);
-                        }, 1500);
+                        }, totalDelay);
                         pendingStartTimers.set(sessionId, instantStartTimer);
                     } else {
                         console.log('✅ Monitoring already active for:', sessionId);
                     }
                 }
             });
-            
+           
             socket.on('session-ended', (sessionData) => {
                 console.log('📱 Session ended:', sessionData);
-                
+               
                 // Get counts before cleanup for logging
                 const beforeActive = connectedStudents.size;
                 const beforeMonitoring = monitoringConnections.size;
-                
-                // Clean up student from grid and connections
+               
+                // 🔧 ENHANCED: Immediate cleanup to prevent black screen and lingering connections
+                // Clean up student from grid and connections immediately
                 removeStudentFromGrid(sessionData.sessionId);
-                
-                // Clear screen ready status for this session
+               
+                // Clear all tracking data for this session
                 screenReadySessions.delete(sessionData.sessionId);
-                
+                pendingStartTimers.delete(sessionData.sessionId);
+                connectionRetryCount.delete(sessionData.sessionId);
+                connectionStartTime.delete(sessionData.sessionId);
+                connectionDisconnectTime.delete(sessionData.sessionId);
+               
+                // Force stop any lingering WebRTC connection
+                const pc = monitoringConnections.get(sessionData.sessionId);
+                if (pc) {
+                    try {
+                        // Close all transceivers to fully cleanup
+                        pc.getTransceivers().forEach(transceiver => {
+                            if (transceiver.sender) {
+                                transceiver.sender.track?.stop();
+                            }
+                            if (transceiver.receiver) {
+                                transceiver.receiver.track?.stop();
+                            }
+                        });
+                        pc.close();
+                        console.log('🔧 Force closed WebRTC connection for ended session:', sessionData.sessionId);
+                    } catch (e) {
+                        console.error('⚠️ Error force closing WebRTC:', e);
+                    }
+                    monitoringConnections.delete(sessionData.sessionId);
+                }
+               
                 // Update stats to reflect changes
                 updateStats();
-                
+               
                 // Log the changes
                 const afterActive = connectedStudents.size;
                 const afterMonitoring = monitoringConnections.size;
-                console.log(`🧹 Session cleanup complete for: ${sessionData.sessionId}`);
+                console.log(`🧹 Enhanced session cleanup complete for: ${sessionData.sessionId}`);
                 console.log(`📊 Active students: ${beforeActive} → ${afterActive}`);
                 console.log(`📊 Being monitored: ${beforeMonitoring} → ${afterMonitoring}`);
+                console.log(`🎯 Total connected students: ${connectedStudents.size}`);
             });
-            
+           
             socket.on('active-sessions', (data) => {
                 // Handle both old format (array) and new format (object with sessions + labSession)
                 const sessions = Array.isArray(data) ? data : (data.sessions || []);
                 const labSession = data.labSession || null;
-                
+               
                 console.log('📋 Active sessions received:', sessions);
                 console.log('🎓 Active lab session:', labSession ? labSession.subject : 'none');
-                
+               
                 displayActiveSessions(sessions);
-                
+               
                 // Restore lab session state (button states)
                 restoreLabSessionState(labSession);
             });
-            
+           
             // Listen for lab session ended event
             socket.on('lab-session-ended', (data) => {
                 console.log('🛑 Lab session ended:', data);
-                
+               
                 // ✅ FIX: Refresh timetable to show updated status (pending → completed)
                 if (typeof loadTimetable === 'function') {
                     loadTimetable();
                     console.log('✅ Refreshed timetable after session ended');
                 }
-                
+               
                 // Force refresh to clear all students
                 setTimeout(() => {
                     loadActiveStudents();
@@ -1289,7 +1325,7 @@
             // ========================================================================
             // GUEST ACCESS REMOVED
             // ========================================================================
-            
+           
             // Listen for kiosk screen ready event
             socket.on('kiosk-screen-ready', (data) => {
                 console.log('\n==============================================');
@@ -1297,9 +1333,9 @@
                 console.log('Session ID:', data.sessionId);
                 console.log('Has Video:', data.hasVideo);
                 console.log('==============================================\n');
-                
+               
                 screenReadySessions.add(data.sessionId);
-                
+               
                 // 🔥 CRITICAL FIX: Cancel any pending INSTANT START 1.5s timer for this session.
                 // This is the ROOT CAUSE of duplicate offers:
                 //   session-created fires → sets 1.5s timer
@@ -1310,21 +1346,21 @@
                     pendingStartTimers.delete(data.sessionId);
                     console.log(`🚫 Cancelled pending INSTANT START timer for: ${data.sessionId} (kiosk-ready will handle it)`);
                 }
-                
+               
                 const pc = monitoringConnections.get(data.sessionId);
                 const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
                 const isChecking = pc && (pc.iceConnectionState === 'checking' || pc.connectionState === 'connecting');
                 const videoContainer = document.getElementById(`video-${data.sessionId}`);
-                const hasActiveVideo = videoContainer && 
+                const hasActiveVideo = videoContainer &&
                                       videoContainer.querySelector('video')?.srcObject &&
                                       videoContainer.querySelector('video')?.srcObject.active;
-                
+               
                 // ✅ RACE CONDITION FIX: Don't restart if a connection was created recently (within 10s)
                 // The kiosk-screen-ready event fires BEFORE the answer arrives on the wire.
                 // Restarting here tears down the active PC, the answer lands on a closed PC → new/new forever.
                 const pcAge = connectionStartTime.has(data.sessionId) ? (Date.now() - connectionStartTime.get(data.sessionId)) : Infinity;
                 const isRecentConnection = pcAge < 10000; // 10 second grace period
-                
+               
                 if (isConnected || hasActiveVideo) {
                     console.log('✅ Monitoring already active and working for:', data.sessionId);
                 } else if (isRecentConnection || isChecking) {
@@ -1334,13 +1370,13 @@
                 } else {
                     // No connection yet OR stale old connection - start fresh from kiosk-ready
                     console.log(`🎥 ⚡ KIOSK READY - Starting monitoring for:`, data.sessionId);
-                    
+                   
                     // Clean up stale connection (older than 10s that never connected)
                     if (pc && !isConnected) {
                         try { pc.close(); } catch(e) {}
                         monitoringConnections.delete(data.sessionId);
                     }
-                    
+                   
                     // Wait brief moment for video container to be created (from addStudentToGrid)
                     setTimeout(() => {
                         if (document.getElementById(`video-${data.sessionId}`)) {
@@ -1352,15 +1388,15 @@
                 }
             });
 
-            
+           
             // WebRTC signaling
-            socket.on('webrtc-answer', ({ answer, sessionId }) => {
+            socket.on('webrtc-answer', ({ answer, sessionId, nonce }) => {
                 console.log('📹 WebRTC answer received for session:', sessionId);
-                handleWebRTCAnswer(answer, sessionId);
+                handleWebRTCAnswer(answer, sessionId, nonce);
             });
-            
+           
             socket.on('webrtc-ice-candidate', ({ candidate, sessionId }) => {
-                console.log('🧊 ✅ ADMIN RECEIVED ICE CANDIDATE from kiosk for session:', sessionId, candidate.type);
+                console.log('🧊 ✅ ADMIN RECEIVED ICE CANDIDATE from kiosk for session:', sessionId, candidate?.type);
                 handleICECandidate(candidate, sessionId);
             });
 
@@ -1368,10 +1404,10 @@
             socket.on('scheduled-report-ready', ({ labId, filename, csvContent, count, timestamp }) => {
                 console.log('📊 ✅ SCHEDULED REPORT READY:', { labId, filename, count });
                 console.log('📥 Auto-downloading report to browser...');
-                
+               
                 // Create blob from CSV content
                 const blob = new Blob([csvContent], { type: 'text/csv' });
-                
+               
                 // Create download link
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1381,9 +1417,9 @@
                 a.click();
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
-                
+               
                 console.log('✅ Report auto-downloaded:', filename);
-                
+               
                 // Show notification
                 showNotification(`📊 Report auto-downloaded: ${filename} (${count} sessions)`, 'success');
             });
@@ -1391,23 +1427,23 @@
             // ========================================================================
             // HARDWARE MONITORING - Alert Listeners
             // ========================================================================
-            
+           
             // Listen for hardware alerts from student kiosks
             socket.on('admin-hardware-alert', (alertData) => {
                 console.log('🚨 Hardware alert received:', alertData);
-                
+               
                 // Play alert sound
                 playAlertSound();
-                
+               
                 // Show desktop notification
                 showDesktopNotification(alertData);
-                
+               
                 // Add to alerts list
                 addAlertToUI(alertData);
-                
+               
                 // Update badge count
                 updateAlertBadge();
-                
+               
                 // Show notification banner
                 if (alertData.type === 'hardware_disconnect') {
                     showNotification(`⚠️ ${alertData.deviceType} disconnected on ${alertData.computerName}`, 'danger');
@@ -1416,7 +1452,7 @@
 
             // Request initial alerts on connect
             socket.emit('get-hardware-alerts', { limit: 50, acknowledged: false });
-            
+           
             socket.on('hardware-alerts-list', (alerts) => {
                 console.log('📋 Received hardware alerts list:', alerts.length);
                 displayHardwareAlerts(alerts);
@@ -1425,12 +1461,12 @@
             // ========================================================================
             // TIMETABLE AUTO-SESSION NOTIFICATIONS
             // ========================================================================
-            
+           
             // Listen for automatic session start from timetable
             socket.on('lab-session-auto-started', (data) => {
                 // Reset restore notification flag - this is a NEW session start
                 hasShownRestoreNotification = false;
-                
+               
                 console.log('\n============================================================');
                 console.log('🚀 LAB SESSION AUTO-STARTED FROM TIMETABLE');
                 console.log('   Subject:', data.subject);
@@ -1439,7 +1475,7 @@
                 console.log('   Expected Duration:', data.expectedDuration, 'minutes');
                 console.log('   Session ID:', data.sessionId);
                 console.log('============================================================\n');
-                
+               
                 // Show prominent notification
                 showNotification(
                     `🚀 SESSION AUTO-STARTED\n\n` +
@@ -1449,7 +1485,7 @@
                     'success',
                     10000 // Show for 10 seconds
                 );
-                
+               
                 // Enable the End Session button
                 const endBtn = document.getElementById('endSessionBtn');
                 if (endBtn) {
@@ -1457,7 +1493,7 @@
                     endBtn.style.opacity = '1';
                     console.log('✅ End Session button enabled');
                 }
-                
+               
                 // Disable the Start Session button
                 const startBtn = document.getElementById('startSessionBtn');
                 if (startBtn) {
@@ -1465,13 +1501,13 @@
                     startBtn.style.opacity = '0.5';
                     console.log('✅ Start Session button disabled');
                 }
-                
+               
                 // Mark session as active
                 sessionActive = true;
-                
+               
                 // Play notification sound
                 playAlertSound();
-                
+               
                 // Show desktop notification
                 if (Notification.permission === 'granted') {
                     new Notification('🚀 Lab Session Started', {
@@ -1480,32 +1516,32 @@
                         requireInteraction: true
                     });
                 }
-                
+               
                 // Refresh active sessions and start monitoring for any logged-in students
                 setTimeout(() => {
                     console.log('🔄 Loading active sessions after auto-start...');
                     loadActiveStudents();
                 }, 1000);
-                
+               
                 // Keep checking for new student logins every 5 seconds for the first minute
                 let checkCount = 0;
                 const checkInterval = setInterval(() => {
                     checkCount++;
                     console.log(`🔄 Auto-check ${checkCount}/12: Checking for new student logins...`);
                     loadActiveStudents();
-                    
+                   
                     if (checkCount >= 12) {
                         clearInterval(checkInterval);
                         console.log('✅ Auto-check complete, relying on normal 10-second refresh');
                     }
                 }, 5000);
             });
-            
+           
             // Listen for automatic session end from timetable
             socket.on('lab-session-auto-ended', (data) => {
                 // Reset restore notification flag - this is a NEW session end
                 hasShownRestoreNotification = false;
-                
+               
                 console.log('\n============================================================');
                 console.log('🛑 LAB SESSION AUTO-ENDED FROM TIMETABLE');
                 console.log('   Subject:', data.subject);
@@ -1513,7 +1549,7 @@
                 console.log('   Students:', data.studentCount);
                 console.log('   Session ID:', data.sessionId);
                 console.log('============================================================\n');
-                
+               
                 // Show notification
                 showNotification(
                     `🛑 SESSION AUTO-ENDED\n\n` +
@@ -1523,7 +1559,7 @@
                     'info',
                     10000
                 );
-                
+               
                 // Disable the End Session button
                 const endBtn = document.getElementById('endSessionBtn');
                 if (endBtn) {
@@ -1531,7 +1567,7 @@
                     endBtn.style.opacity = '0.5';
                     console.log('✅ End Session button disabled');
                 }
-                
+               
                 // Enable the Start Session button
                 const startBtn = document.getElementById('startSessionBtn');
                 if (startBtn) {
@@ -1539,10 +1575,10 @@
                     startBtn.style.opacity = '1';
                     console.log('✅ Start Session button enabled');
                 }
-                
+               
                 // Play notification sound
                 playAlertSound();
-                
+               
                 // Show desktop notification
                 if (Notification.permission === 'granted') {
                     new Notification('🛑 Lab Session Ended', {
@@ -1550,7 +1586,7 @@
                         icon: '/favicon.ico'
                     });
                 }
-                
+               
                 // Refresh to show updated reports list
                 setTimeout(() => {
                     loadActiveStudents();
@@ -1572,15 +1608,15 @@
             const endBtn = document.getElementById('endSessionBtn');
             const noSessionInfo = document.getElementById('no-session-info');
             const sessionInfo = document.getElementById('session-info');
-            
+           
             if (!startBtn || !endBtn) {
                 console.warn('⚠️ Session buttons not found in DOM');
                 return;
             }
-            
+           
             if (labSession && labSession.status === 'active') {
                 // Lab session is active - restore active state
-                
+               
                 // Only show detailed logs on first restoration
                 if (!hasShownRestoreNotification) {
                     console.log('🔄 RESTORING SESSION STATE: Active lab session detected');
@@ -1588,37 +1624,37 @@
                     console.log(`   Faculty: ${labSession.faculty}`);
                     console.log(`   Started: ${new Date(labSession.startTime).toLocaleString('en-IN')}`);
                 }
-                
+               
                 // Disable Start button, Enable End button
                 startBtn.disabled = true;
                 startBtn.style.opacity = '0.5';
                 endBtn.disabled = false;
                 endBtn.style.opacity = '1';
-                
+               
                 // Show active session card, hide "No Active Session" card
                 if (noSessionInfo) noSessionInfo.style.display = 'none';
                 if (sessionInfo) sessionInfo.style.display = 'block';
-                
+               
                 // Update session info display
                 updateSessionInfo(labSession);
-                
+               
                 // Store current lab session
                 currentLabSession = labSession;
                 sessionActive = true;
-                
+               
                 // Calculate session end time
                 const startTime = new Date(labSession.startTime);
                 const durationMs = labSession.duration * 60 * 1000; // duration in minutes to milliseconds
                 sessionEndTime = new Date(startTime.getTime() + durationMs);
-                
+               
                 // Start session timer
                 startSessionTimer();
-                
+               
                 // Only show notification ONCE after page load
                 if (!hasShownRestoreNotification) {
                     console.log('✅ Session state restored: Start button disabled, End button enabled');
                     console.log('✅ Session cards updated: Active session shown');
-                    
+                   
                     showNotification(
                         `🔄 SESSION RESTORED\n\n` +
                         `📚 ${labSession.subject}\n` +
@@ -1627,30 +1663,30 @@
                         'info',
                         5000
                     );
-                    
+                   
                     hasShownRestoreNotification = true;
                 }
             } else {
                 // No active lab session - restore idle state
-                
+               
                 if (!hasShownRestoreNotification) {
                     console.log('🔄 RESTORING SESSION STATE: No active lab session');
                 }
-                
+               
                 // Enable Start button, Disable End button
                 startBtn.disabled = false;
                 startBtn.style.opacity = '1';
                 endBtn.disabled = true;
                 endBtn.style.opacity = '0.5';
-                
+               
                 // Show "No Active Session" card, hide active session card
                 if (noSessionInfo) noSessionInfo.style.display = 'block';
                 if (sessionInfo) sessionInfo.style.display = 'none';
-                
+               
                 // Clear session state
                 currentLabSession = null;
                 sessionActive = false;
-                
+               
                 if (!hasShownRestoreNotification) {
                     console.log('✅ Session state restored: Start button enabled, End button disabled');
                     console.log('✅ Session cards updated: No active session shown');
@@ -1660,12 +1696,12 @@
         }        // Display active sessions
         function displayActiveSessions(sessions) {
             const grid = document.getElementById('studentsGrid');
-            
+           
             // CRITICAL FIX: Filter out sessions without proper student login (pre-login kiosks)
-            const actualStudentSessions = sessions ? sessions.filter(s => 
+            const actualStudentSessions = sessions ? sessions.filter(s =>
                 s.studentId && s.studentId !== '' && s.studentName && s.studentName !== ''
             ) : [];
-            
+           
             console.log(`📊 Total sessions received: ${sessions?.length || 0}, Actual logged-in students: ${actualStudentSessions.length}`);
             console.log('📋 All received sessions:', sessions?.map(s => {
                 const id = s._id || s.sessionId || s.id || 'no-id';
@@ -1679,7 +1715,7 @@
                 const sys = s.computerName || 'no-computer';
                 return `${id.substring(0, 8)}... (${sid} @ ${sys})`;
             }).join(', ') || 'none');
-            
+           
             if (!actualStudentSessions || actualStudentSessions.length === 0) {
                 // ✅ FIX: Always clear the grid and connectedStudents when no students
                 grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
@@ -1692,21 +1728,21 @@
                 updateStats();
                 return;
             }
-            
+           
             // Always check each session and ensure monitoring is working
             const currentSessionIds = new Set(actualStudentSessions.map(s => s._id || s.sessionId || s.id));
             const existingSessionIds = new Set(connectedStudents.keys());
-            
+           
             // 🔥 CRITICAL FIX: Calculate which sessions are new, removed, or unchanged
             const newSessionIds = [...currentSessionIds].filter(id => !existingSessionIds.has(id));
             const removedSessionIds = [...existingSessionIds].filter(id => !currentSessionIds.has(id));
             const unchangedSessionIds = [...currentSessionIds].filter(id => existingSessionIds.has(id));
-            
+           
             console.log(`📊 Session changes: ${newSessionIds.length} new, ${removedSessionIds.length} removed, ${unchangedSessionIds.length} unchanged`);
-            
+           
             // Check if grid has content
             const gridHasStudents = grid.children.length > 0 && !grid.querySelector('.no-students');
-            
+           
             // 🔥 REMOVE OLD SESSIONS: Clean up sessions that no longer exist
             removedSessionIds.forEach(sessionId => {
                 console.log('🗑️ Removing session:', sessionId);
@@ -1718,7 +1754,7 @@
                 }
                 connectedStudents.delete(sessionId);
             });
-            
+           
             // 🔥 ADD NEW SESSIONS: Add cards for new students only (PARALLEL)
             newSessionIds.forEach((sessionId, index) => {
                 const session = actualStudentSessions.find(s => (s._id || s.sessionId || s.id) === sessionId);
@@ -1726,14 +1762,14 @@
                     console.log('➕ Adding new session:', sessionId);
                     connectedStudents.set(sessionId, session);
                     addStudentToGrid(session);
-                    
+                   
                     // ✅ FIX: Start monitoring IMMEDIATELY in PARALLEL (no stagger)
                     // This allows 60+ systems to connect at once
                     console.log('🎥 ⚡ INSTANT START for NEW session:', sessionId);
                     startMonitoring(sessionId);
                 }
             });
-            
+           
             // 🔥 VERIFY UNCHANGED SESSIONS: Ensure existing sessions have active monitoring
             unchangedSessionIds.forEach((sessionId, index) => {
                 const session = actualStudentSessions.find(s => (s._id || s.sessionId || s.id) === sessionId);
@@ -1741,10 +1777,10 @@
                     console.warn('⚠️ Session data not found for unchanged session:', sessionId);
                     return;
                 }
-                
+               
                 // 🛡️ CRITICAL: Ensure card and video container exist BEFORE checking connection
                 addStudentToGrid(session);
-                
+               
                 const hasConnection = monitoringConnections.has(sessionId);
                 const pc = monitoringConnections.get(sessionId);
                 const state = pc?.connectionState;
@@ -1755,27 +1791,29 @@
                 const isFailed = pc && (state === 'failed' || state === 'closed' || iceState === 'failed');
                 const videoContainer = document.getElementById(`video-${sessionId}`);
                 const hasVideo = videoContainer && videoContainer.querySelector('video')?.srcObject;
-                
+               
                 // 🛡️ CRITICAL FIX: Track DISCONNECT DURATION, not connection age
                 const disconnectTime = connectionDisconnectTime.get(sessionId);
                 const disconnectDuration = disconnectTime ? (Date.now() - disconnectTime) / 1000 : 0;
-                const hasBeenDisconnectedTooLong = isDisconnected && disconnectDuration >= 10;
-                
+                const hasBeenDisconnectedTooLong = isDisconnected && disconnectDuration >= 45; // 🔥 FIX: 45s (was 20s) to give WebRTC ICE self-recovery time on busy LAN
+               
+                // 🔥 STUCK CHECK: new/new (offer dropped) = 15s; connecting (DTLS) = 60s
+                const isFullyNew2 = (state === 'new' && iceState === 'new');
+                const stuckThreshold = isFullyNew2 ? 15 : 60; // 🔥 FIX: 15s (was 30s) for new/new to match track timeout
+               
                 // 🔥 NEW: Detect connections stuck in new/connecting for 90+ seconds
                 const connectingStartTime = connectionStartTime.get(sessionId);
                 const connectingDuration = connectingStartTime ? (Date.now() - connectingStartTime) / 1000 : 0;
-                // 🔥 STUCK CHECK: new/new (30s) vs connecting (60s)
-                const isFullyNew2 = (state === 'new' && iceState === 'new');
-                const stuckThreshold = isFullyNew2 ? 30 : 60;
+                // 🔥 FIX: new/new (offer dropped) = 15s; DTLS connecting = 60s
                 const isStuckConnecting = isConnecting && connectingDuration >= stuckThreshold;
-                
+               
                 // 🛡️ FIX: Only restart if:
                 // 1. No connection exists
                 // 2. Connection failed/closed
                 // 3. Disconnected for 10+ seconds
                 // 4. Stuck in connecting/new for 90+ seconds (offer was probably dropped)
                 const needsRestart = !hasConnection || isFailed || hasBeenDisconnectedTooLong || isStuckConnecting;
-                
+               
                 if (needsRestart) {
                     console.log('🔄 Restarting monitoring for EXISTING session:', sessionId, {
                         hasConnection,
@@ -1787,7 +1825,7 @@
                         hasVideo: !!hasVideo,
                         disconnectDuration: disconnectDuration.toFixed(1) + 's'
                     });
-                    
+                   
                     // Clean up failed connection
                     if (pc) {
                         try { pc.close(); } catch(e) {}
@@ -1795,16 +1833,16 @@
                         connectionStartTime.delete(sessionId);
                         connectionDisconnectTime.delete(sessionId);
                     }
-                    
+                   
                     // Restart with minimal stagger to avoid race conditions
                     // Use 300ms stagger for fast Ethernet LAN
                     const staggerDelay = (index * 300) + 200; // 200ms base + 300ms per student
                     console.log('⏱️ Will restart monitoring in', staggerDelay / 1000, 'seconds');
                     setTimeout(() => startMonitoring(sessionId), staggerDelay);
                 } else if (isConnecting) {
-                    // 🔥 SPLIT TIMEOUT: new/new (offer dropped) restarts at 30s, connecting (DTLS) at 60s
+                    // 🔥 FIX: new/new (offer dropped) at 15s; DTLS connecting at 60s
                     const isFullyNew = (state === 'new' && iceState === 'new');
-                    const restartThreshold = isFullyNew ? 30 : 60;
+                    const restartThreshold = isFullyNew ? 15 : 60; // 🔥 FIX: 15s (was 30s) for new/new
                     if (isStuckConnecting && connectingDuration >= restartThreshold) {
                         console.error(`⏳ STUCK ${state}/${iceState} for ${connectingDuration.toFixed(0)}s — FORCE RESTARTING: ${sessionId}`);
                         if (pc) {
@@ -1818,36 +1856,36 @@
                         console.log(`⏳ Session connecting: ${sessionId} - state: ${state} - ICE: ${iceState} - ${connectingDuration.toFixed(0)}s elapsed (restart at ${restartThreshold}s)`);
                     }
                 } else if (isDisconnected) {
-                    console.log('⚠️ Session disconnected:', sessionId, '- duration:', disconnectDuration.toFixed(1) + 's - waiting for auto-reconnect (will restart at 10s)');
+                    console.log('⚠️ Session disconnected:', sessionId, '- duration:', disconnectDuration.toFixed(1) + 's - waiting for auto-reconnect (will restart at 45s)');
                 } else if (isConnected) {
                     console.log('✅ Session healthy:', sessionId, '- connection:', state, '- ICE:', iceState);
                 } else {
                     console.log('⚠️ Session in unexpected state:', sessionId, '- state:', state, '- ICE:', iceState);
                 }
             });
-            
+           
             // ✅ No need to rebuild grid - we've added/removed/updated cards individually
             console.log('✅ Grid updated incrementally - no full rebuild needed');
             console.log(`📊 Final state: ${connectedStudents.size} students, ${monitoringConnections.size} active peer connections`);
-            
+           
             updateStats();
         }
 
         // Add student to grid
         function addStudentToGrid(sessionData) {
             const sessionId = sessionData._id || sessionData.sessionId || sessionData.id;
-            
+           
             if (!sessionId) {
                 console.error('❌ No valid session ID found:', sessionData);
                 return;
             }
-            
+           
             // CRITICAL: Only add if student has actually logged in (has studentId and studentName)
             if (!sessionData.studentId || !sessionData.studentName) {
                 console.warn('⚠️ Skipping pre-login kiosk registration (no student data):', sessionData);
                 return;
             }
-            
+           
             // 🔥 CRITICAL FIX: Check if card already exists - if yes, UPDATE it instead of replacing
             const existingCard = document.getElementById(`student-${sessionId}`);
             if (existingCard) {
@@ -1868,7 +1906,7 @@
                         </div>
                     `;
                 }
-                
+               
                 // 🛡️ CRITICAL: Ensure video container exists before returning early
                 let videoContainer = document.getElementById(`video-${sessionId}`);
                 if (!videoContainer) {
@@ -1886,14 +1924,14 @@
                 }
                 return; // CRITICAL: Exit early to preserve video container
             }
-            
+           
             const studentCard = document.createElement('div');
             studentCard.className = 'student-card';
             studentCard.id = `student-${sessionId}`;
-            
+           
             const loginTime = new Date(sessionData.loginTime).toLocaleTimeString();
             const isGuest = sessionData.studentId === 'GUEST' || sessionData.isGuest;
-            
+           
             studentCard.innerHTML = `
                 <div class="student-info">
                     <div class="student-name">${isGuest ? '🔓' : '👤'} ${sessionData.studentName}</div>
@@ -1912,33 +1950,72 @@
                     <div class="connection-status" id="status-${sessionId}">🔄 Auto-connecting...</div>
                 </div>
             `;
-            
+           
             const grid = document.getElementById('studentsGrid');
             if (grid.querySelector('.no-students')) {
                 grid.innerHTML = '';
             }
             grid.appendChild(studentCard);
-            
+           
             console.log('✅ NEW student card added to grid:', sessionId);
         }
 
         // Remove student from grid
         function removeStudentFromGrid(sessionId) {
             console.log('🗑️ Removing student from grid:', sessionId);
-            
+           
             const studentCard = document.getElementById(`student-${sessionId}`);
             if (studentCard) {
-                studentCard.remove();
-                console.log('✅ Student card removed from DOM');
+                // 🔧 ENHANCED: Properly clean up video elements to prevent black screen
+                const videoContainer = studentCard.querySelector('.video-container');
+                if (videoContainer) {
+                    const videoElement = videoContainer.querySelector('video');
+                    if (videoElement) {
+                        // Stop video stream and clean up
+                        if (videoElement.srcObject) {
+                            const tracks = videoElement.srcObject.getTracks();
+                            tracks.forEach(track => {
+                                track.stop();
+                                console.log('🎥 Stopped video track for session:', sessionId);
+                            });
+                            videoElement.srcObject = null;
+                        }
+                        // Clear video element
+                        videoElement.pause();
+                        videoElement.load();
+                        videoElement.removeAttribute('src');
+                        console.log('🎥 Video element cleaned up for session:', sessionId);
+                    }
+                    // Clear video container
+                    videoContainer.innerHTML = '';
+                    console.log('🎥 Video container cleared for session:', sessionId);
+                }
+               
+                // Remove the student card with a fade-out animation
+                studentCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                studentCard.style.opacity = '0';
+                studentCard.style.transform = 'scale(0.95)';
+               
+                setTimeout(() => {
+                    studentCard.remove();
+                    console.log('✅ Student card removed from DOM with animation');
+                   
+                    // Show no students message if grid is empty
+                    const grid = document.getElementById('studentsGrid');
+                    if (grid.children.length === 0) {
+                        grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
+                        console.log('📭 Grid is now empty - showing no students message');
+                    }
+                }, 300);
             }
-            
+           
             // Remove from connected students set
             const wasConnected = connectedStudents.has(sessionId);
             connectedStudents.delete(sessionId);
             if (wasConnected) {
                 console.log('✅ Removed from connectedStudents set');
             }
-            
+           
             // Clean up monitoring connection
             if (monitoringConnections.has(sessionId)) {
                 const pc = monitoringConnections.get(sessionId);
@@ -1953,31 +2030,102 @@
                 connectionDisconnectTime.delete(sessionId); // Clean up disconnect time
                 console.log('✅ Removed from monitoringConnections map');
             }
-            
-            // Show no students message if grid is empty
-            const grid = document.getElementById('studentsGrid');
-            if (grid.children.length === 0) {
-                grid.innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
-                console.log('📭 Grid is now empty - showing no students message');
-            }
+           
+            // Clear session tracking data
+            screenReadySessions.delete(sessionId);
+            connectionRetryCount.delete(sessionId);
+           
+            console.log('🧹 Complete cleanup finished for session:', sessionId);
         }        // Start monitoring a student
+
+        // ============================================================
+        // ICE RESTART - Lightweight reconnection (keeps DTLS + video)
+        // Called when ICE drops but full teardown should be avoided.
+        // Creates a new offer with iceRestart:true, sends it to kiosk.
+        // Kiosk handles it WITHOUT closing the screen stream, so video
+        // resumes in ~1-2s instead of requiring a full 5-10s rebuild.
+        // Falls back to full startMonitoring() only if restart fails.
+        // ============================================================
+        async function restartIceForSession(sessionId, peerConnection) {
+            try {
+                if (iceRestartInProgress.has(sessionId)) {
+                    console.log('ICE restart already in progress for session:', sessionId);
+                    return;
+                }
+                iceRestartInProgress.add(sessionId);
+                console.log('Attempting ICE restart for session:', sessionId, '(DTLS/video preserved)');
+
+                const statusDiv = document.getElementById('status-' + sessionId);
+                if (statusDiv) { statusDiv.innerHTML = 'ICE restart...'; statusDiv.style.color = '#ffc107'; }
+
+                // Create restart offer - keeps existing DTLS channel alive
+                const restartOffer = await peerConnection.createOffer({ iceRestart: true });
+                await peerConnection.setLocalDescription(restartOffer);
+
+                const sessionData = connectedStudents.get(sessionId);
+                const systemNumber = sessionData && (sessionData.systemNumber || sessionData.computerName) || null;
+                const restartNonce = Date.now() + '-icerestart-' + Math.random().toString(36).substr(2, 4);
+                offerNonce.set(sessionId, restartNonce);
+
+                socket.emit('admin-offer', {
+                    offer: restartOffer,
+                    sessionId: sessionId,
+                    adminSocketId: socket.id,
+                    systemNumber: systemNumber,
+                    nonce: restartNonce,
+                    isIceRestart: true   // Flag so kiosk does NOT close its screen stream
+                });
+                console.log('ICE restart offer sent for session:', sessionId, 'nonce:', restartNonce);
+
+                // Give 30s for ICE restart to complete (increased from 15s for busy LAN)
+                setTimeout(function() {
+                    iceRestartInProgress.delete(sessionId);
+                    if (monitoringConnections.get(sessionId) !== peerConnection) return;
+                    var iceNow = peerConnection.iceConnectionState;
+                    var connNow = peerConnection.connectionState;
+                    if (iceNow === 'connected' || iceNow === 'completed' || connNow === 'connected') {
+                        console.log('ICE restart succeeded for session:', sessionId);
+                        connectionDisconnectTime.delete(sessionId);
+                        if (statusDiv) { statusDiv.innerHTML = 'Connected'; statusDiv.style.color = '#28a745'; }
+                    } else {
+                        console.warn('ICE restart did not resolve for session:', sessionId, '- doing full teardown');
+                        try { peerConnection.close(); } catch(e) {}
+                        monitoringConnections.delete(sessionId);
+                        connectionStartTime.delete(sessionId);
+                        connectionDisconnectTime.delete(sessionId);
+                        startMonitoring(sessionId);
+                    }
+                }, 30000);
+
+            } catch (err) {
+                console.error('ICE restart failed for session:', sessionId, err);
+                iceRestartInProgress.delete(sessionId);
+                // Fall back to full restart
+                try { peerConnection.close(); } catch(e) {}
+                monitoringConnections.delete(sessionId);
+                connectionStartTime.delete(sessionId);
+                connectionDisconnectTime.delete(sessionId);
+                startMonitoring(sessionId);
+            }
+        }
+
         async function startMonitoring(sessionId) {
             try {
                 const retryCount = connectionRetryCount.get(sessionId) || 0;
                 console.log(`📹 Starting monitoring for session: ${sessionId} (attempt ${retryCount + 1})`);
-                
+               
                 // Check if already connected - but verify it's actually working with VIDEO
                 const existingConnection = monitoringConnections.get(sessionId);
                 if (existingConnection) {
-                    const isConnected = existingConnection.connectionState === 'connected' || 
+                    const isConnected = existingConnection.connectionState === 'connected' ||
                                       existingConnection.iceConnectionState === 'connected';
-                    
+                   
                     // ✅ IMPROVED: Also check if video is actually flowing
                     const videoContainer = document.getElementById(`video-${sessionId}`);
-                    const hasActiveVideo = videoContainer && 
+                    const hasActiveVideo = videoContainer &&
                                           videoContainer.querySelector('video')?.srcObject &&
                                           videoContainer.querySelector('video')?.srcObject.active;
-                    
+                   
                     if (isConnected && hasActiveVideo) {
                         console.log('✅ Already connected with active video for session:', sessionId, '- skipping duplicate');
                         // Clear retry counter and exhausted flag on successful connection
@@ -1985,8 +2133,8 @@
                         exhaustedRetrySessions.delete(sessionId);
                         return;
                     }
-                    
-                    console.log('🔄 Existing connection exists but not working properly - restarting for session:', sessionId, 
+                   
+                    console.log('🔄 Existing connection exists but not working properly - restarting for session:', sessionId,
                                '{ connected:', isConnected, ', hasVideo:', hasActiveVideo, '}');
                     try {
                         existingConnection.close();
@@ -1997,18 +2145,18 @@
                     connectionStartTime.delete(sessionId);
                     connectionDisconnectTime.delete(sessionId);
                 }
-                
+               
                 // ✅ FIX: Clear any pending ICE candidates for this session
                 if (pendingICE.has(sessionId)) {
                     console.log('🧊 Clearing pending ICE candidates for session:', sessionId);
                     pendingICE.delete(sessionId);
                 }
-                
+               
                 const videoContainer = document.getElementById(`video-${sessionId}`);
                 if (!videoContainer) {
                     throw new Error('Video container not found');
                 }
-                
+               
                 // 🔥 CRITICAL FIX: Always clear old video element and create fresh one
                 let video = videoContainer.querySelector('video');
                 if (video) {
@@ -2025,7 +2173,7 @@
                     video.remove();
                     console.log('🗑️ Removed old video element');
                 }
-                
+               
                 // Create fresh video element
                 video = document.createElement('video');
                 video.autoplay = true;
@@ -2036,11 +2184,11 @@
                 video.style.height = '100%';
                 video.style.objectFit = 'cover';
                 video.style.backgroundColor = '#1a1a2e'; // Dark background instead of black
-                
+               
                 videoContainer.innerHTML = '';
                 videoContainer.appendChild(video);
                 console.log('✅ Created fresh video element for session:', sessionId);
-                
+               
                 // ✅ LAN-ONLY WebRTC - No STUN needed (stun.l.google.com:19302 is blocked by college firewall)
                 // All 69 machines are on the same 10.10.46.x subnet, so host candidates connect directly
                 const peerConnection = new RTCPeerConnection({
@@ -2050,51 +2198,51 @@
                     bundlePolicy: 'max-bundle',
                     rtcpMuxPolicy: 'require'
                 });
-                
+               
                 console.log('🔗 Created LAN-optimized peer connection for session:', sessionId);
-                
+               
                 // 🔥 CRITICAL: Store connection IMMEDIATELY to prevent duplicates
                 monitoringConnections.set(sessionId, peerConnection);
                 connectionStartTime.set(sessionId, Date.now()); // Track when this connection started
                 console.log(`📊 Active peer connections: ${monitoringConnections.size}`);
-                
+               
                 // Check if there are any queued ICE candidates from before this connection was created
                 const preQueuedCandidates = pendingICE.get(sessionId) || [];
                 if (preQueuedCandidates.length > 0) {
                     console.log(`🧊 🔄 ADMIN: Found ${preQueuedCandidates.length} PRE-QUEUED ICE candidates - will add after remote description`);
                 }
-                
+               
                 // Handle remote stream
                 let trackReceived = false;
                 let trackTimeoutId = null;
-                
+               
                 peerConnection.ontrack = (event) => {
                     trackReceived = true;
-                    
+                   
                     // Clear the timeout since we received the track
                     if (trackTimeoutId) {
                         clearTimeout(trackTimeoutId);
                         console.log('✅ Track timeout cleared - video track received!');
                     }
-                    
+                   
                     console.log('📺 ✅ RECEIVED REMOTE STREAM for session:', sessionId, event);
                     console.log('📺 Stream tracks:', event.streams[0].getTracks());
-                    
+                   
                     // 🔥 CRITICAL FIX: Get fresh reference to video element from DOM
                     // This ensures we're setting srcObject on the current video element,
                     // not a stale reference if connection was restarted
                     const currentVideoContainer = document.getElementById(`video-${sessionId}`);
                     const currentVideo = currentVideoContainer ? currentVideoContainer.querySelector('video') : null;
-                    
+                   
                     if (!currentVideo) {
                         console.error('❌ Video element not found in DOM for session:', sessionId);
                         console.error('   Container exists:', !!currentVideoContainer);
                         return;
                     }
-                    
+                   
                     console.log('✅ Setting srcObject on current video element (attached to DOM:', currentVideo.isConnected, ')');
                     currentVideo.srcObject = event.streams[0];
-                    
+                   
                     // Add video event listeners for debugging
                     currentVideo.onloadedmetadata = () => {
                         console.log('✅ Video metadata loaded for session:', sessionId);
@@ -2105,55 +2253,63 @@
                             console.error('❌ Failed to start video playback:', err);
                         });
                     };
-                    
+                   
                     currentVideo.onplay = () => {
                         console.log('▶️ Video started playing for session:', sessionId);
                     };
-                    
+                   
                     currentVideo.onerror = (error) => {
                         console.error('❌ Video error for session:', sessionId, error);
                     };
-                    
+                   
                     // Also try to play immediately in case metadata is already loaded
                     currentVideo.play().catch(err => {
                         console.log('⏳ Video play deferred until metadata loads:', err.message);
                     });
                 };
-                
-                // 🔥 TRACK TIMEOUT: If no video track received within 15s, restart immediately
-                // new/new = offer never reached kiosk → restart NOW (no chance of recovery)
-                // connecting = DTLS may be in progress → also restart (30s DTLS check handles slow ones)
+               
+                // ⏱️ Track reception timeout: if no video within 15s the offer was likely dropped by the kiosk.
+                // Action depends on connection state:
+                //   new/new  → offer definitely dropped → restart immediately
+                //   checking → ICE in progress → restart if still no track at 30s
                 trackTimeoutId = setTimeout(() => {
                     if (!trackReceived) {
-                        const connState = peerConnection.connectionState;
-                        const iceState = peerConnection.iceConnectionState;
-                        console.error('❌ NO VIDEO TRACK within 15s for session:', sessionId);
-                        console.error('   Connection:', connState, '| ICE:', iceState);
-                        
-                        if (connState === 'new' && iceState === 'new') {
-                            // new/new = offer was DROPPED (kiosk never received it)
-                            // No point keeping this open — immediately restart
-                            console.error('   🔄 STATE IS new/new → OFFER WAS DROPPED. Restarting immediately...');
-                            try { peerConnection.close(); } catch(e) {}
-                            monitoringConnections.delete(sessionId);
-                            connectionStartTime.delete(sessionId);
-                            connectionDisconnectTime.delete(sessionId);
-                            setTimeout(() => startMonitoring(sessionId), 500);
-                        } else if (connState === 'connected') {
-                            // Connected but no video → track may come soon, give extra time
-                            console.warn('   ⏳ STATE IS connected but no video yet — waiting longer...');
+                        const cs = peerConnection.connectionState;
+                        const is = peerConnection.iceConnectionState;
+                        console.error(`❌ NO VIDEO TRACK within 15s for session: ${sessionId} | state: ${cs} / ${is}`);
+                       
+                        if (cs === 'new' && is === 'new') {
+                            // 🔥 FIX: Offer was dropped (kiosk never received it or never responded).
+                            // Restart immediately — 'Keeping connection open' here does nothing because
+                            // in new/new there is nothing to recover from.
+                            console.error('🔄 OFFER DROPPED (new/new) - restarting monitoring NOW for session:', sessionId);
+                            if (monitoringConnections.get(sessionId) === peerConnection) {
+                                try { peerConnection.close(); } catch(e) {}
+                                monitoringConnections.delete(sessionId);
+                                connectionStartTime.delete(sessionId);
+                                connectionDisconnectTime.delete(sessionId);
+                                startMonitoring(sessionId);
+                            }
+                        } else if (cs === 'connecting' || is === 'checking') {
+                            // ICE is active but DTLS/media hasn’t connected yet — give 15 more seconds
+                            console.warn(`⚠️ Track not received but ICE is active (${cs}/${is}) - waiting 15 more seconds for session: ${sessionId}`);
+                            setTimeout(() => {
+                                if (!trackReceived && monitoringConnections.get(sessionId) === peerConnection) {
+                                    console.error(`❌ Still no track after 30s for session: ${sessionId} - restarting`);
+                                    try { peerConnection.close(); } catch(e) {}
+                                    monitoringConnections.delete(sessionId);
+                                    connectionStartTime.delete(sessionId);
+                                    connectionDisconnectTime.delete(sessionId);
+                                    startMonitoring(sessionId);
+                                }
+                            }, 15000);
                         } else {
-                            // connecting/checking state → restart to unblock
-                            console.error('   🔄 STATE IS', connState, '/ ICE:', iceState, '→ Restarting to unblock...');
-                            try { peerConnection.close(); } catch(e) {}
-                            monitoringConnections.delete(sessionId);
-                            connectionStartTime.delete(sessionId);
-                            connectionDisconnectTime.delete(sessionId);
-                            setTimeout(() => startMonitoring(sessionId), 1000);
+                            // failed/disconnected — let the connection state handlers deal with it
+                            console.warn(`⚠️ Track not received, state ${cs}/${is} — connection handlers will restart if needed`);
                         }
                     }
                 }, 15000);
-                
+               
                 // Handle ICE candidates
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
@@ -2167,12 +2323,12 @@
                         console.log('🧊 ✅ Admin ICE gathering complete for session:', sessionId);
                     }
                 };
-                
+               
                 // Monitor connection state
                 peerConnection.onconnectionstatechange = () => {
                     console.log('🔄 Connection state changed for session:', sessionId, peerConnection.connectionState);
                     const statusDiv = document.getElementById(`status-${sessionId}`);
-                    
+                   
                     if (peerConnection.connectionState === 'connected') {
                         console.log('✅ ✅ WebRTC CONNECTED for session:', sessionId, '- Video should be flowing now!');
                         // Clear disconnect time on successful reconnect
@@ -2182,22 +2338,30 @@
                             statusDiv.style.color = '#28a745';
                         }
                     } else if (peerConnection.connectionState === 'disconnected') {
-                        // Record WHEN the disconnection happened
+                        // ICE layer handles the recovery — just update the status indicator here.
+                        // oniceconnectionstatechange 'disconnected' handler manages restart logic.
                         if (!connectionDisconnectTime.has(sessionId)) {
                             connectionDisconnectTime.set(sessionId, Date.now());
-                            console.warn('⚠️ WebRTC disconnected for session:', sessionId, '- Tracking disconnect time, will give 10s for auto-reconnect');
                         }
                         if (statusDiv) {
-                            statusDiv.innerHTML = '⚠️ Disconnected - waiting for reconnect...';
+                            statusDiv.innerHTML = '⚠️ Reconnecting...';
                             statusDiv.style.color = '#ffc107';
                         }
-                        // Don't immediately restart - WebRTC has built-in reconnection
-                        // The health check will restart if it doesn't recover
                     } else if (peerConnection.connectionState === 'failed') {
-                        console.error('❌ WebRTC connection failed for session:', sessionId, '- will restart on next health check');
+                        console.error('❌ WebRTC connection FAILED for session:', sessionId, '- restarting immediately');
                         if (statusDiv) {
-                            statusDiv.innerHTML = '❌ Connection failed - restarting...';
+                            statusDiv.innerHTML = '❌ Failed - restarting...';
                             statusDiv.style.color = '#dc3545';
+                        }
+                        // 🔥 FIX: Restart immediately on failure — don't wait 15s for health check
+                        // Only restart if this PC is still the one we're tracking (not already replaced)
+                        if (monitoringConnections.get(sessionId) === peerConnection) {
+                            try { peerConnection.close(); } catch(e) {}
+                            monitoringConnections.delete(sessionId);
+                            connectionStartTime.delete(sessionId);
+                            connectionDisconnectTime.delete(sessionId);
+                            console.log('🔄 Restarting monitoring in 500ms for session:', sessionId);
+                            setTimeout(() => startMonitoring(sessionId), 500);
                         }
                     } else if (peerConnection.connectionState === 'connecting') {
                         if (statusDiv) {
@@ -2206,7 +2370,7 @@
                         }
                     }
                 };
-                
+               
                 // Monitor ICE connection state
                 peerConnection.oniceconnectionstatechange = () => {
                     console.log('🧊 ICE connection state changed for session:', sessionId, peerConnection.iceConnectionState);
@@ -2214,7 +2378,7 @@
                         console.log('✅ ICE CONNECTED for session:', sessionId);
                         // Clear disconnect time on successful ICE reconnect
                         connectionDisconnectTime.delete(sessionId);
-                        
+                       
                         // 🔥 DTLS TIMEOUT CHECK: If ICE connects but connection state is still "connecting" after 30 seconds,
                         // this indicates DTLS handshake failure - restart with exponential backoff
                         // ✅ FIX: 30s is correct for LAN with 70 simultaneous systems.
@@ -2223,20 +2387,20 @@
                         setTimeout(() => {
                             const currentConnectionState = peerConnection.connectionState;
                             const currentIceState = peerConnection.iceConnectionState;
-                            
-                            if (currentConnectionState === 'connecting' && 
+                           
+                            if (currentConnectionState === 'connecting' &&
                                 (currentIceState === 'connected' || currentIceState === 'completed')) {
-                                
+                               
                                 // Get retry count and calculate exponential backoff
                                 const retryCount = connectionRetryCount.get(sessionId) || 0;
                                 const backoffDelay = Math.min(300 * Math.pow(2, retryCount), 5000); // 300ms, 600ms, 1.2s, 2.4s, 5s (max)
                                 connectionRetryCount.set(sessionId, retryCount + 1);
-                                
+                               
                                 console.error('❌ ❌ DTLS HANDSHAKE TIMEOUT for session:', sessionId);
                                 console.error('   ICE is connected but connection state stuck at "connecting" for 30s');
                                 console.error('   This indicates DTLS encryption handshake failed');
                                 console.error(`   Retry attempt: ${retryCount + 1} - Backoff delay: ${backoffDelay}ms`);
-                                
+                               
                                 // Add system clock skew warning after 2+ failures
                                 if (retryCount >= 2) {
                                     console.error('⚠️ ⚠️ MULTIPLE DTLS FAILURES - Possible causes:');
@@ -2245,7 +2409,7 @@
                                     console.error('   3. Network packet loss or high latency');
                                     console.error('   ➡️ RECOMMENDED: Check if both system clocks are synchronized!');
                                 }
-                                
+                               
                                 // Give up after 5 attempts (would take ~15s timeout × 5 = 75 seconds)
                                 if (retryCount >= 5) {
                                     console.error('❌ ❌ GIVING UP after 5 DTLS timeout attempts for session:', sessionId);
@@ -2258,15 +2422,15 @@
                                     }
                                     return; // Don't retry anymore
                                 }
-                                
+                               
                                 console.error(`   🔥 RESTARTING CONNECTION with ${backoffDelay}ms backoff`);
-                                
+                               
                                 const statusDiv = document.getElementById(`status-${sessionId}`);
                                 if (statusDiv) {
                                     statusDiv.innerHTML = `🔄 DTLS retry ${retryCount + 1}/5...`;
                                     statusDiv.style.color = '#ffc107';
                                 }
-                                
+                               
                                 // Close the failed connection immediately
                                 try {
                                     console.log('🔄 Closing DTLS stuck connection for session:', sessionId);
@@ -2277,37 +2441,61 @@
                                 } catch (e) {
                                     console.error('❌ Error closing connection:', e);
                                 }
-                                
-                                // Restart monitoring with exponential backoff
-                                setTimeout(() => {
-                                    console.log(`🔄 Restarting monitoring after DTLS timeout (attempt ${retryCount + 1}) for session:`, sessionId);
-                                    startMonitoring(sessionId);
-                                }, backoffDelay);
-                                
-                            } else if (currentConnectionState === 'connected') {
-                                // Success! Clear retry counter and exhausted flag
-                                connectionRetryCount.delete(sessionId);
-                                exhaustedRetrySessions.delete(sessionId);
-                                console.log('✅ Connection completed successfully for session:', sessionId,
-                                           '(ICE:', currentIceState, '+ Connection:', currentConnectionState, ')');
-                            }
-                        }, 30000); // ✅ FIX: 30s - DTLS can take 5-20s on a busy LAN with 70 systems. 5s caused premature restart loops.
-                    } else if (peerConnection.iceConnectionState === 'disconnected') {
-                        // Track ICE disconnection time
-                        if (!connectionDisconnectTime.has(sessionId)) {
-                            connectionDisconnectTime.set(sessionId, Date.now());
-                            console.warn('⚠️ ICE disconnected for session:', sessionId, '- Tracking for auto-reconnect');
-                        }
-                    } else if (peerConnection.iceConnectionState === 'failed') {
-                        console.error('❌ ICE connection FAILED for session:', sessionId);
-                        const statusDiv = document.getElementById(`status-${sessionId}`);
-                        if (statusDiv) {
-                            statusDiv.innerHTML = '❌ ICE failed - Check network';
-                            statusDiv.style.color = '#dc3545';
-                        }
-                    }
+                               
+                                 // Restart monitoring with exponential backoff
+                                 setTimeout(() => {
+                                     console.log(`Restarting monitoring after DTLS timeout (attempt ${retryCount + 1}) for session:`, sessionId);
+                                     startMonitoring(sessionId);
+                                 }, backoffDelay);
+
+                             } else if (currentConnectionState === 'connected') {
+                                 connectionRetryCount.delete(sessionId);
+                                 exhaustedRetrySessions.delete(sessionId);
+                                 console.log('Connection completed for session:', sessionId);
+                             }
+                         }, 30000);
+                     } else if (peerConnection.iceConnectionState === 'disconnected') {
+                         if (!connectionDisconnectTime.has(sessionId)) {
+                             connectionDisconnectTime.set(sessionId, Date.now());
+                         }
+                         if (statusDiv) {
+                             statusDiv.innerHTML = 'Reconnecting...';
+                             statusDiv.style.color = '#ffc107';
+                         }
+                         console.warn('ICE disconnected for session:', sessionId, '- waiting 45s for self-recovery on busy LAN (60+ systems)');
+                         setTimeout(() => {
+                             if (monitoringConnections.get(sessionId) !== peerConnection) return;
+                             const iceNow = peerConnection.iceConnectionState;
+                             const connNow = peerConnection.connectionState;
+                             if (iceNow === 'connected' || iceNow === 'completed' || connNow === 'connected') {
+                                 console.log('ICE self-recovered (within 45s) for session:', sessionId);
+                                 connectionDisconnectTime.delete(sessionId);
+                                 iceRestartInProgress.delete(sessionId);
+                                 if (statusDiv) { statusDiv.innerHTML = 'Connected'; statusDiv.style.color = '#28a745'; }
+                                 return;
+                             }
+                             if (!iceRestartInProgress.has(sessionId)) {
+                                 console.warn('ICE did NOT self-recover in 45s for session:', sessionId, '- attempting ICE restart');
+                                 restartIceForSession(sessionId, peerConnection);
+                             }
+                         }, 45000);
+                     } else if (peerConnection.iceConnectionState === 'failed') {
+                         console.error('ICE connection FAILED for session:', sessionId);
+                         if (statusDiv) {
+                             statusDiv.innerHTML = 'ICE failed - restarting...';
+                             statusDiv.style.color = '#dc3545';
+                         }
+                         if (!iceRestartInProgress.has(sessionId) && monitoringConnections.get(sessionId) === peerConnection) {
+                             iceRestartInProgress.delete(sessionId);
+                             try { peerConnection.close(); } catch(e) {}
+                             monitoringConnections.delete(sessionId);
+                             connectionStartTime.delete(sessionId);
+                             connectionDisconnectTime.delete(sessionId);
+                             setTimeout(() => startMonitoring(sessionId), 1000);
+                         }
+                     }
                 };
-                
+               
                 // Create offer with specific constraints to ensure media
                 const offer = await peerConnection.createOffer({
                     offerToReceiveVideo: true,
@@ -2315,40 +2503,46 @@
                 });
                 await peerConnection.setLocalDescription(offer);
                 console.log('✅ ADMIN: Offer created and local description set');
-                
+               
                 // Send offer to kiosk
                 // ✅ FIX: Include systemNumber (from PC hostname) so server can find kiosk
                 // even if session-login-success hasn't fired yet (delayed by DB pool)
                 const _sessionDataForOffer = connectedStudents.get(sessionId);
                 const _systemNumber = _sessionDataForOffer?.systemNumber || _sessionDataForOffer?.computerName || null;
-                console.log('📤 ADMIN: Sending offer to kiosk for session:', sessionId, '| system:', _systemNumber);
+               
+                // 🔥 FIX: Generate a unique nonce for this offer so we can discard stale duplicate answers
+                const currentNonce = Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+                offerNonce.set(sessionId, currentNonce);
+               
+                console.log('📤 ADMIN: Sending offer to kiosk for session:', sessionId, '| system:', _systemNumber, '| nonce:', currentNonce);
                 socket.emit('admin-offer', {
                     offer: offer,
                     sessionId: sessionId,
                     adminSocketId: socket.id,
-                    systemNumber: _systemNumber  // ✅ FIX: PC hostname-derived system number (e.g. 'CC1-05')
+                    systemNumber: _systemNumber,  // ✅ FIX: PC hostname-derived system number (e.g. 'CC1-05')
+                    nonce: currentNonce           // 🔥 FIX: Offer nonce to correlate answers
                 });
-                console.log('✅ ADMIN: Offer sent to kiosk for session:', sessionId, 'systemNumber:', _systemNumber);
-                
+                console.log('✅ ADMIN: Offer sent to kiosk for session:', sessionId, 'systemNumber:', _systemNumber, 'nonce:', currentNonce);
+               
                 // Update status
                 const statusDiv = document.getElementById(`status-${sessionId}`);
                 if (statusDiv) {
                     statusDiv.innerHTML = '📤 Offer sent, waiting for answer...';
                 }
-                
+               
                 // NOTE: Connection already stored above (before offer)
                 // monitoringConnections.set(sessionId, peerConnection); // Already done!
-                
+               
                 // Update card style
                 const studentCard = document.getElementById(`student-${sessionId}`);
                 if (studentCard) {
                     studentCard.classList.add('monitoring');
                 }
-                
+               
                 updateStats();
-                
+               
                 console.log(`✅ Monitoring setup complete for session: ${sessionId} - Total connections: ${monitoringConnections.size}`);
-                
+               
             } catch (error) {
                 console.error('Error starting monitoring:', error);
                 alert('Failed to start monitoring: ' + error.message);
@@ -2358,7 +2552,7 @@
         // Stop monitoring a student
         function stopMonitoring(sessionId) {
             console.log('⏹️ Stopping monitoring for session:', sessionId);
-            
+           
             const peerConnection = monitoringConnections.get(sessionId);
             if (peerConnection) {
                 peerConnection.close();
@@ -2366,28 +2560,46 @@
                 connectionStartTime.delete(sessionId); // Clean up start time
                 connectionDisconnectTime.delete(sessionId); // Clean up disconnect time
             }
-            
+           
             const videoContainer = document.getElementById(`video-${sessionId}`);
             if (videoContainer) {
                 videoContainer.innerHTML = '<div class="screen-preview"><span>Click "Watch Screen" to monitor</span></div>';
             }
-            
+           
             const studentCard = document.getElementById(`student-${sessionId}`);
             if (studentCard) {
                 studentCard.classList.remove('monitoring');
             }
-            
+           
             updateStats();
         }
 
         // Handle WebRTC answer
-        async function handleWebRTCAnswer(answer, sessionId) {
+        async function handleWebRTCAnswer(answer, sessionId, receivedNonce) {
             const peerConnection = monitoringConnections.get(sessionId);
             if (peerConnection) {
+                // 🔥 FIX 1: Check signalingState — ignore answer if already in 'stable' state
+                // This discards duplicate/stale answers that arrive after the connection is established
+                if (peerConnection.signalingState !== 'have-local-offer') {
+                    console.warn(`⚠️ ADMIN: Ignoring stale answer for session: ${sessionId} — signalingState is '${peerConnection.signalingState}' (expected 'have-local-offer')`);
+                    return;
+                }
+               
+                // 🔥 FIX 2: Check offer nonce — ignore answer if it doesn't match the current offer
+                if (receivedNonce !== undefined) {
+                    const expectedNonce = offerNonce.get(sessionId);
+                    if (expectedNonce && receivedNonce !== expectedNonce) {
+                        console.warn(`⚠️ ADMIN: Ignoring stale answer for session: ${sessionId} — nonce mismatch (got '${receivedNonce}', expected '${expectedNonce}')`);
+                        return;
+                    }
+                }
+               
                 console.log('✅ ADMIN: Received answer from kiosk for session:', sessionId);
                 try {
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
                         console.log('✅ ADMIN: Remote description set successfully for session:', sessionId);
+                        // Clear the nonce after successfully consuming the answer
+                        offerNonce.delete(sessionId);
 
                         // Flush any queued ICE candidates that arrived early
                         const queued = pendingICE.get(sessionId) || [];
@@ -2447,48 +2659,48 @@
         }        // Expand video to fullscreen
         function expandVideo(sessionId) {
             console.log('🔍 Expanding video for session:', sessionId);
-            
+           
             const videoContainer = document.getElementById(`video-${sessionId}`);
             if (!videoContainer) {
                 alert('❌ Video container not found.');
                 return;
             }
-            
+           
             const video = videoContainer.querySelector('video');
             if (!video) {
                 alert('❌ No video element found. Start monitoring first.');
                 return;
             }
-            
+           
             if (!video.srcObject) {
                 alert('❌ No video stream available. Start monitoring first.');
                 return;
             }
-            
+           
             const stream = video.srcObject;
             if (!stream || stream.getTracks().length === 0) {
                 alert('❌ Video stream has no tracks. Please restart monitoring.');
                 return;
             }
-            
+           
             const fullscreenVideo = document.getElementById('fullscreen-video');
             const fullscreenModal = document.getElementById('fullscreen-modal');
             const snapshotBtn = document.getElementById('snapshotBtn');
-            
+           
             // Clear any existing stream first
             if (fullscreenVideo.srcObject) {
                 const oldTracks = fullscreenVideo.srcObject.getTracks();
                 oldTracks.forEach(track => track.stop());
                 fullscreenVideo.srcObject = null;
             }
-            
+           
             // FIXED: Clone the stream to avoid conflicts
             const clonedStream = stream.clone();
             console.log('📹 Cloned stream tracks:', clonedStream.getTracks().map(t => `${t.kind}:${t.readyState}`));
-            
+           
             // Set the cloned stream to fullscreen video and wait for it to load
             fullscreenVideo.srcObject = clonedStream;
-            
+           
             // Wait for metadata to load before playing
             fullscreenVideo.onloadedmetadata = () => {
                 console.log('✅ Fullscreen video metadata loaded, starting playback');
@@ -2499,38 +2711,38 @@
                     // Don't alert on play error - video might still work
                 });
             };
-            
+           
             // Store session ID for snapshot
             fullscreenVideo.dataset.sessionId = sessionId;
-            
+           
             // Update student info
             const studentData = connectedStudents.get(sessionId);
             if (studentData) {
                 document.getElementById('fullscreen-student-name').textContent = studentData.studentName || 'Unknown Student';
                 document.getElementById('fullscreen-student-details').textContent = `Roll: ${studentData.studentId} | Computer: ${studentData.computerName}`;
             }
-            
+           
             // Remove old event handlers to prevent duplicates
             fullscreenVideo.onplaying = null;
             fullscreenVideo.onpause = null;
             fullscreenVideo.onerror = null;
-            
+           
             // Show snapshot button when video is playing
             fullscreenVideo.onplaying = () => {
                 console.log('📸 Fullscreen video playing - showing snapshot button');
                 snapshotBtn.style.display = 'block';
             };
-            
+           
             // Hide snapshot button if video pauses or ends
             fullscreenVideo.onpause = () => {
                 snapshotBtn.style.display = 'none';
             };
-            
+           
             fullscreenVideo.onerror = (err) => {
                 console.error('❌ Fullscreen video error:', err);
                 snapshotBtn.style.display = 'none';
             };
-            
+           
             // Show modal
             fullscreenModal.classList.add('active');
             document.body.style.overflow = 'hidden';
@@ -2541,7 +2753,7 @@
             const fullscreenModal = document.getElementById('fullscreen-modal');
             const fullscreenVideo = document.getElementById('fullscreen-video');
             const snapshotBtn = document.getElementById('snapshotBtn');
-            
+           
             // Stop all tracks in the cloned stream
             if (fullscreenVideo.srcObject) {
                 const tracks = fullscreenVideo.srcObject.getTracks();
@@ -2550,56 +2762,56 @@
                     console.log('🛑 Stopped fullscreen video track:', track.kind);
                 });
             }
-            
+           
             fullscreenModal.classList.remove('active');
             document.body.style.overflow = 'auto';
             fullscreenVideo.srcObject = null;
             snapshotBtn.style.display = 'none';
-            
+           
             // Clear event handlers
             fullscreenVideo.onloadedmetadata = null;
             fullscreenVideo.onplaying = null;
             fullscreenVideo.onpause = null;
             fullscreenVideo.onerror = null;
         }
-        
+       
         // Take snapshot from fullscreen video
         function takeSnapshot() {
             console.log('📸 Take snapshot button clicked');
-            
+           
             const fullscreenVideo = document.getElementById('fullscreen-video');
-            
+           
             if (!fullscreenVideo || !fullscreenVideo.srcObject) {
                 alert('❌ No video stream found to capture snapshot');
                 return;
             }
-            
+           
             // Check if video has valid dimensions
             if (fullscreenVideo.videoWidth === 0 || fullscreenVideo.videoHeight === 0) {
                 alert('❌ Video dimensions are invalid. Please wait for the video to load properly.');
                 console.error('❌ Invalid video dimensions:', fullscreenVideo.videoWidth, fullscreenVideo.videoHeight);
                 return;
             }
-            
+           
             console.log('📸 Creating canvas with dimensions:', fullscreenVideo.videoWidth, fullscreenVideo.videoHeight);
-            
+           
             // Create canvas
             const canvas = document.createElement('canvas');
             canvas.width = fullscreenVideo.videoWidth;
             canvas.height = fullscreenVideo.videoHeight;
-            
+           
             // Draw video frame to canvas
             const ctx = canvas.getContext('2d');
             ctx.drawImage(fullscreenVideo, 0, 0, canvas.width, canvas.height);
-            
+           
             // Get session data for filename
             const sessionId = fullscreenVideo.dataset.sessionId;
             const studentData = connectedStudents.get(sessionId);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             const filename = `snapshot_${studentData ? (studentData.computerName || studentData.systemNumber || 'unknown') : 'unknown'}_${timestamp}.png`;
-            
+           
             console.log('📸 Converting canvas to blob...');
-            
+           
             // Convert to blob and download
             canvas.toBlob(function(blob) {
                 if (!blob) {
@@ -2607,10 +2819,10 @@
                     console.error('❌ Blob creation failed');
                     return;
                 }
-                
+               
                 console.log('✅ Blob created, size:', blob.size, 'bytes');
                 console.log('📥 Downloading as:', filename);
-                
+               
                 // Create download link
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -2620,7 +2832,7 @@
                 a.click();
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
-                
+               
                 console.log('✅ Snapshot downloaded successfully');
                 showNotification(`📸 Snapshot captured: ${filename}`, 'info');
             }, 'image/png');
@@ -2629,7 +2841,7 @@
         // ========================================================================
         // MULTI-LAB SUPPORT & SYSTEM REGISTRY
         // ========================================================================
-        
+       
         let currentLabId = null;
         let systemRegistry = [];
 
@@ -2641,20 +2853,20 @@
                     // Lab select UI not present, skip this
                     return;
                 }
-                
+               
                 const response = await fetch('/api/labs');
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     labSelect.innerHTML = '<option value="">-- Select Lab --</option>';
-                    
+                   
                     Object.values(data.labs).forEach(lab => {
                         const option = document.createElement('option');
                         option.value = lab.labId;
                         option.textContent = `${lab.labName} (${lab.labId})`;
                         labSelect.appendChild(option);
                     });
-                    
+                   
                     // Auto-select first lab
                     if (Object.keys(data.labs).length > 0) {
                         const firstLabId = Object.keys(data.labs)[0];
@@ -2678,7 +2890,7 @@
         async function showAllSystemsModal() {
             const modal = document.getElementById('allSystemsModal');
             modal.classList.add('active');
-            
+           
             await refreshSystemsGrid();
         }
 
@@ -2687,10 +2899,10 @@
             const labId = 'CC1'; // Or get from current session
             try {
                 showNotification('🔄 Loading systems...', 'info');
-                
+               
                 const response = await fetch(`${serverUrl}/api/lab-systems/${labId}`);
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     allSystemsData = data.systems || [];
                     displayAllSystemsGrid(allSystemsData, data.stats);
@@ -2710,14 +2922,14 @@
             document.getElementById('stat-total').textContent = stats?.total || 0;
             document.getElementById('stat-loggedin').textContent = stats?.loggedIn || 0;
             document.getElementById('stat-available').textContent = stats?.available || 0;
-            
+           
             const grid = document.getElementById('allSystemsGrid');
-            
+           
             if (!systems || systems.length === 0) {
                 grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #6c757d; font-size: 1.2rem; padding: 40px;">No systems online. Turn on kiosk systems to see them here.</p>';
                 return;
             }
-            
+           
             grid.innerHTML = systems.map(system => {
                 const statusColors = {
                     'logged-in': '#28a745',
@@ -2736,7 +2948,7 @@
                 return `
                     <div style="border: 3px solid ${statusColor}; border-radius: 8px; padding: 12px; background: white;">
                         <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 10px; color: ${statusColor};">
-                            <input type="checkbox" class="system-checkbox" value="${system.systemNumber || displayName}" 
+                            <input type="checkbox" class="system-checkbox" value="${system.systemNumber || displayName}"
                                    data-computer-name="${displayName}"
                                    style="margin-right: 8px; transform: scale(1.3);">
                             ${displayName}
@@ -2775,12 +2987,12 @@
         async function shutdownSelectedSystems() {
             const selectedSystems = Array.from(document.querySelectorAll('.system-checkbox:checked'))
                 .map(cb => cb.value);
-            
+           
             if (selectedSystems.length === 0) {
                 showNotification('⚠️ Please select at least one system', 'warning');
                 return;
             }
-            
+           
             const selectedNames = Array.from(document.querySelectorAll('.system-checkbox:checked'))
                 .map(cb => cb.dataset.computerName || cb.value);
             const confirmMsg = `⚠️⚠️⚠️ CRITICAL WARNING ⚠️⚠️⚠️\n\n` +
@@ -2792,18 +3004,18 @@
                 `• Require manual power button press to restart\n\n` +
                 `Computers to shutdown: ${selectedNames.join(', ')}\n\n` +
                 `Are you absolutely sure?`;
-            
+           
             if (!confirm(confirmMsg)) {
                 showNotification('❌ Shutdown cancelled', 'info');
                 return;
             }
-            
+           
             const confirmation = prompt('⚠️ FINAL CONFIRMATION ⚠️\n\nType "SHUTDOWN" (in capitals) to proceed:');
             if (confirmation !== 'SHUTDOWN') {
                 showNotification('❌ Shutdown cancelled - confirmation failed', 'info');
                 return;
             }
-            
+           
             const statusDiv = document.getElementById('shutdownStatus');
             statusDiv.style.display = 'block';
             statusDiv.style.background = '#fff3cd';
@@ -2814,7 +3026,7 @@
                 Systems: ${selectedNames.join(', ')}<br>
                 <small>Shutdown command being sent to ${selectedSystems.length} systems...</small>
             `;
-            
+           
             try {
                 const response = await fetch(`${serverUrl}/api/shutdown-systems`, {
                     method: 'POST',
@@ -2824,9 +3036,9 @@
                         labId: 'CC1'
                     })
                 });
-                
+               
                 const result = await response.json();
-                
+               
                 if (result.success) {
                     statusDiv.style.background = '#d4edda';
                     statusDiv.style.border = '2px solid #28a745';
@@ -2841,17 +3053,17 @@
                         • Manual power button press required to restart
                         </small>
                     `;
-                    
+                   
                     showNotification(`✅ Shutdown initiated for ${result.shutdownCount} systems`, 'success');
-                    
+                   
                     // Deselect all checkboxes
                     deselectAllSystems();
-                    
+                   
                     // Refresh grid after 3 seconds to show offline status
                     setTimeout(() => {
                         refreshSystemsGrid();
                     }, 3000);
-                    
+                   
                     // Auto-close modal after 8 seconds
                     setTimeout(() => {
                         closeAllSystemsModal();
@@ -2877,7 +3089,7 @@
         function closeAllSystemsModal() {
             const modal = document.getElementById('allSystemsModal');
             modal.classList.remove('active');
-            
+           
             // Reset status
             const statusDiv = document.getElementById('shutdownStatus');
             statusDiv.style.display = 'none';
@@ -2915,31 +3127,29 @@
 
         // Update statistics
         function updateStats() {
-            // Get unique students based on actual server data, not just local map
-            // This ensures accurate count even with duplicate logins
-            const uniqueStudents = new Set();
-            connectedStudents.forEach((data, sessionId) => {
-                // ✅ FIX: Only count valid student entries (not empty or undefined)
-                // FIXED: Changed data.name to data.studentName to match actual session data structure
-                if (data && data.studentId && data.studentName) {
-                    uniqueStudents.add(`${data.studentId}-${data.computerName || data.systemNumber}`);
+            const totalStudents = connectedStudents.size;
+            const activeStudents = connectedStudents.size;
+            const monitoringStudents = monitoringConnections.size;
+           
+            document.getElementById('totalStudents').textContent = totalStudents;
+            document.getElementById('activeStudents').textContent = activeStudents;
+            document.getElementById('monitoringStudents').textContent = monitoringStudents;
+           
+            // 🔧 PERFORMANCE: Add performance indicators for high load
+            if (totalStudents > 50) {
+                console.log(`⚠️ High load detected: ${totalStudents} students connected`);
+                // Optimize grid layout for high density
+                const grid = document.getElementById('studentsGrid');
+                if (totalStudents > 100) {
+                    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(240px, 1fr))';
+                } else if (totalStudents > 75) {
+                    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(260px, 1fr))';
                 }
-            });
-            
-            const actualActiveCount = uniqueStudents.size;
-            
-            // ✅ FIX: Show 0 if no students are connected
-            document.getElementById('totalStudents').textContent = actualActiveCount;
-            document.getElementById('activeStudents').textContent = actualActiveCount;
-            document.getElementById('monitoringStudents').textContent = monitoringConnections.size;
-            
-            console.log(`📊 Stats updated: ${actualActiveCount} unique students, ${monitoringConnections.size} monitoring`);
-        }
-
-        // Start lab session
-        function startLabSession() {
-            // Show session metadata dialog
-            showSessionStartDialog();
+            } else if (totalStudents < 30) {
+                // Reset to normal layout when load is lower
+                const grid = document.getElementById('studentsGrid');
+                grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+            }
         }
 
         // Show session start dialog
@@ -2958,23 +3168,23 @@
                 align-items: center;
                 z-index: 10000;
             `;
-            
+           
             dialog.innerHTML = `
                 <div style="background: white; padding: 2rem; border-radius: 12px; max-width: 500px; width: 90%;">
                     <h2 style="color: #2c3e50; margin-bottom: 1.5rem;">🚀 Start Lab Session</h2>
-                    
+                   
                     <div style="margin-bottom: 1rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Subject Name:</label>
-                        <input type="text" id="session-subject" placeholder="e.g., Data Structures Lab" 
+                        <input type="text" id="session-subject" placeholder="e.g., Data Structures Lab"
                                style="width: 100%; padding: 0.75rem; border: 2px solid #e9ecef; border-radius: 6px; font-size: 1rem;">
                     </div>
-                    
+                   
                     <div style="margin-bottom: 1rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Handling Faculty:</label>
-                        <input type="text" id="session-faculty" placeholder="e.g., Dr. Smith" 
+                        <input type="text" id="session-faculty" placeholder="e.g., Dr. Smith"
                                style="width: 100%; padding: 0.75rem; border: 2px solid #e9ecef; border-radius: 6px; font-size: 1rem;">
                     </div>
-                    
+                   
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                         <div>
                             <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Year:</label>
@@ -3002,23 +3212,24 @@
                                 <option value="A">Section A</option>
                                 <option value="B">Section B</option>
                                 <option value="C">Section C</option>
+                                <option value="D">Section D</option>
                                 <option value="None">No Section</option>
                             </select>
                         </div>
                     </div>
-                    
+                   
                     <div style="margin-bottom: 1.5rem;">
                         <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Number of Periods (50 min each):</label>
                         <div style="display: flex; align-items: center; gap: 1rem;">
-                            <button onclick="decrementPeriods(); event.preventDefault();" 
+                            <button onclick="decrementPeriods(); event.preventDefault();"
                                     style="padding: 0.75rem 1.5rem; font-size: 1.5rem; font-weight: bold; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 6px; cursor: pointer; min-width: 50px;">
                                 −
                             </button>
                             <div style="flex: 1; text-align: center; padding: 0.75rem; border: 2px solid #e9ecef; border-radius: 6px; background: #f8f9fa; font-size: 1.1rem; font-weight: 600;">
-                                <span id="session-periods-display">2</span> Periods 
+                                <span id="session-periods-display">2</span> Periods
                                 (<span id="session-duration-display">100</span> minutes)
                             </div>
-                            <button onclick="incrementPeriods(); event.preventDefault();" 
+                            <button onclick="incrementPeriods(); event.preventDefault();"
                                     style="padding: 0.75rem 1.5rem; font-size: 1.5rem; font-weight: bold; border: 2px solid #28a745; background: #28a745; color: white; border-radius: 6px; cursor: pointer; min-width: 50px;">
                                 +
                             </button>
@@ -3026,20 +3237,20 @@
                         <input type="hidden" id="session-periods" value="2">
                         <small style="color: #6c757d; display: block; margin-top: 0.5rem;">Click +/− to adjust session duration</small>
                     </div>
-                    
+                   
                     <div style="display: flex; gap: 1rem; justify-content: flex-end;">
-                        <button onclick="closeSessionStartDialog()" 
+                        <button onclick="closeSessionStartDialog()"
                                 style="padding: 0.75rem 1.5rem; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 6px; cursor: pointer;">
                             Cancel
                         </button>
-                        <button onclick="confirmStartSession()" 
+                        <button onclick="confirmStartSession()"
                                 style="padding: 0.75rem 1.5rem; border: none; background: #28a745; color: white; border-radius: 6px; cursor: pointer;">
                             Start Session
                         </button>
                     </div>
                 </div>
             `;
-            
+           
             document.body.appendChild(dialog);
             document.getElementById('session-subject').focus();
         }
@@ -3049,7 +3260,7 @@
             const periodsInput = document.getElementById('session-periods');
             const periodsDisplay = document.getElementById('session-periods-display');
             const durationDisplay = document.getElementById('session-duration-display');
-            
+           
             let currentPeriods = parseInt(periodsInput.value);
             if (currentPeriods < 6) {  // Max 6 periods (300 minutes)
                 currentPeriods++;
@@ -3064,7 +3275,7 @@
             const periodsInput = document.getElementById('session-periods');
             const periodsDisplay = document.getElementById('session-periods-display');
             const durationDisplay = document.getElementById('session-duration-display');
-            
+           
             let currentPeriods = parseInt(periodsInput.value);
             if (currentPeriods > 1) {  // Min 1 period (50 minutes)
                 currentPeriods--;
@@ -3090,12 +3301,12 @@
             const department = document.getElementById('session-department').value;
             const section = document.getElementById('session-section').value;
             const periods = parseInt(document.getElementById('session-periods').value);
-            
+           
             if (!subject || !faculty) {
                 alert('❌ Please fill in all required fields.');
                 return;
             }
-            
+           
             // Start the lab session with metadata
             startLabSessionWithMetadata(subject, faculty, year, department, section, periods);
             closeSessionStartDialog();
@@ -3113,7 +3324,7 @@
                 startTime: new Date(),
                 expectedDuration: periods * 50 // minutes
             };
-            
+           
             // Send to server
             fetch('/api/start-lab-session', {
                 method: 'POST',
@@ -3127,36 +3338,36 @@
                 if (data.success) {
                     // Reset restore notification flag - this is a NEW manual session start
                     hasShownRestoreNotification = false;
-                    
+                   
                     sessionActive = true;
                     currentLabSession = data.session;
                     sessionExported = false; // Reset export flag for new session
                     document.getElementById('startSessionBtn').disabled = true;
                     document.getElementById('endSessionBtn').disabled = false;
-                    
+                   
                     // Show/hide session cards
                     document.getElementById('no-session-info').style.display = 'none';
                     document.getElementById('session-info').style.display = 'block';
-                    
+                   
                     // Calculate session end time
                     sessionEndTime = new Date(Date.now() + (periods * 50 * 60 * 1000)); // periods * 50 minutes * 60 seconds * 1000 ms
-                    
+                   
                     // Update UI to show session info
                     updateSessionInfo(data.session);
-                    
+                   
                     // Start session timer
                     startSessionTimer();
-                    
+                   
                     // Preserve existing student connections - don't clear them
                     console.log('🚀 Lab session started with metadata:', data.session);
                     console.log('🔗 Preserving existing student connections...');
-                    
+                   
                     // Save session state to localStorage
                     saveAdminSessionState();
-                    
+                   
                     // Refresh student list without clearing existing connections
                     loadActiveStudents();
-                    
+                   
                     // CRITICAL FIX: Force start screen mirroring for all existing sessions
                     console.log('🎥 FORCE-STARTING screen mirroring for all connected students...');
                     setTimeout(() => {
@@ -3171,7 +3382,7 @@
                         // Save state after starting monitoring
                         saveAdminSessionState();
                     }, 2000); // 2 second delay to ensure UI is ready
-                    
+                   
                     alert(`✅ Lab session started successfully!\n\nSubject: ${data.session.subject}\nFaculty: ${data.session.faculty}\nDuration: ${periods} periods (${periods * 50} minutes)\n\nSession will end at: ${sessionEndTime.toLocaleTimeString()}`);
                 } else {
                     alert('❌ Failed to start session: ' + data.error);
@@ -3188,16 +3399,16 @@
             if (sessionTimer) {
                 clearInterval(sessionTimer);
             }
-            
+           
             sessionTimer = setInterval(() => {
                 if (!sessionActive || !sessionEndTime) {
                     clearInterval(sessionTimer);
                     return;
                 }
-                
+               
                 const now = new Date();
                 const timeLeft = sessionEndTime - now;
-                
+               
                 if (timeLeft <= 0) {
                     // Session time is up
                     clearInterval(sessionTimer);
@@ -3225,7 +3436,7 @@
         function updateRemainingTime(timeLeft) {
             const minutes = Math.floor(timeLeft / (1000 * 60));
             const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-            
+           
             // Update the session info with remaining time
             const durationElement = document.getElementById('current-duration');
             if (durationElement && currentLabSession) {
@@ -3242,28 +3453,28 @@
             document.getElementById('current-section').textContent = session.section === 'None' ? 'No Section' : `Section ${session.section}`;
             document.getElementById('current-duration').textContent = `${session.periods} periods (${session.expectedDuration} min)`;
             document.getElementById('current-start-time').textContent = new Date(session.startTime).toLocaleTimeString();
-            
+           
             // Update duration control display
             document.getElementById('current-periods-display').textContent = session.periods;
             document.getElementById('current-minutes-display').textContent = session.expectedDuration;
-            
+           
             document.getElementById('session-info').style.display = 'block';
         }
-        
+       
         // Hide session info
         function hideSessionInfo() {
             document.getElementById('session-info').style.display = 'none';
         }
-        
+       
         // Adjust session duration after it has started
         async function adjustSessionDuration(change) {
             if (!currentLabSession) {
                 alert('❌ No active session to adjust.');
                 return;
             }
-            
+           
             const newPeriods = currentLabSession.periods + change;
-            
+           
             // Validate limits
             if (newPeriods < 1) {
                 alert('❌ Cannot reduce below 1 period (50 minutes).');
@@ -3273,44 +3484,44 @@
                 alert('❌ Cannot increase beyond 6 periods (300 minutes).');
                 return;
             }
-            
+           
             const newDuration = newPeriods * 50;
-            
+           
             if (!confirm(`Adjust session duration?\n\nCurrent: ${currentLabSession.periods} periods (${currentLabSession.expectedDuration} min)\nNew: ${newPeriods} periods (${newDuration} min)\n\nThis will ${change > 0 ? 'extend' : 'reduce'} the session time.`)) {
                 return;
             }
-            
+           
             try {
                 // Update on server
                 const response = await fetch('/api/update-session-duration', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         sessionId: currentLabSession._id,
                         periods: newPeriods,
                         expectedDuration: newDuration
                     })
                 });
-                
+               
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     // Update local session data
                     currentLabSession.periods = newPeriods;
                     currentLabSession.expectedDuration = newDuration;
-                    
+                   
                     // Recalculate end time
                     const now = new Date();
                     const startTime = new Date(currentLabSession.startTime);
                     const elapsed = now - startTime;
                     const remainingTime = (newDuration * 60 * 1000) - elapsed;
                     sessionEndTime = new Date(now.getTime() + remainingTime);
-                    
+                   
                     // Update UI
                     document.getElementById('current-duration').textContent = `${newPeriods} periods (${newDuration} min)`;
                     document.getElementById('current-periods-display').textContent = newPeriods;
                     document.getElementById('current-minutes-display').textContent = newDuration;
-                    
+                   
                     console.log('✅ Session duration updated:', { periods: newPeriods, duration: newDuration });
                     alert(`✅ Session duration ${change > 0 ? 'increased' : 'decreased'} successfully!\n\nNew duration: ${newPeriods} periods (${newDuration} minutes)\nSession will now end at: ${sessionEndTime.toLocaleTimeString()}`);
                 } else {
@@ -3321,24 +3532,24 @@
                 alert('❌ Error adjusting duration. Please try again.');
             }
         }
-        
+       
         // Adjust session by custom minutes
         async function adjustSessionByMinutes(action) {
             if (!currentLabSession) {
                 alert('❌ No active session to adjust.');
                 return;
             }
-            
+           
             const customMinutes = parseInt(document.getElementById('custom-time-input').value);
-            
+           
             if (!customMinutes || customMinutes < 5 || customMinutes > 100) {
                 alert('❌ Please enter a valid time between 5 and 100 minutes.');
                 return;
             }
-            
+           
             const changeInMinutes = action === 'increase' ? customMinutes : -customMinutes;
             const newDuration = currentLabSession.expectedDuration + changeInMinutes;
-            
+           
             // Validate limits (50-300 minutes = 1-6 periods)
             if (newDuration < 50) {
                 alert('❌ Cannot reduce below 50 minutes (1 period).');
@@ -3348,45 +3559,45 @@
                 alert('❌ Cannot increase beyond 300 minutes (6 periods).');
                 return;
             }
-            
+           
             // Calculate periods (round to nearest 0.5)
             const newPeriods = Math.round((newDuration / 50) * 2) / 2;
-            
+           
             if (!confirm(`Adjust session duration by ${customMinutes} minutes?\n\nCurrent: ${currentLabSession.expectedDuration} min\nNew: ${newDuration} min (≈${newPeriods} periods)\n\nThis will ${action === 'increase' ? 'extend' : 'reduce'} the session time.`)) {
                 return;
             }
-            
+           
             try {
                 // Update on server with new duration
                 const response = await fetch('/api/update-session-duration', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         sessionId: currentLabSession._id,
                         periods: newPeriods,
                         expectedDuration: newDuration
                     })
                 });
-                
+               
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     // Update local session data
                     currentLabSession.periods = newPeriods;
                     currentLabSession.expectedDuration = newDuration;
-                    
+                   
                     // Recalculate end time
                     const now = new Date();
                     const startTime = new Date(currentLabSession.startTime);
                     const elapsed = now - startTime;
                     const remainingTime = (newDuration * 60 * 1000) - elapsed;
                     sessionEndTime = new Date(now.getTime() + remainingTime);
-                    
+                   
                     // Update UI
                     document.getElementById('current-duration').textContent = `${newPeriods} periods (${newDuration} min)`;
                     document.getElementById('current-periods-display').textContent = newPeriods;
                     document.getElementById('current-minutes-display').textContent = newDuration;
-                    
+                   
                     console.log('✅ Session duration updated:', { periods: newPeriods, duration: newDuration });
                     alert(`✅ Session duration ${action === 'increase' ? 'increased' : 'decreased'} by ${customMinutes} minutes!\n\nNew duration: ${newPeriods} periods (${newDuration} minutes)\nSession will now end at: ${sessionEndTime.toLocaleTimeString()}`);
                 } else {
@@ -3408,7 +3619,7 @@
             if (confirm('⚠️ Are you sure you want to end the current lab session?\n\nThis will:\n• Stop all screen monitoring\n• Clear all session data\n• Prepare for the next session')) {
                 // Clear session state from localStorage
                 clearAdminSessionState();
-                
+               
                 // Send end session request to server
                 fetch('/api/end-lab-session', {
                     method: 'POST',
@@ -3422,34 +3633,34 @@
                     if (data.success) {
                         // Reset restore notification flag - this is a NEW manual session end
                         hasShownRestoreNotification = false;
-                        
+                       
                         sessionActive = false;
                         currentLabSession = null;
                         sessionEndTime = null;
-                        
+                       
                         // Clear session timer
                         if (sessionTimer) {
                             clearInterval(sessionTimer);
                             sessionTimer = null;
                         }
-                        
+                       
                         document.getElementById('startSessionBtn').disabled = false;
                         document.getElementById('endSessionBtn').disabled = true;
-                        
+                       
                         // Stop all monitoring
                         monitoringConnections.forEach((pc, sessionId) => {
                             stopMonitoring(sessionId);
                         });
-                        
+                       
                         // Clear students grid
                         document.getElementById('studentsGrid').innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
                         connectedStudents.clear();
                         updateStats();
-                        
+                       
                         // Hide session info and show no-session card
                         document.getElementById('session-info').style.display = 'none';
                         document.getElementById('no-session-info').style.display = 'block';
-                        
+                       
                         console.log('🛑 Lab session ended and data cleared');
                         alert('✅ Session Completed!');
                     } else {
@@ -3472,12 +3683,12 @@
         // Export session data to CSV
         function exportSessionData() {
             console.log('📊 Exporting session data...');
-            
+           
             if (!currentLabSession) {
                 alert('❌ No active lab session to export.');
                 return;
             }
-            
+           
             // Fetch complete session data from server
             fetch(`/api/export-session-data/${currentLabSession._id}`)
             .then(response => response.json())
@@ -3500,65 +3711,68 @@
         // Generate CSV file from session data
         function generateCSVFile(sessionData, studentRecords) {
             const csvData = [];
-            
+           
             // Add session header information
             csvData.push(`Lab Session Report`);
-            csvData.push(`Subject: ${sessionData.subject}`);
-            csvData.push(`Faculty: ${sessionData.faculty}`);
+            csvData.push(`Session Name (Subject): ${sessionData.subject}`);
+            csvData.push(`Handling Faculty: ${sessionData.faculty}`);
             csvData.push(`Year: ${sessionData.year}${sessionData.year === 1 ? 'st' : sessionData.year === 2 ? 'nd' : sessionData.year === 3 ? 'rd' : 'th'} Year`);
             csvData.push(`Department: ${sessionData.department}`);
             csvData.push(`Section: ${sessionData.section === 'None' ? 'No Section' : 'Section ' + sessionData.section}`);
-            csvData.push(`Duration: ${sessionData.periods} periods (${sessionData.expectedDuration} minutes)`);
-            csvData.push(`Started: ${new Date(sessionData.startTime).toLocaleString()}`);
+            csvData.push(`Time Period: ${sessionData.periods} periods (${sessionData.expectedDuration} minutes)`);
+            csvData.push(`Session Start Time: ${new Date(sessionData.startTime).toLocaleString()}`);
+            csvData.push(`Session End Time: ${sessionData.endTime ? new Date(sessionData.endTime).toLocaleString() : 'Active'}`);
             csvData.push(`Generated: ${new Date().toLocaleString()}`);
-            csvData.push(`Total Students: ${studentRecords.length}`);
+            csvData.push(`Total Students Logged In: ${studentRecords.length}`);
             csvData.push(''); // Empty line
-            
+           
             // Add student data headers
             const headers = [
                 'Sr. No',
-                'Computer Name',
-                'Student Name', 
-                'Roll Number', 
-                'Login Time', 
+                'Student Name',
+                'Roll Number',
+                'Email',
+                'Computer Name / System',
+                'Login Time',
                 'Logout Time',
                 'Duration (minutes)',
                 'Status'
             ];
             csvData.push(headers.join(','));
-            
+           
             // Only show students who actually logged in
             studentRecords.forEach((record, index) => {
                 const loginTime = new Date(record.loginTime).toLocaleString();
                 const logoutTime = record.logoutTime ? new Date(record.logoutTime).toLocaleString() : 'Still Active';
                 const duration = record.duration ? Math.round(record.duration / 60) : 'Ongoing';
-                
+               
                 const row = [
                     index + 1,
-                    `"${record.computerName || record.systemNumber || '-'}"`,
                     `"${record.studentName || '-'}"`,
                     `"${record.studentId || '-'}"`,
+                    `"${record.email || '-'}"`,
+                    `"${record.computerName || record.systemNumber || '-'}"`,
                     `"${loginTime}"`,
                     `"${logoutTime}"`,
                     `"${duration}"`,
-                    `"${record.status === 'active' ? 'Present' : 'Completed'}"`
+                    `"${record.status === 'active' ? 'Present (Active)' : 'Completed'}"`
                 ];
                 csvData.push(row.join(','));
             });
-            
+           
             // Create and download CSV file
             const csvContent = csvData.join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
-            
+           
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${sessionData.subject.replace(/[^a-zA-Z0-9]/g, '_')}_${sessionData.year}${sessionData.section !== 'None' ? '_' + sessionData.section : ''}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `Session_${sessionData.subject.replace(/[^a-zA-Z0-9]/g, '_')}_${sessionData.year}Yr${sessionData.section !== 'None' ? '_Sec' + sessionData.section : ''}_${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
-            
+           
             console.log('✅ Session CSV exported successfully');
             sessionExported = true; // Mark as exported
             alert(`✅ Session data exported successfully!\n\nThe CSV includes ${studentRecords.length} students who logged in during this session.\n\n✓ You can now end the session if needed.`);
@@ -3570,16 +3784,16 @@
                 alert('❌ No active lab session to debug.');
                 return;
             }
-            
+           
             console.log('🔍 Debugging session data...');
-            
+           
             // Fetch debug data from server
             fetch(`/api/debug-session-data/${currentLabSession._id}`)
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
                     console.log('🔍 Debug data received:', data.debug);
-                    
+                   
                     // Show debug info in a popup
                     const debugInfo = `
 Debug Information:
@@ -3589,21 +3803,21 @@ Lab Session Subject: ${data.debug.labSession?.subject || 'Not found'}
 Lab Session Start Time: ${data.debug.labSession?.startTime || 'Not found'}
 
 Recent Sessions (last 10):
-${data.debug.recentSessions.map((s, i) => 
+${data.debug.recentSessions.map((s, i) =>
     `${i+1}. ${s.studentName} (${s.studentId}) - ${s.computerName || s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
 ).join('\n')}
 
 Active Sessions:
-${data.debug.activeSessions.map((s, i) => 
+${data.debug.activeSessions.map((s, i) =>
     `${i+1}. ${s.studentName} (${s.studentId}) - ${s.computerName || s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
 ).join('\n')}
 
 Lab Session Student Records:
-${data.debug.labSessionStudentRecords?.map((s, i) => 
+${data.debug.labSessionStudentRecords?.map((s, i) =>
     `${i+1}. ${s.studentName} (${s.studentId}) - ${s.computerName || s.systemNumber} - ${new Date(s.loginTime).toLocaleString()}`
 ).join('\n') || 'None found'}
                     `;
-                    
+                   
                     alert(debugInfo);
                 } else {
                     alert('❌ Failed to get debug data: ' + data.error);
@@ -3620,9 +3834,9 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             if (!confirm('⚠️ WARNING: This will clear ALL lab sessions and student data!\n\nAre you sure you want to continue?')) {
                 return;
             }
-            
+           
             console.log('🧹 Force clearing all sessions...');
-            
+           
             fetch('/api/force-clear-all', {
                 method: 'POST',
                 headers: {
@@ -3639,7 +3853,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     document.getElementById('session-info').style.display = 'none';
                     document.getElementById('startSessionBtn').disabled = false;
                     document.getElementById('endSessionBtn').disabled = true;
-                    
+                   
                     // Clear all monitoring connections
                     monitoringConnections.forEach((pc, sessionId) => {
                         if (pc) {
@@ -3647,12 +3861,12 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                         }
                     });
                     monitoringConnections.clear();
-                    
+                   
                     // Clear students grid immediately
                     document.getElementById('studentsGrid').innerHTML = '<div class="no-students">📱 No students connected. Students need to login via kiosk first.</div>';
                     connectedStudents.clear();
                     updateStats();
-                    
+                   
                     // Then refresh to get any remaining active sessions
                     setTimeout(() => {
                         refreshStudentList();
@@ -3685,35 +3899,35 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         async function loadSchedule() {
             const labId = document.getElementById('scheduleLabId').value;
             const statusDiv = document.getElementById('scheduleStatus');
-            
+           
             try {
                 statusDiv.style.display = 'block';
                 statusDiv.style.background = '#fff3cd';
                 statusDiv.style.color = '#856404';
                 statusDiv.innerHTML = '⏳ Loading schedules...';
-                
+               
                 const response = await fetch(`/api/report-schedule/${labId}`);
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     // Load schedule 1
                     if (data.schedule.scheduleTime1) {
                         document.getElementById('scheduleTime1').value = data.schedule.scheduleTime1;
                         document.getElementById('scheduleEnabled1').checked = data.schedule.enabled1 !== false;
                     }
-                    
+                   
                     // Load schedule 2
                     if (data.schedule.scheduleTime2) {
                         document.getElementById('scheduleTime2').value = data.schedule.scheduleTime2;
                         document.getElementById('scheduleEnabled2').checked = data.schedule.enabled2 !== false;
                     }
-                    
+                   
                     // Legacy support - if old format, load into schedule 1
                     if (data.schedule.scheduleTime && !data.schedule.scheduleTime1) {
                         document.getElementById('scheduleTime1').value = data.schedule.scheduleTime;
                         document.getElementById('scheduleEnabled1').checked = data.schedule.enabled;
                     }
-                    
+                   
                     statusDiv.style.background = '#d4edda';
                     statusDiv.style.color = '#155724';
                     const schedule1Status = document.getElementById('scheduleEnabled1').checked ? '🟢 Enabled' : '🔴 Disabled';
@@ -3743,47 +3957,47 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             const scheduleTime2 = document.getElementById('scheduleTime2').value;
             const enabled2 = document.getElementById('scheduleEnabled2').checked;
             const statusDiv = document.getElementById('scheduleStatus');
-            
+           
             if (!scheduleTime1 && !scheduleTime2) {
                 alert('Please select at least one schedule time');
                 return;
             }
-            
+           
             try {
                 statusDiv.style.display = 'block';
                 statusDiv.style.background = '#fff3cd';
                 statusDiv.style.color = '#856404';
                 statusDiv.innerHTML = '⏳ Saving schedules...';
-                
+               
                 const response = await fetch('/api/report-schedule', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        labId, 
-                        scheduleTime1, 
+                    body: JSON.stringify({
+                        labId,
+                        scheduleTime1,
                         enabled1,
                         scheduleTime2,
                         enabled2
                     })
                 });
-                
+               
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     statusDiv.style.background = '#d4edda';
                     statusDiv.style.color = '#155724';
-                    
+                   
                     let statusHTML = `✅ Schedules saved successfully!<br><strong>Lab:</strong> ${labId}<br>`;
-                    
+                   
                     if (scheduleTime1 && enabled1) {
                         statusHTML += `<strong>Schedule 1:</strong> ${scheduleTime1} - 🟢 Enabled<br>`;
                     }
                     if (scheduleTime2 && enabled2) {
                         statusHTML += `<strong>Schedule 2:</strong> ${scheduleTime2} - 🟢 Enabled<br>`;
                     }
-                    
+                   
                     statusHTML += `<em>Reports will automatically download to your browser at the scheduled times every day.</em>`;
-                    
+                   
                     statusDiv.innerHTML = statusHTML;
                     console.log('✅ Schedules saved:', data.schedule);
                 } else {
@@ -3801,32 +4015,32 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         async function generateReportNow() {
             const labId = document.getElementById('scheduleLabId').value;
             const statusDiv = document.getElementById('scheduleStatus');
-            
+           
             if (!confirm(`Generate and download report now for ${labId}?\n\nThis will download a CSV file with today's sessions to your computer.`)) {
                 return;
             }
-            
+           
             try {
                 statusDiv.style.display = 'block';
                 statusDiv.style.background = '#fff3cd';
                 statusDiv.style.color = '#856404';
                 statusDiv.innerHTML = '⏳ Generating report...';
-                
+               
                 const response = await fetch('/api/generate-report-now', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ labId })
                 });
-                
+               
                 if (response.ok) {
                     // Get filename from Content-Disposition header
                     const contentDisposition = response.headers.get('Content-Disposition');
                     const filenameMatch = contentDisposition && contentDisposition.match(/filename="(.+)"/);
                     const filename = filenameMatch ? filenameMatch[1] : `${labId}-sessions-${new Date().toISOString().split('T')[0]}.csv`;
-                    
+                   
                     // Get CSV content
                     const blob = await response.blob();
-                    
+                   
                     // Create download link
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -3836,7 +4050,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     a.click();
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(url);
-                    
+                   
                     statusDiv.style.background = '#d4edda';
                     statusDiv.style.color = '#155724';
                     statusDiv.innerHTML = `
@@ -3872,9 +4086,9 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         function toggleHardwareAlerts() {
             const panel = document.getElementById('hardwareAlertsPanel');
             const toggleBtn = document.getElementById('hardwareAlertsToggle');
-            
+           
             alertsPanelVisible = !alertsPanelVisible;
-            
+           
             if (alertsPanelVisible) {
                 panel.style.display = 'block';
                 toggleBtn.style.display = 'none';
@@ -3896,7 +4110,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         function displayHardwareAlerts(alerts) {
             activeAlerts = alerts;
             const alertsList = document.getElementById('alertsList');
-            
+           
             if (!alerts || alerts.length === 0) {
                 alertsList.innerHTML = `
                     <div style="text-align: center; color: #6c757d; padding: 20px;">
@@ -3914,7 +4128,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                 const time = new Date(alert.timestamp).toLocaleTimeString();
                 const bgColor = alert.type === 'hardware_disconnect' ? '#ffe0e0' : '#e0ffe0';
                 const borderColor = alert.type === 'hardware_disconnect' ? '#ff4444' : '#44ff44';
-                
+               
                 html += `
                     <div class="${alertClass}" style="padding: 12px; margin: 8px 0; border-radius: 6px; border-left: 4px solid ${borderColor}; background: ${bgColor}; animation: slideIn 0.3s ease;">
                         <div style="display: flex; align-items: flex-start; gap: 10px;">
@@ -3943,7 +4157,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         // Add new alert to UI (real-time)
         function addAlertToUI(alertData) {
             const alertsList = document.getElementById('alertsList');
-            
+           
             // Remove "no alerts" message if present
             const noAlertsMsg = alertsList.querySelector('div[style*="text-align: center"]');
             if (noAlertsMsg) {
@@ -3955,7 +4169,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             const time = new Date(alertData.timestamp).toLocaleTimeString();
             const bgColor = alertData.type === 'hardware_disconnect' ? '#ffe0e0' : '#e0ffe0';
             const borderColor = alertData.type === 'hardware_disconnect' ? '#ff4444' : '#44ff44';
-            
+           
             const alertDiv = document.createElement('div');
             alertDiv.className = alertClass;
             alertDiv.style.cssText = `padding: 12px; margin: 8px 0; border-radius: 6px; border-left: 4px solid ${borderColor}; background: ${bgColor}; animation: slideIn 0.3s ease;`;
@@ -3972,13 +4186,13 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     </div>
                 </div>
             `;
-            
+           
             // Add to top of list
             alertsList.insertBefore(alertDiv, alertsList.firstChild);
-            
+           
             // Add to active alerts array
             activeAlerts.unshift(alertData);
-            
+           
             // Remove reconnect alerts after 30 seconds
             if (alertData.type === 'hardware_reconnect') {
                 setTimeout(() => {
@@ -3994,7 +4208,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             const badge = document.getElementById('alertBadge');
             const unacknowledgedCount = activeAlerts.filter(a => !a.acknowledged && a.type === 'hardware_disconnect').length;
             badge.textContent = unacknowledgedCount;
-            
+           
             // Pulse animation on badge if there are unacknowledged alerts
             if (unacknowledgedCount > 0) {
                 badge.style.animation = 'pulse 1s infinite';
@@ -4006,17 +4220,17 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         // Acknowledge alert
         function acknowledgeAlert(alertId) {
             if (socket && socket.connected) {
-                socket.emit('acknowledge-alert', { 
-                    alertId: alertId, 
-                    adminName: 'Admin' 
+                socket.emit('acknowledge-alert', {
+                    alertId: alertId,
+                    adminName: 'Admin'
                 });
-                
+               
                 // Update UI immediately
                 const alert = activeAlerts.find(a => a._id === alertId || a.alertId === alertId);
                 if (alert) {
                     alert.acknowledged = true;
                 }
-                
+               
                 // Refresh display
                 refreshHardwareAlerts();
             }
@@ -4029,16 +4243,16 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const oscillator = audioContext.createOscillator();
                 const gainNode = audioContext.createGain();
-                
+               
                 oscillator.connect(gainNode);
                 gainNode.connect(audioContext.destination);
-                
+               
                 oscillator.frequency.value = 800;
                 oscillator.type = 'sine';
-                
+               
                 gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-                
+               
                 oscillator.start(audioContext.currentTime);
                 oscillator.stop(audioContext.currentTime + 0.5);
             } catch (error) {
@@ -4093,10 +4307,10 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         document.addEventListener('DOMContentLoaded', async () => {
             console.log('📄 Admin dashboard DOM loaded');
             await initializeSocket();
-            
+           
             // Load labs for multi-lab support
             loadAllLabs();
-            
+           
             // CRITICAL: Restore timetable on page load
             setTimeout(() => {
                 loadTimetable();
@@ -4118,13 +4332,13 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                 document.getElementById('startSessionBtn').disabled = true;
                 document.getElementById('endSessionBtn').disabled = false;
             }
-            
+           
             // Load initial schedule on page load
             loadSchedule();
-            
+           
             // Auto-load schedule when lab changes
             document.getElementById('scheduleLabId').addEventListener('change', loadSchedule);
-            
+           
             // Auto-load lab session reports
             setTimeout(() => {
                 loadLabSessionReports();
@@ -4139,26 +4353,26 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         async function loadLabSessionReports() {
             const listDiv = document.getElementById('labSessionReportsList');
             listDiv.innerHTML = '<p style="color: #6c757d;">Loading lab session reports...</p>';
-            
+           
             try {
                 const response = await fetch(`${serverUrl}/api/manual-reports`);
                 const data = await response.json();
-                
+               
                 if (data.success && data.files && data.files.length > 0) {
                     // Filter only lab session reports
                     const labSessionReports = data.files.filter(file => file.type === 'lab-session');
-                    
+                   
                     if (labSessionReports.length > 0) {
                         let html = '<div style="display: grid; gap: 1rem;">';
-                        
+                       
                         labSessionReports.forEach(file => {
                             const sizeKB = (file.size / 1024).toFixed(2);
                             const dateStr = new Date(file.modified).toLocaleString('en-IN');
-                            
+                           
                             // Extract subject from filename (LabSession_SubjectName_Date_Time.csv)
                             const parts = file.filename.split('_');
                             const subject = parts.length > 1 ? parts.slice(1, -2).join(' ').replace(/-/g, ' ') : 'Unknown';
-                            
+                           
                             html += `
                                 <div style="background: white; border-left: 4px solid #28a745; border: 1px solid #dee2e6; border-radius: 8px; padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
                                     <div>
@@ -4178,7 +4392,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                                 </div>
                             `;
                         });
-                        
+                       
                         html += '</div>';
                         listDiv.innerHTML = html;
                         console.log(`✅ Loaded ${labSessionReports.length} lab session reports`);
@@ -4198,13 +4412,13 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         async function downloadManualReport(filename) {
             try {
                 console.log(`📥 Downloading manual report: ${filename}`);
-                
+               
                 const response = await fetch(`${serverUrl}/api/manual-reports/${filename}`);
-                
+               
                 if (!response.ok) {
                     throw new Error('Failed to download file');
                 }
-                
+               
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -4214,7 +4428,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                 a.click();
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
-                
+               
                 console.log(`✅ Manual report downloaded: ${filename}`);
                 alert(`✅ Downloaded: ${filename}`);
             } catch (error) {
@@ -4235,18 +4449,18 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         async function uploadTimetable(formData) {
             try {
                 console.log('📤 Uploading timetable...');
-                
+               
                 const response = await fetch(`${serverUrl}/api/upload-timetable`, {
                     method: 'POST',
                     body: formData
                 });
-                
+               
                 const result = await response.json();
-                
+               
                 if (result.success) {
                     console.log(`✅ Timetable uploaded: ${result.successCount} entries`);
                     alert(`✅ ${result.message}\n\n✅ Successful: ${result.successCount}\n❌ Failed: ${result.errorCount}`);
-                    
+                   
                     // Store uploaded file info in localStorage
                     const fileInfo = {
                         filename: result.filename || 'timetable.csv',
@@ -4255,7 +4469,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     };
                     localStorage.setItem('uploadedTimetableInfo', JSON.stringify(fileInfo));
                     displayUploadedFileInfo(fileInfo);
-                    
+                   
                     loadTimetable(); // Refresh timetable display
                 } else {
                     console.error('❌ Timetable upload failed:', result.error);
@@ -4266,7 +4480,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                 alert(`❌ Error: ${error.message}`);
             }
         }
-        
+       
         // Display uploaded file info
         function displayUploadedFileInfo(info) {
             document.getElementById('uploadedFileInfo').style.display = 'block';
@@ -4286,26 +4500,26 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             if (!confirm('⚠️ This will delete ALL timetable entries. Continue?')) {
                 return;
             }
-            
+           
             try {
                 console.log('🗑️ Clearing timetable...');
-                
+               
                 const response = await fetch(`${serverUrl}/api/timetable/clear-all`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'}
                 });
-                
+               
                 const result = await response.json();
-                
+               
                 if (result.success) {
                     console.log(`✅ Timetable cleared: ${result.message}`);
                     alert(`✅ ${result.message}`);
-                    
+                   
                     // Clear uploaded file info
                     localStorage.removeItem('uploadedTimetableInfo');
                     document.getElementById('uploadedFileInfo').style.display = 'none';
                     document.getElementById('timetableFile').value = '';
-                    
+                   
                     loadTimetable();
                 } else {
                     console.error('❌ Clear failed:', result.error);
@@ -4321,28 +4535,28 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
         async function loadTimetable() {
             const listDiv = document.getElementById('timetableList');
             if (!listDiv) return;
-            
+           
             try {
                 listDiv.innerHTML = '<p style="color: #6c757d;">Loading timetable...</p>';
-                
+               
                 const response = await fetch(`${serverUrl}/api/timetable?upcoming=true`);
                 const data = await response.json();
-                
+               
                 if (data.success && data.entries && data.entries.length > 0) {
                     let html = '<h3 style="margin-bottom: 1rem;">Upcoming Sessions</h3>';
                     html += '<div style="display: grid; gap: 0.5rem;">';
-                    
+                   
                     data.entries.forEach(entry => {
                         const date = new Date(entry.sessionDate).toLocaleDateString('en-IN');
-                        const statusBadge = entry.isProcessed 
-                            ? '<span style="color: #28a745;">✅ Completed</span>' 
+                        const statusBadge = entry.isProcessed
+                            ? '<span style="color: #28a745;">✅ Completed</span>'
                             : '<span style="color: #ffc107;">⏳ Pending</span>';
-                        
+                       
                         // Add "Start Now" button for pending sessions
-                        const startButton = !entry.isProcessed 
+                        const startButton = !entry.isProcessed
                             ? `<button onclick="manualStartSession('${entry._id}')" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.875rem; margin-left: 10px;">🚀 Start Now</button>`
                             : '';
-                        
+                       
                         html += `
                             <div style="background: white; border-left: 4px solid ${entry.isProcessed ? '#28a745' : '#007bff'}; padding: 0.75rem; border-radius: 4px;">
                                 <div style="font-weight: 600; color: #2c3e50;">
@@ -4355,7 +4569,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                             </div>
                         `;
                     });
-                    
+                   
                     html += '</div>';
                     listDiv.innerHTML = html;
                     console.log(`✅ Loaded ${data.entries.length} timetable entries`);
@@ -4373,16 +4587,16 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
             if (!confirm('🚀 Start this session now?\n\nThis will immediately start the lab session.')) {
                 return;
             }
-            
+           
             try {
                 const response = await fetch(`${serverUrl}/api/manual-start-session`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ entryId })
                 });
-                
+               
                 const data = await response.json();
-                
+               
                 if (data.success) {
                     showNotification(`✅ Session started: ${data.subject}`, 'success');
                     loadTimetable(); // Refresh the timetable display
@@ -4403,20 +4617,20 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     e.preventDefault();
                     const formData = new FormData();
                     const fileInput = document.getElementById('timetableFile');
-                    
+                   
                     if (!fileInput.files[0]) {
                         alert('⚠️ Please select a CSV file');
                         return;
                     }
-                    
+                   
                     formData.append('timetableFile', fileInput.files[0]);
                     await uploadTimetable(formData);
-                    
+                   
                     // Don't clear file input - keep it displayed
                     // fileInput.value = '';
                 });
             }
-            
+           
             // Load uploaded file info from localStorage on page load
             const storedFileInfo = localStorage.getItem('uploadedTimetableInfo');
             if (storedFileInfo) {
@@ -4426,7 +4640,7 @@ ${data.debug.labSessionStudentRecords?.map((s, i) =>
                     console.error('Error loading file info:', e);
                 }
             }
-            
+           
             // Load guest password on page load
             fetchGuestPassword();
         });
